@@ -1,0 +1,212 @@
+---
+# Source: victoria-metrics-agent/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vmagent-victoria-metrics-agent
+  namespace: monitoring
+  labels: 
+    app.kubernetes.io/instance: vmagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-agent
+    app.kubernetes.io/version: v1.135.0
+    helm.sh/chart: victoria-metrics-agent-0.31.0
+---
+# Source: victoria-metrics-agent/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vmagent-victoria-metrics-agent-config
+  namespace: monitoring
+  labels: 
+    app.kubernetes.io/instance: vmagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-agent
+    app.kubernetes.io/version: v1.135.0
+    helm.sh/chart: victoria-metrics-agent-0.31.0
+data:
+  scrape.yml: |
+    global:
+      scrape_interval: 10s
+    scrape_configs:
+    - job_name: vmagent-self
+      static_configs:
+      - targets:
+        - localhost:8429
+    - job_name: kube-state-metrics
+      static_configs:
+      - targets:
+        - kube-state-metrics.monitoring.svc:8080
+    - job_name: node-exporter
+      static_configs:
+      - targets:
+        - node-exporter.monitoring.svc:9100
+    - bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      job_name: kubelet-cadvisor
+      metrics_path: /metrics/cadvisor
+      scheme: https
+      static_configs:
+      - targets:
+        - 100.68.32.118:10250
+      tls_config:
+        insecure_skip_verify: true
+---
+# Source: victoria-metrics-agent/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vmagent-victoria-metrics-agent-rw
+  namespace: monitoring
+  labels: 
+    app.kubernetes.io/instance: vmagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-agent
+    app.kubernetes.io/version: v1.135.0
+    helm.sh/chart: victoria-metrics-agent-0.31.0
+data: 
+  {}
+---
+# Source: victoria-metrics-agent/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vmagent-victoria-metrics-agent
+  labels: 
+    app.kubernetes.io/instance: vmagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-agent
+    app.kubernetes.io/version: v1.135.0
+    helm.sh/chart: victoria-metrics-agent-0.31.0
+rules:
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources:
+  - services
+  - endpoints
+  - pods
+  verbs: ["get", "list", "watch"]
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources:
+  - nodes
+  - nodes/metrics
+  verbs: ["get", "list", "watch"]
+- nonResourceURLs: 
+  - /metrics
+  verbs: ["get"]
+---
+# Source: victoria-metrics-agent/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vmagent-victoria-metrics-agent
+  labels: 
+    app.kubernetes.io/instance: vmagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-agent
+    app.kubernetes.io/version: v1.135.0
+    helm.sh/chart: victoria-metrics-agent-0.31.0
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vmagent-victoria-metrics-agent
+subjects:
+  - kind: ServiceAccount
+    name: vmagent-victoria-metrics-agent
+    namespace: monitoring
+---
+# Source: victoria-metrics-agent/templates/server.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmagent-victoria-metrics-agent
+  namespace: monitoring
+  labels: 
+    app.kubernetes.io/instance: vmagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-agent
+    app.kubernetes.io/version: v1.135.0
+    helm.sh/chart: victoria-metrics-agent-0.31.0
+spec:
+  strategy: {}
+  replicas: 1
+  selector:
+    matchLabels: 
+      app.kubernetes.io/instance: vmagent
+      app.kubernetes.io/name: victoria-metrics-agent
+  template:
+    metadata:
+      labels: 
+        app.kubernetes.io/instance: vmagent
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: victoria-metrics-agent
+      annotations: 
+        checksum/config: ca6f42f3567f4521238c95402bca7ea26e0b74fe6c6d4201265b1f8564ecbc8b
+    spec:
+      serviceAccountName: vmagent-victoria-metrics-agent
+      automountServiceAccountToken: true
+      securityContext: 
+        {}
+      containers:
+        - name: vmagent
+          securityContext: 
+            {}
+          image: victoriametrics/vmagent:v1.135.0
+          imagePullPolicy: IfNotPresent
+          workingDir: /
+          args: 
+            - --envflag.enable
+            - --envflag.prefix=VM_
+            - --httpListenAddr=:8429
+            - --loggerFormat=json
+            - --promscrape.config=/config/scrape/scrape.yml
+            - --remoteWrite.tmpDataPath=/tmpData
+            - --remoteWrite.url=http://vm-victoria-metrics-single-server.monitoring.svc:8428/api/v1/write
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: http
+              containerPort: 8429
+          readinessProbe: 
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe: 
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            tcpSocket:
+              port: http
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: tmpdata
+              mountPath: /tmpData
+            - name: scrape-config
+              mountPath: /config/scrape
+            - name: rw-config
+              mountPath: /config/rw
+            
+      volumes:
+        - name: tmpdata
+          emptyDir: 
+            {}
+        - name: rw-config
+          configMap:
+            name: vmagent-victoria-metrics-agent-rw
+        - name: scrape-config
+          configMap:
+            name: vmagent-victoria-metrics-agent-config
+

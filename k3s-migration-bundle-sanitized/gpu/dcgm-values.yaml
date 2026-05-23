@@ -1,0 +1,10 @@
+serviceMonitor:
+  enabled: false
+
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+nodeSelector:
+  feature.node.kubernetes.io/pci-10de.present: "true"

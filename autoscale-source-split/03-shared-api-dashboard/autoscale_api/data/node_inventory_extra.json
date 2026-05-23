@@ -1,0 +1,56 @@
+{
+  "iccls2": {
+    "cpu": {
+      "model_name": "Intel Xeon Gold 6314U",
+      "base_clock_ghz": 2.3,
+      "max_clock_ghz": 3.4,
+      "cache": {
+        "l1d": "1.5 MiB",
+        "l1i": "1 MiB",
+        "l2": "20 MiB",
+        "l3": "48 MiB"
+      }
+    },
+    "memory": {
+      "ddr_gen": "DDR4",
+      "frequency_mt_s": 3200,
+      "cas_latency": null
+    }
+  },
+  "icclz1": {
+    "cpu": {
+      "model_name": null,
+      "base_clock_ghz": null,
+      "max_clock_ghz": null,
+      "cache": {
+        "l1d": null,
+        "l1i": null,
+        "l2": null,
+        "l3": null
+      }
+    },
+    "memory": {
+      "ddr_gen": null,
+      "frequency_mt_s": null,
+      "cas_latency": null
+    }
+  },
+  "icclz3": {
+    "cpu": {
+      "model_name": "Intel i7-8809G",
+      "base_clock_ghz": 3.1,
+      "max_clock_ghz": 4.2,
+      "cache": {
+        "l1d": null,
+        "l1i": null,
+        "l2": null,
+        "l3": "8 MiB"
+      }
+    },
+    "memory": {
+      "ddr_gen": null,
+      "frequency_mt_s": null,
+      "cas_latency": null
+    }
+  }
+}

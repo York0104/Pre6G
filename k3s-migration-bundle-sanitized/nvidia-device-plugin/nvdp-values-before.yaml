@@ -1,0 +1,239 @@
+COMPUTED VALUES:
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: feature.node.kubernetes.io/pci-10de.present
+          operator: In
+          values:
+          - "true"
+      - matchExpressions:
+        - key: feature.node.kubernetes.io/cpu-model.vendor_id
+          operator: In
+          values:
+          - NVIDIA
+      - matchExpressions:
+        - key: nvidia.com/gpu.present
+          operator: In
+          values:
+          - "true"
+allowDefaultNamespace: false
+cdi:
+  nvidiaHookPath: null
+compatWithCPUManager: null
+config:
+  default: ""
+  fallbackStrategies:
+  - named
+  - single
+  map: {}
+  name: ""
+deviceDiscoveryStrategy: null
+deviceIDStrategy: null
+deviceListStrategy: null
+devicePlugin:
+  enabled: true
+failOnInitError: null
+fullnameOverride: ""
+gdsEnabled: null
+gfd:
+  enabled: true
+  nameOverride: gpu-feature-discovery
+  namespaceOverride: ""
+  noTimestamp: null
+  securityContext:
+    privileged: true
+  sleepInterval: null
+image:
+  pullPolicy: IfNotPresent
+  repository: nvcr.io/nvidia/k8s-device-plugin
+  tag: ""
+imagePullSecrets: []
+migStrategy: null
+mofedEnabled: null
+mps:
+  root: /run/nvidia/mps
+nameOverride: ""
+namespaceOverride: ""
+nfd:
+  enableNodeFeatureApi: false
+  fullnameOverride: ""
+  gc:
+    affinity: {}
+    annotations: {}
+    deploymentAnnotations: {}
+    enable: true
+    interval: 1h
+    metricsPort: 8081
+    nodeSelector: {}
+    podSecurityContext: {}
+    rbac:
+      create: true
+    replicaCount: 1
+    resources: {}
+    serviceAccount:
+      annotations: {}
+      create: true
+      name: null
+    tolerations: []
+  global: {}
+  image:
+    pullPolicy: IfNotPresent
+    repository: registry.k8s.io/nfd/node-feature-discovery
+  imagePullSecrets: []
+  master:
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+            - key: node-role.kubernetes.io/master
+              operator: In
+              values:
+              - ""
+          weight: 1
+        - preference:
+            matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: In
+              values:
+              - ""
+          weight: 1
+    annotations: {}
+    config:
+      extraLabelNs:
+      - nvidia.com
+    crdController: null
+    denyLabelNs: []
+    deploymentAnnotations: {}
+    enable: true
+    enableTaints: false
+    extraLabelNs: []
+    featureApi: null
+    featureRulesController: null
+    instance: null
+    metricsPort: 8081
+    nfdApiParallelism: null
+    nodeSelector: {}
+    podSecurityContext: {}
+    port: 8080
+    rbac:
+      create: true
+    replicaCount: 1
+    resourceLabels: []
+    resources: {}
+    resyncPeriod: null
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+    service:
+      port: 8080
+      type: ClusterIP
+    serviceAccount:
+      annotations: {}
+      create: true
+      name: node-feature-discovery
+    tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/master
+      operator: Equal
+      value: ""
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/control-plane
+      operator: Equal
+      value: ""
+  nameOverride: node-feature-discovery
+  namespaceOverride: ""
+  prometheus:
+    enable: false
+    labels: {}
+  tls:
+    certManager: false
+    enable: false
+  topologyUpdater:
+    affinity: {}
+    annotations: {}
+    config: null
+    createCRDs: false
+    daemonsetAnnotations: {}
+    enable: false
+    kubeletConfigPath: null
+    kubeletPodResourcesSockPath: null
+    kubeletStateDir: /var/lib/kubelet
+    metricsPort: 8081
+    nodeSelector: {}
+    podSecurityContext: {}
+    podSetFingerprint: true
+    rbac:
+      create: true
+    resources: {}
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 0
+    serviceAccount:
+      annotations: {}
+      create: true
+      name: null
+    tolerations: []
+    updateInterval: 60s
+    watchNamespace: '*'
+  worker:
+    affinity: {}
+    annotations: {}
+    config:
+      sources:
+        pci:
+          deviceClassWhitelist:
+          - "02"
+          - "03"
+          deviceLabelFields:
+          - vendor
+    daemonsetAnnotations: {}
+    enable: true
+    metricsPort: 8081
+    mountUsrSrc: false
+    nodeSelector: {}
+    podSecurityContext: {}
+    priorityClassName: ""
+    rbac:
+      create: true
+    resources: {}
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+    serviceAccount:
+      annotations: {}
+      create: true
+      name: null
+    tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/control-plane
+      operator: Exists
+nodeSelector: {}
+nvidiaDriverRoot: null
+podAnnotations: {}
+podSecurityContext: {}
+priorityClassName: system-node-critical
+resources: {}
+runtimeClassName: null
+securityContext: {}
+selectorLabelsOverride: {}
+tolerations:
+- effect: NoSchedule
+  key: node-role.kubernetes.io/control-plane
+  operator: Exists
+updateStrategy:
+  type: RollingUpdate

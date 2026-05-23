@@ -1,0 +1,283 @@
+COMPUTED VALUES:
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: feature.node.kubernetes.io/pci-10de.present
+          operator: In
+          values:
+          - "true"
+      - matchExpressions:
+        - key: feature.node.kubernetes.io/cpu-model.vendor_id
+          operator: In
+          values:
+          - NVIDIA
+      - matchExpressions:
+        - key: nvidia.com/gpu.present
+          operator: In
+          values:
+          - "true"
+allowDefaultNamespace: false
+cdi: {}
+config:
+  default: default
+  fallbackStrategies:
+  - named
+  - single
+  map: {}
+  name: gpu-sharing-config
+deviceDiscoveryStrategy: nvml
+devicePlugin:
+  enabled: true
+fullnameOverride: ""
+gfd:
+  enabled: true
+  nameOverride: gpu-feature-discovery
+  namespaceOverride: ""
+  securityContext:
+    privileged: true
+image:
+  pullPolicy: IfNotPresent
+  repository: nvcr.io/nvidia/k8s-device-plugin
+  tag: ""
+imagePullSecrets: []
+mps:
+  root: /run/nvidia/mps
+nameOverride: ""
+namespaceOverride: ""
+nfd:
+  enableNodeFeatureApi: false
+  featureGates:
+    NodeFeatureGroupAPI: false
+  fullnameOverride: ""
+  gc:
+    affinity: {}
+    annotations: {}
+    deploymentAnnotations: {}
+    enable: true
+    extraArgs: []
+    extraEnvs: []
+    hostNetwork: false
+    interval: 1h
+    metricsPort: 8081
+    nodeSelector: {}
+    podSecurityContext: {}
+    rbac:
+      create: true
+    replicaCount: 1
+    resources:
+      limits:
+        memory: 1Gi
+      requests:
+        cpu: 10m
+        memory: 128Mi
+    serviceAccount:
+      annotations: {}
+      create: true
+    tolerations: []
+  global: {}
+  image:
+    pullPolicy: IfNotPresent
+    repository: registry.k8s.io/nfd/node-feature-discovery
+  imagePullSecrets: []
+  master:
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+            - key: node-role.kubernetes.io/master
+              operator: In
+              values:
+              - ""
+          weight: 1
+        - preference:
+            matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: In
+              values:
+              - ""
+          weight: 1
+    annotations: {}
+    config:
+      extraLabelNs:
+      - nvidia.com
+    denyLabelNs: []
+    deploymentAnnotations: {}
+    enable: true
+    enableTaints: false
+    extraArgs: []
+    extraEnvs: []
+    extraLabelNs: []
+    healthPort: 8082
+    hostNetwork: false
+    livenessProbe:
+      grpc:
+        port: 8082
+    metricsPort: 8081
+    nodeSelector: {}
+    podSecurityContext: {}
+    port: 8080
+    rbac:
+      create: true
+    readinessProbe:
+      failureThreshold: 10
+      grpc:
+        port: 8082
+    replicaCount: 1
+    resourceLabels: []
+    resources:
+      limits:
+        memory: 4Gi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+    service:
+      port: 8080
+      type: ClusterIP
+    serviceAccount:
+      annotations: {}
+      create: true
+      name: node-feature-discovery
+    startupProbe:
+      failureThreshold: 30
+      grpc:
+        port: 8082
+    tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/master
+      operator: Equal
+      value: ""
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/control-plane
+      operator: Equal
+      value: ""
+  nameOverride: node-feature-discovery
+  namespaceOverride: ""
+  priorityClassName: ""
+  prometheus:
+    enable: false
+    labels: {}
+    scrapeInterval: 10s
+  tls:
+    certManager: false
+    enable: false
+  topologyUpdater:
+    affinity: {}
+    annotations: {}
+    createCRDs: false
+    daemonsetAnnotations: {}
+    enable: false
+    extraArgs: []
+    extraEnvs: []
+    healthPort: 8082
+    hostNetwork: false
+    kubeletStateDir: /var/lib/kubelet
+    livenessProbe:
+      grpc:
+        port: 8082
+      initialDelaySeconds: 10
+    metricsPort: 8081
+    nodeSelector: {}
+    podSecurityContext: {}
+    podSetFingerprint: true
+    rbac:
+      create: true
+    readinessProbe:
+      failureThreshold: 10
+      grpc:
+        port: 8082
+      initialDelaySeconds: 5
+    resources:
+      limits:
+        memory: 60Mi
+      requests:
+        cpu: 50m
+        memory: 40Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 0
+    serviceAccount:
+      annotations: {}
+      create: true
+    tolerations: []
+    updateInterval: 60s
+    watchNamespace: '*'
+  worker:
+    affinity: {}
+    annotations: {}
+    config:
+      sources:
+        pci:
+          deviceClassWhitelist:
+          - "02"
+          - "03"
+          deviceLabelFields:
+          - vendor
+    daemonsetAnnotations: {}
+    enable: true
+    extraArgs: []
+    extraEnvs: []
+    healthPort: 8082
+    hostNetwork: false
+    livenessProbe:
+      grpc:
+        port: 8082
+      initialDelaySeconds: 10
+    metricsPort: 8081
+    mountUsrSrc: false
+    nodeSelector: {}
+    podSecurityContext: {}
+    priorityClassName: ""
+    rbac:
+      create: true
+    readinessProbe:
+      failureThreshold: 10
+      grpc:
+        port: 8082
+      initialDelaySeconds: 5
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        cpu: 5m
+        memory: 64Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+    serviceAccount:
+      annotations: {}
+      create: true
+    tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/control-plane
+      operator: Exists
+nodeSelector: {}
+podAnnotations: {}
+podSecurityContext: {}
+priorityClassName: system-node-critical
+resources: {}
+securityContext: {}
+selectorLabelsOverride: {}
+tolerations:
+- effect: NoSchedule
+  key: node-role.kubernetes.io/control-plane
+  operator: Exists
+updateStrategy:
+  type: RollingUpdate

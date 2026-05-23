@@ -1,0 +1,29 @@
+# Private handoff files: do not commit to any repository.
+current-lab-handoff-private/
+
+# Common secrets / credentials.
+*.env
+.env
+*.key
+*.pem
+id_ed25519*
+openwrt_ap_ed25519*
+kubeconfig
+ssh_config
+*token*
+*secret*
+!k3s-migration-bundle-sanitized/secrets-reference.README.md
+
+# Local image archives and large runtime bundles.
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+gpu-tempctl-lab/
+
+# Build/cache artifacts.
+__pycache__/
+*.pyc
+node_modules/
+dist/
+*.log

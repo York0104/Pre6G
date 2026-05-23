@@ -1,0 +1,35 @@
+NAME: node-exporter
+LAST DEPLOYED: Sat Apr 11 16:05:15 2026
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 3
+DESCRIPTION: Upgrade complete
+RESOURCES:
+==> v1/ServiceAccount
+NAME            SECRETS   AGE
+node-exporter   0         67d
+
+==> v1/Service
+NAME            TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+node-exporter   ClusterIP   10.107.226.5   <none>        9100/TCP   67d
+
+==> v1/DaemonSet
+NAME            DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+node-exporter   6         6         4       6            4           kubernetes.io/os=linux   67d
+
+==> v1/Pod(related)
+NAME                  READY   STATUS    RESTARTS        AGE
+node-exporter-f7h86   0/1     Evicted   0               3m39s
+node-exporter-jwll2   1/1     Running   3 (6d9h ago)    37d
+node-exporter-rv6t2   1/1     Running   2 (25d ago)     37d
+node-exporter-rzkpx   1/1     Running   41 (3d5h ago)   37d
+node-exporter-slkxv   1/1     Running   7 (2d15h ago)   37d
+node-exporter-sx8wt   0/1     Evicted   0               3m39s
+
+
+TEST SUITE: None
+NOTES:
+1. Get the application URL by running these commands:
+  export POD_NAME=$(kubectl get pods --namespace monitoring -l "app.kubernetes.io/name=prometheus-node-exporter,app.kubernetes.io/instance=node-exporter" -o jsonpath="{.items[0].metadata.name}")
+  echo "Visit http://127.0.0.1:9100 to use your application"
+  kubectl port-forward --namespace monitoring $POD_NAME 9100

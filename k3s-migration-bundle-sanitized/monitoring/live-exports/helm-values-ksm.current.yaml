@@ -1,0 +1,242 @@
+COMPUTED VALUES:
+affinity: {}
+annotations: {}
+automountServiceAccountToken: true
+autosharding:
+  enabled: false
+collectors:
+- certificatesigningrequests
+- configmaps
+- cronjobs
+- daemonsets
+- deployments
+- endpointslices
+- horizontalpodautoscalers
+- ingresses
+- jobs
+- leases
+- limitranges
+- mutatingwebhookconfigurations
+- namespaces
+- networkpolicies
+- nodes
+- persistentvolumeclaims
+- persistentvolumes
+- poddisruptionbudgets
+- pods
+- replicasets
+- replicationcontrollers
+- resourcequotas
+- secrets
+- services
+- statefulsets
+- storageclasses
+- validatingwebhookconfigurations
+- volumeattachments
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+containers: []
+customLabels: {}
+customResourceState:
+  config: {}
+  create: true
+  enabled: false
+  key: config.yaml
+  name: ""
+dnsConfig: {}
+dnsPolicy: ClusterFirst
+env: []
+extraArgs: []
+extraManifests: []
+fullnameOverride: kube-state-metrics
+global:
+  imagePullSecrets: []
+  imageRegistry: ""
+hostNetwork: false
+image:
+  pullPolicy: IfNotPresent
+  registry: registry.k8s.io
+  repository: kube-state-metrics/kube-state-metrics
+  sha: ""
+  tag: ""
+imagePullSecrets: []
+initContainers: []
+kubeRBACProxy:
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+  enabled: false
+  extraArgs: []
+  ignoreProbePaths: true
+  image:
+    pullPolicy: IfNotPresent
+    registry: quay.io
+    repository: brancz/kube-rbac-proxy
+    sha: ""
+    tag: v0.21.0
+  port: 9090
+  proxyEndpointsPort: 8888
+  resources: {}
+  volumeMounts: []
+kubeconfig:
+  enabled: false
+labels: {}
+livenessProbe:
+  failureThreshold: 3
+  httpGet:
+    httpHeaders: []
+    scheme: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 5
+metricAllowlist: []
+metricAnnotationsAllowList: []
+metricDenylist: []
+metricLabelsAllowlist: []
+namespaceOverride: ""
+namespaces: ""
+namespacesDenylist: ""
+networkPolicy:
+  enabled: false
+  flavor: kubernetes
+nodeSelector: {}
+podAnnotations: {}
+podDisruptionBudget: {}
+podLabels: {}
+prometheus:
+  monitor:
+    additionalLabels: {}
+    annotations: {}
+    enabled: false
+    http:
+      bearerTokenFile: ""
+      bearerTokenSecret: {}
+      enableHttp2: false
+      honorLabels: false
+      interval: ""
+      metricRelabelings: []
+      proxyUrl: ""
+      relabelings: []
+      scheme: ""
+      scrapeTimeout: ""
+      tlsConfig: {}
+    jobLabel: ""
+    labelLimit: 0
+    labelNameLengthLimit: 0
+    labelValueLengthLimit: 0
+    metrics:
+      bearerTokenFile: ""
+      bearerTokenSecret: {}
+      enableHttp2: false
+      honorLabels: false
+      interval: ""
+      metricRelabelings: []
+      proxyUrl: ""
+      relabelings: []
+      scheme: ""
+      scrapeTimeout: ""
+      tlsConfig: {}
+    namespace: ""
+    namespaceSelector: []
+    podTargetLabels: []
+    sampleLimit: 0
+    selectorOverride: {}
+    targetLabels: []
+    targetLimit: 0
+  scrapeconfig:
+    additionalLabels: {}
+    annotations: {}
+    enableHttp2: false
+    enabled: false
+    honorLabels: true
+    jobName: kube-state-metrics
+    labelLimit: 0
+    labelNameLengthLimit: 0
+    labelValueLengthLimit: 0
+    metricRelabelings: []
+    proxyUrl: ""
+    relabelings: []
+    sampleLimit: 0
+    scheme: ""
+    scrapeInterval: ""
+    scrapeTimeout: ""
+    staticConfigLabels: {}
+    targetLimit: 0
+    tlsConfig: {}
+prometheusScrape: true
+rbac:
+  create: true
+  extraRules: []
+  useClusterRole: true
+readinessProbe:
+  failureThreshold: 3
+  httpGet:
+    httpHeaders: []
+    scheme: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 5
+releaseLabel: false
+releaseNamespace: false
+replicas: 1
+resources: {}
+revisionHistoryLimit: 10
+securityContext:
+  enabled: true
+  fsGroup: 65534
+  runAsGroup: 65534
+  runAsNonRoot: true
+  runAsUser: 65534
+  seccompProfile:
+    type: RuntimeDefault
+selectorOverride: {}
+selfMonitor:
+  enabled: false
+service:
+  annotations: {}
+  clusterIP: ""
+  ipDualStack:
+    enabled: false
+    ipFamilies:
+    - IPv6
+    - IPv4
+    ipFamilyPolicy: PreferDualStack
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  nodePort: 0
+  port: 8080
+  type: ClusterIP
+serviceAccount:
+  annotations: {}
+  automountServiceAccountToken: true
+  create: true
+  imagePullSecrets: []
+startupProbe:
+  enabled: false
+  failureThreshold: 3
+  httpGet:
+    httpHeaders: []
+    scheme: http
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 5
+tolerations:
+- operator: Exists
+topologySpreadConstraints: []
+verticalPodAutoscaler:
+  controlledResources: []
+  enabled: false
+  maxAllowed: {}
+  minAllowed: {}
+volumeMounts: []
+volumes: []

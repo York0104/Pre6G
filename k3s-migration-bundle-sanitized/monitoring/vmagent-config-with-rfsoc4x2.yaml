@@ -1,0 +1,88 @@
+apiVersion: v1
+data:
+  scrape.yml: |
+    global:
+      scrape_interval: 10s
+    scrape_configs:
+      - job_name: vmagent-self
+        static_configs:
+          - targets:
+              - localhost:8429
+
+      - job_name: kube-state-metrics
+        static_configs:
+          - targets:
+              - kube-state-metrics.monitoring.svc:8080
+
+      - job_name: node-exporter
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - action: keep
+            source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name]
+            regex: monitoring;node-exporter
+
+      - job_name: kubelet-cadvisor
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        metrics_path: /metrics/cadvisor
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        tls_config:
+          insecure_skip_verify: true
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: instance
+
+      - job_name: dcgm-exporter
+        scrape_interval: 1s
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - gpu-monitoring
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: dcgm-exporter
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            regex: "9400"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: kubernetes_node
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: kubernetes_pod
+
+      - job_name: "rfsoc4x2-node-exporter"
+        static_configs:
+          - targets:
+              - "100.91.37.32:9100"
+            labels:
+              node: "rfsoc4x2-pynq"
+              role: "external-rfsoc"
+              arch: "aarch64"
+              device: "RFSoC4x2"
+              access: "tailscale"
+              lab_ip: "192.168.100.217"
+              k8s_node: "false"
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"scrape.yml":"global:\n  scrape_interval: 10s\nscrape_configs:\n  - job_name: vmagent-self\n    static_configs:\n      - targets:\n          - localhost:8429\n\n  - job_name: kube-state-metrics\n    static_configs:\n      - targets:\n          - kube-state-metrics.monitoring.svc:8080\n\n  - job_name: node-exporter\n    kubernetes_sd_configs:\n      - role: endpoints\n    relabel_configs:\n      - action: keep\n        source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name]\n        regex: monitoring;node-exporter\n\n  - job_name: kubelet-cadvisor\n    kubernetes_sd_configs:\n      - role: node\n    scheme: https\n    metrics_path: /metrics/cadvisor\n    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token\n    tls_config:\n      insecure_skip_verify: true\n      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt\n    relabel_configs:\n      - source_labels: [__meta_kubernetes_node_name]\n        target_label: instance\n\n  - job_name: dcgm-exporter\n    scrape_interval: 1s\n    kubernetes_sd_configs:\n      - role: pod\n        namespaces:\n          names:\n            - gpu-monitoring\n    relabel_configs:\n      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]\n        regex: dcgm-exporter\n        action: keep\n      - source_labels: [__meta_kubernetes_pod_container_port_number]\n        regex: \"9400\"\n        action: keep\n      - source_labels: [__meta_kubernetes_pod_node_name]\n        target_label: kubernetes_node\n      - source_labels: [__meta_kubernetes_namespace]\n        target_label: kubernetes_namespace\n      - source_labels: [__meta_kubernetes_pod_name]\n        target_label: kubernetes_pod\n\n  - job_name: \"rfsoc4x2-node-exporter\"\n    static_configs:\n      - targets:\n          - \"100.91.37.32:9100\"\n        labels:\n          node: \"rfsoc4x2-pynq\"\n          role: \"external-rfsoc\"\n          arch: \"aarch64\"\n          device: \"RFSoC4x2\"\n          access: \"tailscale\"\n          lab_ip: \"192.168.100.217\"\n          k8s_node: \"false\"\n"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"vmagent-victoria-metrics-agent-config","namespace":"monitoring"}}
+    meta.helm.sh/release-name: vmagent
+    meta.helm.sh/release-namespace: monitoring
+  creationTimestamp: "2026-03-12T14:31:25Z"
+  labels:
+    app.kubernetes.io/instance: vmagent
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-agent
+    app.kubernetes.io/version: v1.135.0
+    helm.sh/chart: victoria-metrics-agent-0.31.0
+  name: vmagent-victoria-metrics-agent-config
+  namespace: monitoring
+  resourceVersion: "16724880"
+  uid: 69e7f58b-531f-4110-8df6-5d1b858515f3

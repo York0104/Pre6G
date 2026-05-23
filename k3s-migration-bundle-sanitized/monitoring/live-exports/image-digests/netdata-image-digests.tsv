@@ -1,0 +1,8 @@
+netdata-child-4jczx	netdata=netdata/netdata:v2.9.0|	
+netdata-child-8h8n5	netdata=netdata/netdata:v2.9.0|	docker.io/netdata/netdata@sha256:4cbe33f6fc317a7f5c453c8b4997316e4e320a7abd8cc921cecba98f2a5cbcf5;
+netdata-child-d7htd	netdata=netdata/netdata:v2.9.0|	docker.io/netdata/netdata@sha256:4cbe33f6fc317a7f5c453c8b4997316e4e320a7abd8cc921cecba98f2a5cbcf5;
+netdata-child-h9wkh	netdata=netdata/netdata:v2.9.0|	docker.io/netdata/netdata@sha256:4cbe33f6fc317a7f5c453c8b4997316e4e320a7abd8cc921cecba98f2a5cbcf5;
+netdata-child-mz8kp	netdata=netdata/netdata:v2.9.0|	docker.io/netdata/netdata@sha256:4cbe33f6fc317a7f5c453c8b4997316e4e320a7abd8cc921cecba98f2a5cbcf5;
+netdata-child-qbhx7	netdata=netdata/netdata:v2.9.0|	
+netdata-k8s-state-5fc7f88ccd-j6dvg	netdata=netdata/netdata:v2.9.0|	docker.io/netdata/netdata@sha256:4cbe33f6fc317a7f5c453c8b4997316e4e320a7abd8cc921cecba98f2a5cbcf5;
+netdata-parent-79f7dff9cb-r9xdf	netdata=netdata/netdata:v2.9.0|	docker.io/netdata/netdata@sha256:4cbe33f6fc317a7f5c453c8b4997316e4e320a7abd8cc921cecba98f2a5cbcf5;

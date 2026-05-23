@@ -1,0 +1,210 @@
+COMPUTED VALUES:
+affinity: {}
+commonLabels: {}
+configmaps: []
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+daemonsetAnnotations: {}
+dnsConfig: {}
+dnsPolicy: ""
+endpoints: []
+env: {}
+extraArgs:
+- --collector.perf
+- --collector.perf.cpus=0-23
+- --collector.sysctl
+- --collector.sysctl.include=kernel.perf_event_paranoid
+extraHostVolumeMounts: []
+extraInitContainers: []
+extraManifests: []
+extraVolumeMounts: []
+extraVolumes: []
+fullnameOverride: node-exporter
+global:
+  imagePullSecrets: []
+  imageRegistry: ""
+hostIPC: false
+hostNetwork: true
+hostPID: true
+hostProcFsMount:
+  mountPropagation: ""
+hostRootFsMount:
+  enabled: true
+  mountPropagation: HostToContainer
+hostSysFsMount:
+  mountPropagation: ""
+image:
+  digest: ""
+  pullPolicy: IfNotPresent
+  registry: quay.io
+  repository: prometheus/node-exporter
+  tag: ""
+imagePullSecrets: []
+kubeRBACProxy:
+  containerSecurityContext: {}
+  enableHostPort: false
+  enableProxyEndpointsHostPort: false
+  enabled: false
+  env: {}
+  extraArgs: []
+  extraVolumeMounts: []
+  image:
+    pullPolicy: IfNotPresent
+    registry: quay.io
+    repository: brancz/kube-rbac-proxy
+    sha: ""
+    tag: v0.21.0
+  port: 8100
+  portName: http
+  proxyEndpointsPort: 8888
+  resources: {}
+  tls:
+    enabled: false
+    tlsClientAuth: false
+livenessProbe:
+  failureThreshold: 3
+  httpGet:
+    httpHeaders: []
+    scheme: http
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 1
+nameOverride: ""
+namespaceOverride: ""
+networkPolicy:
+  enabled: false
+nodeSelector:
+  kubernetes.io/os: linux
+podAnnotations:
+  cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+podLabels: {}
+prometheus:
+  monitor:
+    additionalLabels: {}
+    apiVersion: ""
+    attachMetadata:
+      node: false
+    basicAuth: {}
+    enabled: false
+    interval: ""
+    jobLabel: ""
+    labelLimit: 0
+    labelNameLengthLimit: 0
+    labelValueLengthLimit: 0
+    metricRelabelings: []
+    namespace: ""
+    podTargetLabels: []
+    proxyUrl: ""
+    relabelings: []
+    sampleLimit: 0
+    scheme: http
+    scrapeTimeout: 10s
+    selectorOverride: {}
+    targetLabels: []
+    targetLimit: 0
+    tlsConfig: {}
+  podMonitor:
+    additionalLabels: {}
+    apiVersion: ""
+    attachMetadata:
+      node: false
+    authorization: {}
+    basicAuth: {}
+    bearerTokenSecret: {}
+    enableHttp2: ""
+    enabled: false
+    filterRunning: ""
+    followRedirects: ""
+    honorLabels: true
+    honorTimestamps: true
+    interval: ""
+    jobLabel: ""
+    labelLimit: 0
+    labelNameLengthLimit: 0
+    labelValueLengthLimit: 0
+    metricRelabelings: []
+    namespace: ""
+    oauth2: {}
+    params: {}
+    path: /metrics
+    podTargetLabels: []
+    proxyUrl: ""
+    relabelings: []
+    sampleLimit: 0
+    scheme: http
+    scrapeTimeout: ""
+    selectorOverride: {}
+    targetLimit: 0
+    tlsConfig: {}
+rbac:
+  create: true
+readinessProbe:
+  failureThreshold: 3
+  httpGet:
+    httpHeaders: []
+    scheme: http
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 1
+releaseLabel: false
+resources: {}
+revisionHistoryLimit: 10
+secrets: []
+securityContext:
+  fsGroup: 65534
+  runAsGroup: 65534
+  runAsNonRoot: true
+  runAsUser: 65534
+service:
+  annotations:
+    prometheus.io/scrape: "true"
+  clusterIP: ""
+  enabled: true
+  externalTrafficPolicy: ""
+  internalTrafficPolicy: ""
+  ipDualStack:
+    enabled: false
+    ipFamilies:
+    - IPv6
+    - IPv4
+    ipFamilyPolicy: PreferDualStack
+  labels: {}
+  listenOnAllInterfaces: true
+  port: 9100
+  portName: metrics
+  servicePort: ""
+  targetPort: 9100
+  type: ClusterIP
+serviceAccount:
+  annotations: {}
+  automountServiceAccountToken: false
+  create: true
+  imagePullSecrets: []
+sidecarHostVolumeMounts: []
+sidecarVolumeMount: []
+sidecars: []
+terminationMessageParams:
+  enabled: false
+  terminationMessagePath: /dev/termination-log
+  terminationMessagePolicy: File
+tlsSecret:
+  caItem: ""
+  certItem: tls.crt
+  enabled: false
+  keyItem: tls.key
+  secretName: prometheus-node-exporter-tls
+  volumeName: prometheus-node-exporter-tls
+tolerations:
+- operator: Exists
+updateStrategy:
+  rollingUpdate:
+    maxUnavailable: 1
+  type: RollingUpdate
+version: ""
+verticalPodAutoscaler:
+  controlledResources: []
+  enabled: false
+  maxAllowed: {}
+  minAllowed: {}

@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  annotations:
+    deprecated.daemonset.template.generation: "2"
+    meta.helm.sh/release-name: dcgm-exporter
+    meta.helm.sh/release-namespace: gpu-monitoring
+  creationTimestamp: "2026-03-13T08:34:38Z"
+  generation: 2
+  labels:
+    app.kubernetes.io/component: dcgm-exporter
+    app.kubernetes.io/instance: dcgm-exporter
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: dcgm-exporter
+    app.kubernetes.io/version: 4.8.1
+    helm.sh/chart: dcgm-exporter-4.8.1
+  name: dcgm-exporter
+  namespace: gpu-monitoring
+  resourceVersion: "2530913"
+  uid: 45654e3d-9e5a-4759-b636-afb0847a2c00
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: dcgm-exporter
+      app.kubernetes.io/instance: dcgm-exporter
+      app.kubernetes.io/name: dcgm-exporter
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app.kubernetes.io/component: dcgm-exporter
+        app.kubernetes.io/instance: dcgm-exporter
+        app.kubernetes.io/name: dcgm-exporter
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - -f
+        - /etc/dcgm-exporter/default-counters.csv
+        - -c
+        - "1000"
+        env:
+        - name: DCGM_EXPORTER_KUBERNETES
+          value: "true"
+        - name: DCGM_EXPORTER_LISTEN
+          value: :9400
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        image: nvcr.io/nvidia/k8s/dcgm-exporter:4.5.2-4.8.1-distroless
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 9400
+            scheme: HTTP
+          initialDelaySeconds: 45
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: exporter
+        ports:
+        - containerPort: 9400
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 9400
+            scheme: HTTP
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 200m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+            - SYS_ADMIN
+            drop:
+            - ALL
+          runAsNonRoot: false
+          runAsUser: 0
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/lib/kubelet/pod-resources
+          name: pod-gpu-resources
+          readOnly: true
+        - mountPath: /etc/dcgm-exporter/default-counters.csv
+          name: exporter-metrics-volume
+          subPath: default-counters.csv
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        feature.node.kubernetes.io/pci-10de.present: "true"
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: dcgm-exporter
+      serviceAccountName: dcgm-exporter
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      volumes:
+      - hostPath:
+          path: /var/lib/kubelet/pod-resources
+          type: ""
+        name: pod-gpu-resources
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: metrics
+            path: default-counters.csv
+          name: exporter-metrics-config-map
+        name: exporter-metrics-volume
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+status:
+  currentNumberScheduled: 2
+  desiredNumberScheduled: 2
+  numberAvailable: 1
+  numberMisscheduled: 0
+  numberReady: 1
+  numberUnavailable: 1
+  observedGeneration: 2
+  updatedNumberScheduled: 2

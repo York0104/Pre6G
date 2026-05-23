@@ -1,0 +1,29 @@
+[Unit]
+Description=Pre6G AutoScale API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=iccls2
+Group=iccls2
+
+WorkingDirectory=/home/iccls2/AutoScale/autoscale_api
+
+Environment="HOME=/home/iccls2"
+Environment="KUBECONFIG=/home/iccls2/.kube/config"
+Environment="PYTHONPATH=/home/iccls2/AutoScale:/home/iccls2/AutoScale/autoscale_api"
+EnvironmentFile=-/home/iccls2/AutoScale/systemd/autoscale-api.env
+
+Environment="VM_URL=http://100.68.32.118:31888"
+Environment="NETDATA_PARENT_BASE_URL=http://100.68.32.118:32163"
+Environment="NETDATA_URL=http://100.68.32.118:32163"
+Environment="NETDATA_CHILD_URL=http://100.68.32.118:32163"
+
+ExecStart=/home/iccls2/AutoScale/iccl/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

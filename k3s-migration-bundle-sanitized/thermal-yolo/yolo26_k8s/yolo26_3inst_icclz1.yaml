@@ -1,0 +1,188 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yolo26n-focus
+  namespace: intent-lab
+  labels:
+    app: yolo26n
+    role: focus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yolo26n
+      role: focus
+  template:
+    metadata:
+      labels:
+        app: yolo26n
+        role: focus
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: icclz1
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: yolo26
+          image: local/yolo26n:0.1
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 18080
+              hostPort: 18081
+              protocol: TCP
+          env:
+            - name: YOLO26_SERVICE_ROLE
+              value: "focus"
+            - name: YOLO26_MODEL
+              value: "yolo26n.pt"
+            - name: YOLO26_DEVICE
+              value: "cuda:0"
+            - name: YOLO26_IMGSZ
+              value: "640"
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "4Gi"
+              nvidia.com/gpu.shared: "1"
+            limits:
+              cpu: "2000m"
+              memory: "6Gi"
+              nvidia.com/gpu.shared: "1"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 18080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 18080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yolo26n-bg-1
+  namespace: intent-lab
+  labels:
+    app: yolo26n
+    role: bg-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yolo26n
+      role: bg-1
+  template:
+    metadata:
+      labels:
+        app: yolo26n
+        role: bg-1
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: icclz1
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: yolo26
+          image: local/yolo26n:0.1
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 18080
+              hostPort: 18082
+              protocol: TCP
+          env:
+            - name: YOLO26_SERVICE_ROLE
+              value: "background-1"
+            - name: YOLO26_MODEL
+              value: "yolo26n.pt"
+            - name: YOLO26_DEVICE
+              value: "cuda:0"
+            - name: YOLO26_IMGSZ
+              value: "640"
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "4Gi"
+              nvidia.com/gpu.shared: "1"
+            limits:
+              cpu: "2000m"
+              memory: "6Gi"
+              nvidia.com/gpu.shared: "1"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 18080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 18080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yolo26n-bg-2
+  namespace: intent-lab
+  labels:
+    app: yolo26n
+    role: bg-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yolo26n
+      role: bg-2
+  template:
+    metadata:
+      labels:
+        app: yolo26n
+        role: bg-2
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: icclz1
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: yolo26
+          image: local/yolo26n:0.1
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 18080
+              hostPort: 18083
+              protocol: TCP
+          env:
+            - name: YOLO26_SERVICE_ROLE
+              value: "background-2"
+            - name: YOLO26_MODEL
+              value: "yolo26n.pt"
+            - name: YOLO26_DEVICE
+              value: "cuda:0"
+            - name: YOLO26_IMGSZ
+              value: "640"
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "4Gi"
+              nvidia.com/gpu.shared: "1"
+            limits:
+              cpu: "2000m"
+              memory: "6Gi"
+              nvidia.com/gpu.shared: "1"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 18080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 18080
+            initialDelaySeconds: 20
+            periodSeconds: 10

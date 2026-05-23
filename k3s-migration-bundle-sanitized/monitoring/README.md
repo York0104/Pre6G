@@ -1,0 +1,24 @@
+# Monitoring
+
+本資料夾保存 VictoriaMetrics、vmagent、node-exporter、kube-state-metrics 與 scrape config 參考。
+
+## 主要檔案
+
+| 路徑 | 說明 |
+| --- | --- |
+| `scrape.yml` | vmagent scrape source 參考。 |
+| `vmagent-config.current.yaml` | 來源 cluster 匯出的目前 vmagent ConfigMap。 |
+| `vmagent-config-auto-discovery.yaml` | 自動 discovery 版 scrape config 參考。 |
+| `vmagent-config-gpu-1s.yaml` | GPU 1 秒 scrape interval 參考。 |
+| `vmagent-config-with-rfsoc4x2.yaml` | 含 RFSoC scrape target 的 vmagent config。 |
+| `vmagent-config-before-rfsoc4x2-lab.yaml` | RFSoC 加入前/過渡版本參考。 |
+| `live-exports/helm-values-*.current.yaml` | 來源 cluster 匯出的 Helm values。 |
+| `live-exports/helm-manifests/` | Helm rendered manifests；用於 diff/debug，不建議作為第一安裝來源。 |
+| `live-exports/helm-status/` | `helm status` 匯出。 |
+| `live-exports/image-digests/` | monitoring components image digest 參考。 |
+
+## 重建後驗證
+
+- vmagent `/targets` 應包含 `node-exporter`、`kubelet-cadvisor`、`dcgm-exporter`、`rfsoc4x2-node-exporter`。
+- VictoriaMetrics 應接受 remote write：`http://vm-victoria-metrics-single-server.monitoring.svc:8428/api/v1/write`。
+- PromQL 應可查詢 `node_cpu_seconds_total`、`container_cpu_usage_seconds_total`、`DCGM_FI_DEV_GPU_TEMP`。

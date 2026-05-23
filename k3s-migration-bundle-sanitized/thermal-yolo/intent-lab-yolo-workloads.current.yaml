@@ -1,0 +1,281 @@
+apiVersion: v1
+items:
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    annotations:
+      deployment.kubernetes.io/revision: "4"
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"yolo26n","exp":"task3-saturation","role":"background"},"name":"yolo26n-task3-bg","namespace":"intent-lab"},"spec":{"replicas":3,"selector":{"matchLabels":{"app":"yolo26n","exp":"task3-saturation","role":"background"}},"strategy":{"type":"Recreate"},"template":{"metadata":{"labels":{"app":"yolo26n","exp":"task3-saturation","role":"background"}},"spec":{"containers":[{"env":[{"name":"YOLO26_SERVICE_ROLE","value":"background"},{"name":"YOLO_MODEL","value":"yolo26m.pt"},{"name":"YOLO26_MODEL","value":"yolo26m.pt"},{"name":"YOLO26_DEVICE","value":"cuda:0"},{"name":"YOLO_IMGSZ","value":"640"},{"name":"YOLO26_IMGSZ","value":"640"},{"name":"POD_NAME","valueFrom":{"fieldRef":{"fieldPath":"metadata.name"}}},{"name":"NODE_NAME","valueFrom":{"fieldRef":{"fieldPath":"spec.nodeName"}}}],"image":"local/yolo26n:0.5","imagePullPolicy":"Never","name":"yolo26","ports":[{"containerPort":18080}],"resources":{"limits":{"cpu":"2000m","memory":"6Gi","nvidia.com/gpu.shared":"1"},"requests":{"cpu":"1000m","memory":"4Gi","nvidia.com/gpu.shared":"1"}}}],"nodeSelector":{"kubernetes.io/hostname":"icclz1"}}}}}
+    creationTimestamp: "2026-04-28T00:59:01Z"
+    generation: 15
+    labels:
+      app: yolo26n
+      exp: task3-saturation
+      role: background
+    name: yolo26n-task3-bg
+    namespace: intent-lab
+    resourceVersion: "11727796"
+    uid: 08784077-9bb4-4aac-974c-6cddbb1f00b2
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 0
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app: yolo26n
+        exp: task3-saturation
+        role: background
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        annotations:
+          kubectl.kubernetes.io/restartedAt: "2026-04-28T17:08:01+08:00"
+        creationTimestamp: null
+        labels:
+          app: yolo26n
+          exp: task3-saturation
+          role: background
+      spec:
+        containers:
+        - env:
+          - name: YOLO26_SERVICE_ROLE
+            value: background
+          - name: YOLO_MODEL
+            value: yolo26m.pt
+          - name: YOLO26_MODEL
+            value: yolo26m.pt
+          - name: YOLO26_DEVICE
+            value: cuda:0
+          - name: YOLO_IMGSZ
+            value: "640"
+          - name: YOLO26_IMGSZ
+            value: "640"
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.name
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: spec.nodeName
+          image: local/yolo26n:0.5
+          imagePullPolicy: Never
+          name: yolo26
+          ports:
+          - containerPort: 18080
+            protocol: TCP
+          resources:
+            limits:
+              cpu: "2"
+              memory: 6Gi
+              nvidia.com/gpu.shared: "1"
+            requests:
+              cpu: "1"
+              memory: 4Gi
+              nvidia.com/gpu.shared: "1"
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        nodeSelector:
+          kubernetes.io/hostname: icclz1
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+  status:
+    conditions:
+    - lastTransitionTime: "2026-04-28T00:59:01Z"
+      lastUpdateTime: "2026-04-28T09:08:12Z"
+      message: ReplicaSet "yolo26n-task3-bg-86cf68b6d9" has successfully progressed.
+      reason: NewReplicaSetAvailable
+      status: "True"
+      type: Progressing
+    - lastTransitionTime: "2026-04-29T17:57:17Z"
+      lastUpdateTime: "2026-04-29T17:57:17Z"
+      message: Deployment has minimum availability.
+      reason: MinimumReplicasAvailable
+      status: "True"
+      type: Available
+    observedGeneration: 15
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    annotations:
+      deployment.kubernetes.io/revision: "4"
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"yolo26n","exp":"task3-saturation","role":"focus"},"name":"yolo26n-task3-focus","namespace":"intent-lab"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"yolo26n","exp":"task3-saturation","role":"focus"}},"strategy":{"type":"Recreate"},"template":{"metadata":{"labels":{"app":"yolo26n","exp":"task3-saturation","role":"focus"}},"spec":{"containers":[{"env":[{"name":"YOLO26_SERVICE_ROLE","value":"focus"},{"name":"YOLO_MODEL","value":"yolo26m.pt"},{"name":"YOLO26_MODEL","value":"yolo26m.pt"},{"name":"YOLO26_DEVICE","value":"cuda:0"},{"name":"YOLO_IMGSZ","value":"640"},{"name":"YOLO26_IMGSZ","value":"640"},{"name":"POD_NAME","valueFrom":{"fieldRef":{"fieldPath":"metadata.name"}}},{"name":"NODE_NAME","valueFrom":{"fieldRef":{"fieldPath":"spec.nodeName"}}}],"image":"local/yolo26n:0.5","imagePullPolicy":"Never","name":"yolo26","ports":[{"containerPort":18080}],"resources":{"limits":{"cpu":"2000m","memory":"6Gi","nvidia.com/gpu.shared":"1"},"requests":{"cpu":"1000m","memory":"4Gi","nvidia.com/gpu.shared":"1"}}}],"nodeSelector":{"kubernetes.io/hostname":"icclz1"}}}}}
+    creationTimestamp: "2026-04-28T00:59:01Z"
+    generation: 26
+    labels:
+      app: yolo26n
+      exp: task3-saturation
+      role: focus
+    name: yolo26n-task3-focus
+    namespace: intent-lab
+    resourceVersion: "18459461"
+    uid: bb49ece4-c7a9-4547-a43a-f5f37fc3ddce
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app: yolo26n
+        exp: task3-saturation
+        role: focus
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        annotations:
+          kubectl.kubernetes.io/restartedAt: "2026-04-28T17:08:01+08:00"
+        creationTimestamp: null
+        labels:
+          app: yolo26n
+          exp: task3-saturation
+          role: focus
+      spec:
+        containers:
+        - env:
+          - name: YOLO26_SERVICE_ROLE
+            value: focus
+          - name: YOLO_MODEL
+            value: yolo26m.pt
+          - name: YOLO26_MODEL
+            value: yolo26m.pt
+          - name: YOLO26_DEVICE
+            value: cuda:0
+          - name: YOLO_IMGSZ
+            value: "640"
+          - name: YOLO26_IMGSZ
+            value: "640"
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.name
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: spec.nodeName
+          image: local/yolo26n:0.5
+          imagePullPolicy: Never
+          name: yolo26
+          ports:
+          - containerPort: 18080
+            protocol: TCP
+          resources:
+            limits:
+              cpu: "2"
+              memory: 6Gi
+              nvidia.com/gpu.shared: "1"
+            requests:
+              cpu: "1"
+              memory: 4Gi
+              nvidia.com/gpu.shared: "1"
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        nodeSelector:
+          kubernetes.io/hostname: icclz1
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+  status:
+    availableReplicas: 1
+    conditions:
+    - lastTransitionTime: "2026-04-28T00:59:01Z"
+      lastUpdateTime: "2026-04-28T09:08:12Z"
+      message: ReplicaSet "yolo26n-task3-focus-6766d57f77" has successfully progressed.
+      reason: NewReplicaSetAvailable
+      status: "True"
+      type: Progressing
+    - lastTransitionTime: "2026-05-22T02:37:54Z"
+      lastUpdateTime: "2026-05-22T02:37:54Z"
+      message: Deployment has minimum availability.
+      reason: MinimumReplicasAvailable
+      status: "True"
+      type: Available
+    observedGeneration: 26
+    readyReplicas: 1
+    replicas: 1
+    updatedReplicas: 1
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"yolo26n","exp":"task3-saturation"},"name":"yolo26n-task3","namespace":"intent-lab"},"spec":{"ports":[{"name":"http","port":18080,"targetPort":18080}],"selector":{"app":"yolo26n","exp":"task3-saturation"},"type":"ClusterIP"}}
+    creationTimestamp: "2026-04-28T00:35:06Z"
+    labels:
+      app: yolo26n
+      exp: task3-saturation
+    name: yolo26n-task3
+    namespace: intent-lab
+    resourceVersion: "11199099"
+    uid: c4b1f856-c693-4f36-99b1-8a478d6036d3
+  spec:
+    clusterIP: 10.108.150.110
+    clusterIPs:
+    - 10.108.150.110
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      port: 18080
+      protocol: TCP
+      targetPort: 18080
+    selector:
+      app: yolo26n
+      exp: task3-saturation
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"yolo26n","exp":"task3-saturation","role":"background"},"name":"yolo26n-task3-bg-svc","namespace":"intent-lab"},"spec":{"ports":[{"name":"http","port":18080,"targetPort":18080}],"selector":{"app":"yolo26n","exp":"task3-saturation","role":"background"},"type":"ClusterIP"}}
+    creationTimestamp: "2026-04-28T02:37:23Z"
+    labels:
+      app: yolo26n
+      exp: task3-saturation
+      role: background
+    name: yolo26n-task3-bg-svc
+    namespace: intent-lab
+    resourceVersion: "11225792"
+    uid: 98c2b232-e976-4058-b73d-3ce5c7a97849
+  spec:
+    clusterIP: 10.109.149.95
+    clusterIPs:
+    - 10.109.149.95
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      port: 18080
+      protocol: TCP
+      targetPort: 18080
+    selector:
+      app: yolo26n
+      exp: task3-saturation
+      role: background
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+kind: List
+metadata:
+  resourceVersion: ""

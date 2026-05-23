@@ -1,0 +1,14 @@
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  calicoNetwork:
+    nodeAddressAutodetectionV4:
+      interface: "tailscale0"
+    ipPools:
+    - cidr: 10.244.0.0/16
+      blockSize: 26
+      encapsulation: VXLAN
+      natOutgoing: Enabled
+      nodeSelector: all()

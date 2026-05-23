@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yolo26n-task3-focus
+  namespace: intent-lab
+  labels:
+    app: yolo26n
+    exp: task3-saturation
+    role: focus
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yolo26n
+      exp: task3-saturation
+      role: focus
+  template:
+    metadata:
+      labels:
+        app: yolo26n
+        exp: task3-saturation
+        role: focus
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: icclz1
+      containers:
+        - name: yolo26
+          image: local/yolo26n:0.5
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 18080
+          env:
+            - name: YOLO26_SERVICE_ROLE
+              value: "focus"
+            - name: YOLO_MODEL
+              value: "yolo26m.pt"
+            - name: YOLO26_MODEL
+              value: "yolo26m.pt"
+            - name: YOLO26_DEVICE
+              value: "cuda:0"
+            - name: YOLO_IMGSZ
+              value: "640"
+            - name: YOLO26_IMGSZ
+              value: "640"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "4Gi"
+              nvidia.com/gpu.shared: "1"
+            limits:
+              cpu: "2000m"
+              memory: "6Gi"
+              nvidia.com/gpu.shared: "1"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yolo26n-task3-bg
+  namespace: intent-lab
+  labels:
+    app: yolo26n
+    exp: task3-saturation
+    role: background
+spec:
+  strategy:
+    type: Recreate
+  replicas: 3
+  selector:
+    matchLabels:
+      app: yolo26n
+      exp: task3-saturation
+      role: background
+  template:
+    metadata:
+      labels:
+        app: yolo26n
+        exp: task3-saturation
+        role: background
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: icclz1
+      containers:
+        - name: yolo26
+          image: local/yolo26n:0.5
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 18080
+          env:
+            - name: YOLO26_SERVICE_ROLE
+              value: "background"
+            - name: YOLO_MODEL
+              value: "yolo26m.pt"
+            - name: YOLO26_MODEL
+              value: "yolo26m.pt"
+            - name: YOLO26_DEVICE
+              value: "cuda:0"
+            - name: YOLO_IMGSZ
+              value: "640"
+            - name: YOLO26_IMGSZ
+              value: "640"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "4Gi"
+              nvidia.com/gpu.shared: "1"
+            limits:
+              cpu: "2000m"
+              memory: "6Gi"
+              nvidia.com/gpu.shared: "1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yolo26n-task3
+  namespace: intent-lab
+  labels:
+    app: yolo26n
+    exp: task3-saturation
+spec:
+  type: ClusterIP
+  selector:
+    app: yolo26n
+    exp: task3-saturation
+  ports:
+    - name: http
+      port: 18080
+      targetPort: 18080

@@ -1,0 +1,203 @@
+COMPUTED VALUES:
+affinity: {}
+allowedMetricsEndpoints:
+- /metrics
+annotations: {}
+config:
+  global:
+    scrape_interval: 10s
+  scrape_configs:
+  - job_name: vmagent-self
+    static_configs:
+    - targets:
+      - localhost:8429
+  - job_name: kube-state-metrics
+    static_configs:
+    - targets:
+      - kube-state-metrics.monitoring.svc:8080
+  - job_name: node-exporter
+    static_configs:
+    - targets:
+      - node-exporter.monitoring.svc:9100
+  - bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    job_name: kubelet-cadvisor
+    metrics_path: /metrics/cadvisor
+    scheme: https
+    static_configs:
+    - targets:
+      - 100.68.32.118:10250
+    tls_config:
+      insecure_skip_verify: true
+  useTpl: false
+configMap: ""
+containerWorkingDir: /
+daemonSet:
+  spec: {}
+deployment:
+  spec:
+    strategy: {}
+emptyDir: {}
+env: []
+envFrom: []
+extraArgs:
+  envflag.enable: "true"
+  envflag.prefix: VM_
+  httpListenAddr: :8429
+  loggerFormat: json
+extraContainers: []
+extraHostPathMounts: []
+extraLabels: {}
+extraObjects: []
+extraScrapeConfigs: []
+extraVolumeMounts: []
+extraVolumes: []
+fullnameOverride: ""
+global:
+  cluster:
+    dnsDomain: cluster.local.
+  compatibility:
+    openshift:
+      adaptSecurityContext: auto
+  image:
+    registry: ""
+  imagePullSecrets: []
+horizontalPodAutoscaling:
+  enabled: false
+  maxReplicas: 10
+  metrics: []
+  minReplicas: 1
+hostAliases: []
+hostNetwork: false
+image:
+  pullPolicy: IfNotPresent
+  registry: ""
+  repository: victoriametrics/vmagent
+  tag: ""
+  variant: ""
+imagePullSecrets: []
+ingress:
+  annotations: {}
+  enabled: false
+  extraLabels: {}
+  hosts:
+  - name: vmagent.local
+    path:
+    - /
+    port: http
+  ingressClassName: ""
+  pathType: Prefix
+  tls: []
+initContainers: []
+license:
+  key: ""
+  secret:
+    key: ""
+    name: ""
+lifecycle: {}
+mode: deployment
+nameOverride: ""
+nodeSelector: {}
+persistentVolume:
+  accessModes:
+  - ReadWriteOnce
+  annotations: {}
+  enabled: false
+  existingClaim: ""
+  extraLabels: {}
+  matchLabels: {}
+  name: ""
+  size: 10Gi
+  storageClassName: ""
+podAnnotations: {}
+podDisruptionBudget:
+  enabled: false
+  labels: {}
+podLabels: {}
+podSecurityContext:
+  enabled: true
+priorityClassName: ""
+probe:
+  liveness:
+    initialDelaySeconds: 5
+    periodSeconds: 15
+    tcpSocket: {}
+    timeoutSeconds: 5
+  readiness:
+    httpGet: {}
+    initialDelaySeconds: 5
+    periodSeconds: 15
+  startup: {}
+rbac:
+  annotations: {}
+  create: true
+  extraLabels: {}
+  extraRules: []
+  namespaced: false
+remoteWrite:
+- url: http://vm-victoria-metrics-single-server.monitoring.svc:8428/api/v1/write
+replicaCount: 1
+resources: {}
+route:
+  annotations: {}
+  enabled: false
+  extraRules: []
+  filters: []
+  hostnames: []
+  labels: {}
+  matches:
+  - path:
+      type: PathPrefix
+      value: /
+  parentRefs: []
+schedulerName: ""
+securityContext:
+  enabled: true
+selectorLabels: {}
+service:
+  annotations: {}
+  clusterIP: ""
+  enabled: false
+  externalIPs: []
+  externalTrafficPolicy: ""
+  extraLabels: {}
+  healthCheckNodePort: ""
+  internalTrafficPolicy: ""
+  ipFamilies: []
+  ipFamilyPolicy: ""
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  selectorLabels: {}
+  servicePort: 8429
+  targetPort: http
+  trafficDistribution: ""
+  type: ClusterIP
+serviceAccount:
+  annotations: {}
+  automountToken: true
+  create: true
+serviceMonitor:
+  annotations: {}
+  basicAuth: {}
+  enabled: false
+  extraLabels: {}
+  metricRelabelings: []
+  relabelings: []
+  targetPort: http
+statefulSet:
+  clusterMode: false
+  replicationFactor: 1
+  spec:
+    updateStrategy: {}
+tolerations: []
+topologySpreadConstraints: []
+victoria-metrics-common:
+  global:
+    cluster:
+      dnsDomain: cluster.local.
+    compatibility:
+      openshift:
+        adaptSecurityContext: auto
+    image:
+      registry: ""
+    imagePullSecrets: []
+  unitTest: false

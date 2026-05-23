@@ -1,0 +1,687 @@
+COMPUTED VALUES:
+child:
+  affinity: {}
+  claiming:
+    enabled: false
+    rooms: ""
+    token: ""
+    url: https://api.netdata.cloud
+  configs:
+    exporting:
+      data: ""
+      enabled: false
+      path: /etc/netdata/exporting.conf
+    go.d:
+      data: |
+        modules:
+          prometheus: yes
+      enabled: true
+      path: /etc/netdata/go.d.conf
+    kubelet:
+      data: |
+        update_every: 1
+        autodetection_retry: 0
+        jobs:
+          - name: local
+            url: http://127.0.0.1:10255/metrics
+          - name: local
+            url: https://localhost:10250/metrics
+            tls_skip_verify: yes
+      enabled: false
+      path: /etc/netdata/go.d/k8s_kubelet.conf
+    kubeproxy:
+      data: |
+        update_every: 1
+        autodetection_retry: 0
+        jobs:
+          - name: local
+            url: http://127.0.0.1:10249/metrics
+      enabled: true
+      path: /etc/netdata/go.d/k8s_kubeproxy.conf
+    netdata:
+      data: |-
+        [global]
+          enable zero metrics = yes
+        [db]
+          mode = ram
+        [web]
+          bind to = localhost:19999
+        [health]
+          enabled = no
+        [ml]
+          enabled = no
+        [plugins]
+          enable running new plugins = yes
+          perf = yes
+        [plugin:perf]
+          update every = 1
+          command options = all
+      enabled: true
+      path: /etc/netdata/netdata.conf
+    prometheus:
+      data: |
+        jobs:
+          - name: kubelet_cadvisor
+            url: https://127.0.0.1:10250/metrics/cadvisor
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+            tls_ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            tls_skip_verify: true
+            update_every: 1
+            debug: true
+
+            selector:
+              allow:
+                - container_cpu_usage_seconds_total
+                - container_memory_working_set_bytes
+                - container_network_receive_bytes_total
+                - container_network_transmit_bytes_total
+              deny: []
+      enabled: true
+      path: /etc/netdata/go.d/prometheus.conf
+    stream:
+      data: |
+        [stream]
+          enabled = {{ ternary "yes" "no" .Values.parent.enabled }}
+          destination = netdata:{{ .Values.service.port }}
+          api key = 11111111-2222-3333-4444-555555555555
+          timeout seconds = 60
+          buffer size bytes = 1048576
+          reconnect delay seconds = 5
+          initial clock resync iterations = 60
+      enabled: true
+      path: /etc/netdata/stream.conf
+  dnsPolicy: ClusterFirstWithHostNet
+  enabled: true
+  env: {}
+  envFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  hostNetwork: true
+  livenessProbe:
+    failureThreshold: 3
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 1
+  nodeSelector: {}
+  persistence:
+    enabled: true
+    hostPath: /var/lib/netdata-k8s-child
+  podAnnotationAppArmor:
+    enabled: true
+  podAnnotations: {}
+  podLabels: {}
+  podsMetadata:
+    kubeletUrl: https://localhost:10250
+    useKubelet: false
+  port: '{{ .Values.parent.port }}'
+  priorityClassName: ""
+  readinessProbe:
+    failureThreshold: 3
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 1
+  resources: {}
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - operator: Exists
+  updateStrategy: {}
+deploymentStrategy:
+  type: Recreate
+image:
+  pullPolicy: Always
+  repository: netdata/netdata
+  tag: '{{ .Chart.AppVersion }}'
+imagePullSecrets: []
+ingress:
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    kubernetes.io/tls-acme: "true"
+  enabled: true
+  hosts:
+  - netdata.k8s.local
+  path: /
+  pathType: Prefix
+initContainersImage:
+  pullPolicy: Always
+  repository: alpine
+  tag: latest
+k8sState:
+  affinity: {}
+  claiming:
+    enabled: false
+    rooms: ""
+    token: ""
+    url: https://api.netdata.cloud
+  configs:
+    exporting:
+      data: ""
+      enabled: false
+      path: /etc/netdata/exporting.conf
+    go.d:
+      data: |
+        default_run: no
+        modules:
+          k8s_state: yes
+      enabled: true
+      path: /etc/netdata/go.d.conf
+    go.d-k8s_state:
+      data: |
+        jobs:
+          - name: k8s_state
+            update_every: 1
+      enabled: true
+      path: /etc/netdata/go.d/k8s_state.conf
+    netdata:
+      data: |
+        [global]
+          hostname = {{ .Values.k8sState.hostname }}
+        [db]
+          mode = ram
+        [web]
+          bind to = localhost:19999
+        [health]
+          enabled = no
+        [ml]
+          enabled = no
+        [plugins]
+          timex = no
+          checks = no
+          idlejitter = no
+          tc = no
+          diskspace = no
+          proc = no
+          cgroups = no
+          enable running new plugins = no
+          slabinfo = no
+          perf = no
+          go.d = yes
+          ioping = no
+          ebpf = no
+          charts.d = no
+          apps = no
+          python.d = no
+          fping = no
+      enabled: true
+      path: /etc/netdata/netdata.conf
+    stream:
+      data: |
+        [stream]
+          enabled = {{ ternary "yes" "no" .Values.parent.enabled }}
+          destination = netdata:{{ .Values.service.port }}
+          api key = 11111111-2222-3333-4444-555555555555
+          timeout seconds = 60
+          buffer size bytes = 1048576
+          reconnect delay seconds = 5
+          initial clock resync iterations = 60
+      enabled: true
+      path: /etc/netdata/stream.conf
+  dnsPolicy: ClusterFirstWithHostNet
+  enabled: true
+  env: {}
+  envFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  hostname: netdata-k8s-state
+  livenessProbe:
+    failureThreshold: 3
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 1
+  nodeSelector: {}
+  persistence:
+    enabled: false
+    storageclass: '-'
+    volumesize: 1Gi
+  podAnnotationAppArmor:
+    enabled: true
+  podAnnotations: {}
+  podLabels: {}
+  port: '{{ .Values.parent.port }}'
+  priorityClassName: ""
+  readinessProbe:
+    failureThreshold: 3
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 1
+  resources: {}
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - operator: Exists
+netdataOpentelemetry:
+  affinity: {}
+  claiming:
+    enabled: false
+    rooms: ""
+    token: ""
+    url: https://api.netdata.cloud
+  configs:
+    netdata:
+      data: |
+        [global]
+          hostname = {{ .Values.netdataOpentelemetry.hostname }}
+        [db]
+          mode = ram
+        [web]
+          bind to = localhost:19999
+        [health]
+          enabled = no
+        [ml]
+          enabled = no
+        [plugins]
+          timex = no
+          checks = no
+          idlejitter = no
+          tc = no
+          diskspace = no
+          proc = no
+          cgroups = no
+          enable running new plugins = no
+          otel = yes
+          journal-viewer = yes
+          slabinfo = no
+          perf = no
+          go.d = yes
+          ioping = no
+          ebpf = no
+          charts.d = no
+          apps = no
+          python.d = no
+          fping = no
+      enabled: true
+      path: /etc/netdata/netdata.conf
+    otel:
+      data: |
+        endpoint:
+          path: {{ printf "\"0.0.0.0:%v\"" .Values.netdataOpentelemetry.service.port }}
+          tls_cert_path: null
+          tls_key_path: null
+          tls_ca_cert_path: null
+        metrics:
+          print_flattened: false
+          buffer_samples: 10
+          throttle_charts: 100
+          chart_configs_dir: otel.d/v1/metrics
+        logs:
+          journal_dir: otel/v1
+          size_of_journal_file: "100MB"
+          number_of_journal_files: 10
+          size_of_journal_files: "1GB"
+          duration_of_journal_files: "7 days"
+          duration_of_journal_file: "2 hours"
+          store_otlp_json: false
+      enabled: true
+      path: /etc/netdata/otel.yaml
+    stream:
+      data: |
+        [stream]
+          enabled = {{ ternary "yes" "no" .Values.parent.enabled }}
+          destination = netdata:{{ .Values.service.port }}
+          api key = 11111111-2222-3333-4444-555555555555
+          timeout seconds = 60
+          buffer size bytes = 1048576
+          reconnect delay seconds = 5
+          initial clock resync iterations = 60
+      enabled: true
+      path: /etc/netdata/stream.conf
+  dnsPolicy: Default
+  enabled: false
+  env: {}
+  envFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  hostname: netdata-otel
+  livenessProbe:
+    failureThreshold: 3
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 1
+  nodeSelector: {}
+  persistence:
+    enabled: true
+    storageclass: '-'
+    volumesize: 10Gi
+  podAnnotationAppArmor:
+    enabled: true
+  podAnnotations: {}
+  podLabels: {}
+  port: '{{ .Values.parent.port }}'
+  priorityClassName: ""
+  readinessProbe:
+    failureThreshold: 3
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 1
+  resources: {}
+  securityContext:
+    fsGroup: 201
+    runAsGroup: 201
+    runAsUser: 201
+  service:
+    annotations: {}
+    clusterIP: ""
+    externalTrafficPolicy: ""
+    healthCheckNodePort: ""
+    loadBalancerIP: ""
+    loadBalancerSourceRanges: []
+    port: 4317
+    type: ClusterIP
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+notifications:
+  slack:
+    recipient: ""
+    webhook_url: ""
+otel-collector:
+  clusterRole:
+    create: true
+    rules:
+    - apiGroups:
+      - ""
+      resources:
+      - pods
+      - namespaces
+      - nodes
+      verbs:
+      - get
+      - list
+      - watch
+    - apiGroups:
+      - apps
+      resources:
+      - replicasets
+      verbs:
+      - get
+      - list
+      - watch
+  config:
+    exporters:
+      otlp:
+        endpoint: '{{ .Release.Name }}-otel:4317'
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_elapsed_time: 300s
+          max_interval: 30s
+        sending_queue:
+          enabled: true
+          num_consumers: 10
+          queue_size: 1000
+        tls:
+          insecure: true
+    processors:
+      batch:
+        send_batch_max_size: 1500
+        send_batch_size: 1000
+        timeout: 10s
+      k8sattributes:
+        auth_type: serviceAccount
+        extract:
+          annotations:
+          - from: pod
+            key: app
+            tag_name: annotation.app
+          labels:
+          - from: pod
+            key: app
+            tag_name: app
+          - from: pod
+            key: component
+            tag_name: component
+          metadata:
+          - k8s.namespace.name
+          - k8s.deployment.name
+          - k8s.statefulset.name
+          - k8s.daemonset.name
+          - k8s.cronjob.name
+          - k8s.job.name
+          - k8s.node.name
+          - k8s.pod.name
+          - k8s.pod.uid
+          - k8s.pod.start_time
+          - k8s.container.name
+        passthrough: false
+        pod_association:
+        - sources:
+          - from: resource_attribute
+            name: k8s.pod.ip
+        - sources:
+          - from: resource_attribute
+            name: k8s.pod.uid
+        - sources:
+          - from: connection
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      resourcedetection:
+        detectors:
+        - env
+        - system
+        timeout: 5s
+    receivers:
+      filelog:
+        exclude:
+        - /var/log/pods/*/otc-container/*.log
+        include:
+        - /var/log/pods/*/*/*.log
+        include_file_name: false
+        include_file_path: true
+        operators:
+        - id: container-parser
+          max_log_size: 102400
+          type: container
+        start_at: end
+    service:
+      pipelines:
+        logs:
+          exporters:
+          - otlp
+          processors:
+          - memory_limiter
+          - k8sattributes
+          - resourcedetection
+          - batch
+          receivers:
+          - filelog
+  enabled: false
+  image:
+    repository: otel/opentelemetry-collector-k8s
+  mode: daemonset
+  ports:
+    metrics:
+      containerPort: 8888
+      enabled: true
+      protocol: TCP
+      servicePort: 8888
+    otlp:
+      containerPort: 4317
+      enabled: true
+      protocol: TCP
+      servicePort: 4317
+    otlp-http:
+      containerPort: 4318
+      enabled: true
+      protocol: TCP
+      servicePort: 4318
+  presets:
+    kubernetesAttributes:
+      enabled: true
+    logsCollection:
+      enabled: true
+      includeCollectorLogs: false
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  serviceAccount:
+    create: true
+  tolerations:
+  - effect: NoSchedule
+    operator: Exists
+  - effect: NoExecute
+    operator: Exists
+parent:
+  affinity: {}
+  alarms:
+    persistence: false
+    storageclass: '-'
+    volumesize: 1Gi
+  claiming:
+    enabled: false
+    rooms: ""
+    token: ""
+    url: https://api.netdata.cloud
+  configs:
+    example:
+      data: |
+        alarm: example_alarm1
+          on: example.random
+        every: 2s
+        warn: $random1 > (($status >= $WARNING)  ? (70) : (80))
+        crit: $random1 > (($status == $CRITICAL) ? (80) : (90))
+        info: random
+          to: sysadmin
+      enabled: false
+      path: /etc/netdata/health.d/example.conf
+    exporting:
+      data: ""
+      enabled: false
+      path: /etc/netdata/exporting.conf
+    health:
+      data: |
+        SEND_EMAIL="NO"
+        SEND_SLACK="YES"
+        SLACK_WEBHOOK_URL="{{ .Values.notifications.slack.webhook_url }}"
+        DEFAULT_RECIPIENT_SLACK="{{ .Values.notifications.slack.recipient }}"
+      enabled: true
+      path: /etc/netdata/health_alarm_notify.conf
+    netdata:
+      data: |
+        [global]
+          hostname = {{ .Values.parent.hostname }}
+        [db]
+          mode = dbengine
+
+        [plugins]
+          cgroups = no
+          tc = no
+          enable running new plugins = no
+          check for new plugins every = 72000
+          python.d = no
+          charts.d = no
+          go.d = no
+          node.d = no
+          apps = no
+          proc = no
+          idlejitter = no
+          diskspace = no
+      enabled: true
+      path: /etc/netdata/netdata.conf
+    stream:
+      data: |
+        [11111111-2222-3333-4444-555555555555]
+          enabled = yes
+          history = 3600
+          default memory mode = dbengine
+          health enabled by default = auto
+          allow from = *
+      enabled: true
+      path: /etc/netdata/stream.conf
+  database:
+    persistence: false
+    storageclass: '-'
+    volumesize: 5Gi
+  dnsPolicy: Default
+  enabled: true
+  env: {}
+  envFrom: []
+  extraInitContainers: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  hostname: netdata-parent
+  livenessProbe:
+    failureThreshold: 3
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 1
+  nodeSelector: {}
+  podAnnotations: {}
+  podLabels: {}
+  port: 19999
+  priorityClassName: ""
+  readinessProbe:
+    failureThreshold: 3
+    initialDelaySeconds: 0
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 1
+  resources: {}
+  securityContext:
+    fsGroup: 201
+    runAsGroup: 201
+    runAsUser: 201
+  terminationGracePeriodSeconds: 300
+  tolerations:
+  - operator: Exists
+rbac:
+  create: true
+  pspEnabled: true
+replicaCount: 1
+restarter:
+  concurrencyPolicy: Forbid
+  enabled: false
+  failedJobsHistoryLimit: 3
+  image:
+    pullPolicy: Always
+    repository: rancher/kubectl
+    tag: .auto
+  resources: {}
+  restartPolicy: Never
+  schedule: 00 06 * * *
+  startingDeadlineSeconds: 60
+  successfulJobsHistoryLimit: 3
+sd:
+  child:
+    configmap:
+      from:
+        file: ""
+        value: {}
+      key: config.yml
+      name: netdata-child-sd-config-map
+    enabled: true
+    resources:
+      limits:
+        cpu: 50m
+        memory: 150Mi
+      requests:
+        cpu: 50m
+        memory: 100Mi
+  image:
+    pullPolicy: Always
+    repository: netdata/agent-sd
+    tag: v0.2.10
+service:
+  annotations: {}
+  clusterIP: ""
+  externalTrafficPolicy: ""
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  port: 19999
+  type: ClusterIP
+serviceAccount:
+  create: true
+  name: netdata
+sysctlInitContainer:
+  command: []
+  enabled: false
+  resources: {}

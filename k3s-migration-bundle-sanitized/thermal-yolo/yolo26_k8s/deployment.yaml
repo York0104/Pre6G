@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yolo26n-detect
+  namespace: intent-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yolo26n-detect
+  template:
+    metadata:
+      labels:
+        app: yolo26n-detect
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: icclz1
+      containers:
+        - name: yolo26
+          image: local/yolo26n:0.1
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 18080
+          env:
+            - name: YOLO26_MODEL
+              value: "yolo26n.pt"
+            - name: YOLO26_DEVICE
+              value: "cuda:0"
+            - name: YOLO26_IMGSZ
+              value: "640"
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "4Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "2000m"
+              memory: "6Gi"
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 18080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 18080
+            initialDelaySeconds: 20
+            periodSeconds: 10

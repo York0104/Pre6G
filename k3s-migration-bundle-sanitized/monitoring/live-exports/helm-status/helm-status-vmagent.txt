@@ -1,0 +1,34 @@
+NAME: vmagent
+LAST DEPLOYED: Thu Mar 12 22:44:48 2026
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 5
+DESCRIPTION: Upgrade complete
+RESOURCES:
+==> v1/ServiceAccount
+NAME                             SECRETS   AGE
+vmagent-victoria-metrics-agent   0         67d
+
+==> v1/ConfigMap
+NAME                                    DATA   AGE
+vmagent-victoria-metrics-agent-config   1      67d
+vmagent-victoria-metrics-agent-rw   0     67d
+
+==> v1/ClusterRole
+NAME                             CREATED AT
+vmagent-victoria-metrics-agent   2026-03-12T14:31:25Z
+
+==> v1/ClusterRoleBinding
+NAME                             ROLE                                         AGE
+vmagent-victoria-metrics-agent   ClusterRole/vmagent-victoria-metrics-agent   67d
+
+==> v1/Deployment
+NAME                             READY   UP-TO-DATE   AVAILABLE   AGE
+vmagent-victoria-metrics-agent   1/1     1            1           67d
+
+==> v1/Pod(related)
+NAME                                              READY   STATUS    RESTARTS   AGE
+vmagent-victoria-metrics-agent-5dc5577cfb-gscr8   1/1     Running   0          2d2h
+
+
+TEST SUITE: None

@@ -1,0 +1,51 @@
+# k3s Migration Bundle
+
+本資料夾用於在另一個 k3s cluster 重建監控、AP/RFSoC observability 與 thermal YOLO 實驗。此版本已排除 private secrets。
+
+## 建議重建順序
+
+1. 建立新 k3s cluster，確認 node name、CNI、Tailscale/LAN routing、NVIDIA driver 與 container runtime。
+2. 依 private handoff 恢復 kubeconfig/SSH/Helm repo 等必要私密資訊；不要直接覆蓋新 cluster kubeconfig。
+3. 使用 `nvidia-device-plugin/` 安裝 NVIDIA Device Plugin 與 GPU sharing。
+4. 使用 `monitoring/` 安裝 VictoriaMetrics、vmagent、node-exporter、kube-state-metrics。
+5. 使用 `gpu/` 安裝 DCGM exporter 與自訂 metrics ConfigMap。
+6. 使用 `netdata-ap/` 安裝 Netdata、AP SNMP/gateway 相關設定。
+7. 使用 `rfsoc/` 與 vmagent RFSoC scrape config 恢復 RFSoC monitoring。
+8. build/import YOLO image，套用 `thermal-yolo/` workload。
+9. 驗證 PromQL targets、DCGM metrics、Netdata/cAdvisor metrics、AP metrics、RFSoC node-exporter metrics。
+
+## 目錄說明
+
+| 路徑 | 說明 |
+| --- | --- |
+| `monitoring/` | vmagent scrape config、Helm values、rendered manifests、status、image digest 與 live export。 |
+| `gpu/` | DCGM exporter values、metrics ConfigMap 與 GPU thermal throttling 相關 reference。 |
+| `nvidia-device-plugin/` | NVIDIA Device Plugin values、GPU time-slicing/sharing config 與 smoke test manifests。 |
+| `netdata-ap/` | Netdata values、NodePort、AP gateway scripts、OpenWrt AP SNMP export。 |
+| `rfsoc/` | RFSoC aggregator/config 參考與 RFSoC VM aggregator 文件。 |
+| `thermal-yolo/` | thermal analysis scripts、YOLO k8s app/manifests、目前 `intent-lab` workload export。 |
+| `cluster-access/` | Calico/CNI、NodePort、in-cluster aggregator Job、node/version live export。 |
+| `separation-audit/` | 監控/實驗分離、AutoScale 檔案分組、舊版/無用候選與 home YAML audit。 |
+| `external-worker/` | worker-side 檔案缺口說明，例如 `gpu-tempctl-lab`。 |
+| `secrets-reference.README.md` | private secrets 與本機依賴恢復 checklist；sanitized copy 不含 secrets。 |
+| `MANIFEST.txt` | 本 bundle 檔案清單。 |
+
+## 重要資訊
+
+| 項目 | 目前值 / 說明 |
+| --- | --- |
+| YOLO image | `local/yolo26n:0.5`，且 workload 使用 `imagePullPolicy: Never`；新 worker 必須有 image 或改 manifest。 |
+| RFSoC targets | Lab LAN `192.168.100.217:9100`；Tailscale `100.91.37.32:9100`。 |
+| AP SNMP | target `192.168.1.1`，community `public`，interval `10s`。 |
+| GPU sharing | current live ConfigMap 為 `replicas: 100`；舊註解/備份可能仍提到 `4`。 |
+| AutoScale source | 實際分層 source 在 `../autoscale-source-split/`。 |
+
+## 私密資料
+
+此 sanitized bundle 不包含 `secrets-reference/`。請從：
+
+```text
+../current-lab-handoff-private/private-files-to-fill/
+```
+
+恢復 kubeconfig、SSH key、API env 與其他 private runtime 值。

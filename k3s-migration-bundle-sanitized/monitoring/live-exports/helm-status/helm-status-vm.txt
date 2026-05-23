@@ -1,0 +1,45 @@
+NAME: vm
+LAST DEPLOYED: Thu Mar 12 22:29:04 2026
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 1
+DESCRIPTION: Install complete
+RESOURCES:
+==> v1/ServiceAccount
+NAME                                SECRETS   AGE
+vm-victoria-metrics-single-server   0         67d
+
+==> v1/Service
+NAME                                TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
+vm-victoria-metrics-single-server   ClusterIP   None         <none>        8428/TCP   67d
+
+==> v1/StatefulSet
+NAME                                READY   AGE
+vm-victoria-metrics-single-server   1/1     67d
+
+==> v1/Pod(related)
+NAME                                  READY   STATUS    RESTARTS        AGE
+vm-victoria-metrics-single-server-0   1/1     Running   9 (2d15h ago)   67d
+
+
+TEST SUITE: None
+NOTES:
+The VictoriaMetrics write api can be accessed via port 8428 on the following DNS name from within your cluster:
+    vm-victoria-metrics-single-server.monitoring.svc.cluster.local.
+
+Metrics Ingestion:
+  Get the Victoria Metrics service URL by running these commands in the same shell:
+    export POD_NAME=$(kubectl get pods --namespace monitoring -l "app=" -o jsonpath="{.items[0].metadata.name}")
+    kubectl --namespace monitoring port-forward $POD_NAME 8428
+
+  Write URL inside the kubernetes cluster:
+    http://vm-victoria-metrics-single-server.monitoring.svc.cluster.local.:8428/<protocol-specific-write-endpoint>
+
+  All supported write endpoints can be found at https://docs.victoriametrics.com/victoriametrics/single-server-victoriametrics/#how-to-import-time-series-data
+
+  E.g: for Prometheus:
+    http://vm-victoria-metrics-single-server.monitoring.svc.cluster.local.:8428/api/v1/write
+
+Read Data:
+  The following URL can be used as the datasource URL in Grafana::
+    http://vm-victoria-metrics-single-server.monitoring.svc.cluster.local.:8428
