@@ -1,6 +1,6 @@
 # Monitoring Rebuild Progress
 
-Date: 2026-05-27
+Date: 2026-05-28
 Workspace: `/home/icclz2/Pre6G`
 
 ## Summary
@@ -15,10 +15,12 @@ Workspace: `/home/icclz2/Pre6G`
 目前交付狀態可視為：
 
 - `iccl-cluster-z2`：基本監控正常
+- `icclz1`：新加入成功，已自動辨識為 `GTX 1080 Ti` GPU worker，監控正常
 - `icclz3`：基本監控正常
 - `z590-aorus-xtreme`：GPU node 曾驗證可用，但仍受磁碟壓力影響，不列為穩定重建驗收節點
 - `mirc516-20250605`：已完成 GPU auto-discovery，但主機 NVIDIA driver/userspace mismatch，GPU metrics 尚未恢復
 - API / dashboard：`Cluster Monitor` 已驗證；experiment 頁面不列入本次重建範圍
+- `02-experiment-layer`：已在目前 k3s 環境恢復 `icclz1` shared-GPU YOLO 三實例主線，並完成短版 latency smoke test
 
 ## Completed
 
@@ -78,15 +80,23 @@ Workspace: `/home/icclz2/Pre6G`
 
 ## Current Runtime Snapshot
 
-截至 2026-05-27 確認：
+截至 2026-05-28 確認：
 
-- `kubectl get nodes -o wide` 可見 4 台節點：
+- `kubectl get nodes -o wide` 可見 5 台節點：
   - `iccl-cluster-z2`
+  - `icclz1`
   - `icclz3`
   - `mirc516-20250605`
   - `z590-aorus-xtreme`
 - 所有節點皆 `Ready`
-- `Cluster Monitor` 可顯示 4 台節點的 inventory / status
+- `Cluster Monitor` 可顯示 5 台節點的 inventory / status
+- `icclz1` 已自動套用：
+  - `node-exporter`
+  - `vmagent-node-local`
+  - `netdata-child`
+  - `nfd-worker`
+  - `nvidia-device-plugin`
+  - `dcgm-exporter`
 
 ## Validation Results
 
@@ -97,8 +107,19 @@ Workspace: `/home/icclz2/Pre6G`
 - `kubectl get pods -A` 可觀察 monitoring stack
 - `VictoriaMetrics` 可查到 `up`、`node_cpu_seconds_total`、`node_uname_info`
 - GPU 正常節點時可查到 `DCGM_FI_DEV_GPU_TEMP`
+- `kubectl get node icclz1 -o jsonpath='{.status.capacity.nvidia\.com/gpu}'` → `1`
+- `kubectl get node icclz1 -o jsonpath='{.status.allocatable.nvidia\.com/gpu}'` → `1`
 - `run_vm_aggregator_once.sh iccl-cluster-z2` → `collector_status = ok`
+- `run_vm_aggregator_once.sh icclz1` → `collector_status = ok`
 - `run_vm_aggregator_once.sh icclz3` → `collector_status = ok`
+- `VictoriaMetrics` 已可查到：
+  - `up{job="node-exporter",instance="140.113.179.6:9100"} = 1`
+  - `up{job="kubelet-cadvisor",kubernetes_node="icclz1"} = 1`
+  - `DCGM_FI_DEV_GPU_TEMP{kubernetes_node="icclz1"}`
+- `vm_aggregator` 已成功讀到 `icclz1` GPU：
+  - `NVIDIA GeForce GTX 1080 Ti`
+  - driver `535.309.01`
+  - `capacity_gpus = 1` / `allocatable_gpus = 1`
 
 ### Dashboard / API
 
@@ -106,6 +127,20 @@ Workspace: `/home/icclz2/Pre6G`
 
 - `autoscale_api` 可回應 `GET /`、`GET /api/v1/nodes`、`GET /api/v1/nodes/status`
 - `cluster-dashboard` 的 `Cluster Monitor` 可正常載入與顯示資料
+
+### 02 Experiment Layer
+
+已驗證：
+
+- `icclz1` 已啟用 `nvidia.com/gpu.shared: 4`
+- `autoscale-source-split/02-experiment-layer/yolo26_k8s/build_and_import_image_to_k3s.sh` 可建立並匯入 `local/yolo26n:0.1` / `0.5`
+- `intent-lab` 中 `yolo26n-focus`、`yolo26n-bg-1`、`yolo26n-bg-2` 可在 `icclz1` 上 `Running`
+- `http://140.113.179.6:18081/healthz`、`18082`、`18083` 皆回 `200`
+- 2026-05-28 短版 baseline smoke test：
+  - focus `50/50` success，client mean `137.589 ms`，server mean `18.783 ms`
+  - bg-1 `25/25` success，client mean `181.229 ms`，server mean `22.813 ms`
+  - bg-2 `25/25` success，client mean `221.967 ms`，server mean `22.610 ms`
+- smoke test 輸出已確認後刪除，只保留驗證結論
 
 ## Known Issues
 
@@ -133,16 +168,18 @@ Workspace: `/home/icclz2/Pre6G`
 - `VictoriaMetrics` 目前仍使用非持久化配置
 - 若正式環境需要長期保留 metrics，仍需補 storage 設計
 
+
 ## Practical Completion Estimate
 
-若只看本次範圍 `monitor + dashboard(不含 experiment)`：
+若看目前已完成主線：
 
 - `01-monitoring-layer`: 約 `90% ~ 95%`
 - `03-shared-api-dashboard` 的 `Cluster Monitor` 主線：約 `85% ~ 90%`
-- 整體作為 `k3s` 重建交付基底：約 `90%`
+- `02-experiment-layer` 的 `icclz1` shared-GPU YOLO 主線：已可重現 baseline / 3-instance 入口，後續 thermal cycle 與完整批次實驗可在此基礎上繼續
+- 整體作為 `k3s` 重建交付基底：約 `92%`
 
 剩餘工作主要是：
 
-- 修正文檔與入口一致性
 - 決定是否為 `VictoriaMetrics` 補持久化
 - 修復 `mirc516-20250605` 主機 NVIDIA stack
+- 視需要再把 `02-experiment-layer` 的 thermal cycle / batch workflow 做完整驗收

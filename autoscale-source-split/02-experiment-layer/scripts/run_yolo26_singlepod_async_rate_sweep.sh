@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXPERIMENT_LAYER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 RUN_ID="${1:-single_yolo26_async_rate_sweep_$(date +%Y%m%d_%H%M%S)}"
 OUTDIR="${OUTDIR:-${HOME}/exp_runs/${RUN_ID}}"
 
 NS="${NS:-intent-lab}"
 DEPLOY="${DEPLOY:-yolo26n-focus}"
-WORKER_IP="${WORKER_IP:-100.105.48.97}"
+WORKER_IP="${WORKER_IP:-140.113.179.6}"
 PORT="${PORT:-18081}"
 DURATION="${DURATION:-180}"
 CONCURRENCY="${CONCURRENCY:-200}"
@@ -15,8 +18,8 @@ RATE_WARMUP_SECONDS="${RATE_WARMUP_SECONDS:-10}"
 COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-30}"
 RATES_RPS="${RATES_RPS:-15,20,30,50,100}"
 
-IMAGE_PATH="${TEST_IMAGE:-${HOME}/AutoScale/experiments/yolo26_k8s/test_images/sanity_input.png}"
-CLIENT="${CLIENT:-${HOME}/AutoScale/experiments/thermal_analysis/yolo26_async_openloop_client.py}"
+IMAGE_PATH="${TEST_IMAGE:-${EXPERIMENT_LAYER_DIR}/yolo26_k8s/test_images/sanity_input.png}"
+CLIENT="${CLIENT:-${EXPERIMENT_LAYER_DIR}/thermal_analysis/yolo26_async_openloop_client.py}"
 
 mkdir -p "${OUTDIR}/raw" "${OUTDIR}/logs" "${OUTDIR}/k8s" "${OUTDIR}/summary"
 

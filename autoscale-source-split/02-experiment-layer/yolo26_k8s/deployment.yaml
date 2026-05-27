@@ -13,6 +13,7 @@ spec:
       labels:
         app: yolo26n-detect
     spec:
+      runtimeClassName: nvidia
       nodeSelector:
         kubernetes.io/hostname: icclz1
       containers:
@@ -23,7 +24,7 @@ spec:
             - containerPort: 18080
           env:
             - name: YOLO26_MODEL
-              value: "yolo26n.pt"
+              value: "yolo26m.pt"
             - name: YOLO26_DEVICE
               value: "cuda:0"
             - name: YOLO26_IMGSZ
@@ -41,11 +42,11 @@ spec:
             httpGet:
               path: /healthz
               port: 18080
-            initialDelaySeconds: 10
+            initialDelaySeconds: 30
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /healthz
               port: 18080
-            initialDelaySeconds: 20
+            initialDelaySeconds: 60
             periodSeconds: 10

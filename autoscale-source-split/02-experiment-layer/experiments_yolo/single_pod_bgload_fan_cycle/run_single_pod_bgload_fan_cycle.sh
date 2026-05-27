@@ -3,12 +3,12 @@ set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-intent-lab}"
 NODE_NAME="${NODE_NAME:-icclz1}"
-NODE_SSH="${NODE_SSH:-icclz1@100.105.48.97}"
+NODE_SSH="${NODE_SSH:-icclz1@140.113.179.6}"
 FOCUS_DEPLOY="${FOCUS_DEPLOY:-yolo26n-task3-focus}"
 BG_DEPLOY_1="${BG_DEPLOY_1:-yolo26n-task3-bg}"
 TARGET_MODE="${TARGET_MODE:-service}"
-VM_URL="${VM_URL:-http://100.68.32.118:31888}"
-NETDATA_URL="${NETDATA_URL:-http://100.68.32.118:32163}"
+VM_URL="${VM_URL:-http://140.113.179.9:31888}"
+NETDATA_URL="${NETDATA_URL:-http://140.113.179.9:32163}"
 NETDATA_CHILD_URL="${NETDATA_CHILD_URL:-$NETDATA_URL}"
 NETDATA_PARENT_BASE_URL="${NETDATA_PARENT_BASE_URL:-$NETDATA_URL}"
 
@@ -39,6 +39,8 @@ BASE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 EXPERIMENT_LAYER_DIR="$(cd "${BASE_DIR}/.." && pwd)"
 SPLIT_ROOT="$(cd "${EXPERIMENT_LAYER_DIR}/.." && pwd)"
 MONITORING_DIR="${SPLIT_ROOT}/01-monitoring-layer"
+PRE6G_ROOT="$(cd "${SPLIT_ROOT}/.." && pwd)"
+VENV_ACTIVATE="${PRE6G_ROOT}/iccl/bin/activate"
 CLIENT="${BASE_DIR}/common/request_client_serial.py"
 THERMAL_RUNNER="${BASE_DIR}/common/run_bgload_fan_cycle_from_master.sh"
 THERMAL_ANALYZER="${BASE_DIR}/common/analyze_single_pod_bgload_fan_cycle.py"
@@ -62,9 +64,9 @@ echo "[INFO] THERMAL_DIR=${THERMAL_DIR}"
 
 cd "${BASE_DIR}"
 
-if [ -f ~/AutoScale/iccl/bin/activate ]; then
+if [ -f "${VENV_ACTIVATE}" ]; then
   # shellcheck disable=SC1091
-  source ~/AutoScale/iccl/bin/activate
+  source "${VENV_ACTIVATE}"
 fi
 
 echo "[INFO] enforce single-pod mode: focus=1, background=0"

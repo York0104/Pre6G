@@ -23,6 +23,7 @@ spec:
         exp: task3-saturation
         role: focus
     spec:
+      runtimeClassName: nvidia
       nodeSelector:
         kubernetes.io/hostname: icclz1
       containers:
@@ -87,6 +88,7 @@ spec:
         exp: task3-saturation
         role: background
     spec:
+      runtimeClassName: nvidia
       nodeSelector:
         kubernetes.io/hostname: icclz1
       containers:

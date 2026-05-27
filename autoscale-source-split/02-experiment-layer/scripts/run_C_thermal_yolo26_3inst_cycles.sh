@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXPERIMENT_LAYER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 CYCLES="${CYCLES:-2}"
 SLEEP_BETWEEN_CYCLES="${SLEEP_BETWEEN_CYCLES:-120}"
 
 WORKER_NODE="${WORKER_NODE:-icclz1}"
 WORKER_USER="${WORKER_USER:-icclz1}"
-WORKER_IP="${WORKER_IP:-100.105.48.97}"
+WORKER_IP="${WORKER_IP:-140.113.179.6}"
 WORKER_REPO="${WORKER_REPO:-/home/icclz1/gpu-tempctl-lab}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${EXP_RUNS_DIR:-${HOME}/exp_runs}}"
 RUN_ID_PREFIX="${RUN_ID_PREFIX:-C_thermal_yolo26_3inst}"
@@ -77,14 +80,14 @@ for i in $(seq 1 "$CYCLES"); do
   POST_NORMAL_SEC="${POST_NORMAL_SEC}" \
   FOCUS_INTERVAL="${FOCUS_INTERVAL}" \
   BG_INTERVAL="${BG_INTERVAL}" \
-  THERMAL_CMD="WORKER_HOST=${WORKER_IP} WORKER_USER=${WORKER_USER} WORKER_REPO=${WORKER_REPO} WARMUP_SECONDS=${PRE_NORMAL_SEC} NORMAL_HOLD_SECONDS=${PRE_NORMAL_SEC} FAULT_HOLD_SECONDS=${HIGH_HOLD_SEC} STABLE_SECONDS=20 bash ${HOME}/AutoScale/experiments/thermal_analysis/run_cycle_from_master.sh" \
-  bash "${HOME}/AutoScale/scripts/run_B_thermal_yolo26_3inst.sh" "${RUN_ID}" &
+  THERMAL_CMD="WORKER_HOST=${WORKER_IP} WORKER_USER=${WORKER_USER} WORKER_REPO=${WORKER_REPO} WARMUP_SECONDS=${PRE_NORMAL_SEC} NORMAL_HOLD_SECONDS=${PRE_NORMAL_SEC} FAULT_HOLD_SECONDS=${HIGH_HOLD_SEC} STABLE_SECONDS=20 bash ${EXPERIMENT_LAYER_DIR}/thermal_analysis/run_cycle_from_master.sh" \
+  bash "${SCRIPT_DIR}/run_B_thermal_yolo26_3inst.sh" "${RUN_ID}" &
   CURRENT_CHILD_PID=$!
   wait "${CURRENT_CHILD_PID}"
   CURRENT_CHILD_PID=""
 
   echo "[INFO] build dataset for ${RUN_ID}"
-  python "${HOME}/AutoScale/experiments/thermal_analysis/build_thermal_yolo_dataset.py" \
+  python "${EXPERIMENT_LAYER_DIR}/thermal_analysis/build_thermal_yolo_dataset.py" \
     --run-dir "${RUN_DIR}" \
     --merge-tolerance-sec 2
 
@@ -93,7 +96,7 @@ for i in $(seq 1 "$CYCLES"); do
   VM_AGGREGATOR_MERGE_TOLERANCE_SEC="${VM_AGGREGATOR_MERGE_TOLERANCE_SEC:-5}"
   if [ "${VM_AGGREGATOR_ENABLED}" = "1" ] && [ "${VM_AGGREGATOR_AUTO_MERGE}" = "1" ]; then
     echo "[INFO] merge VM aggregator metrics for ${RUN_ID}"
-    python "${HOME}/AutoScale/experiments/thermal_analysis/merge_vmagg_into_thermal_dataset.py" \
+    python "${EXPERIMENT_LAYER_DIR}/thermal_analysis/merge_vmagg_into_thermal_dataset.py" \
       --run-dir "${RUN_DIR}" \
       --vmagg-csv "${RUN_DIR}/metrics/vm_aggregator_${WORKER_NODE}.csv" \
       --tolerance-sec "${VM_AGGREGATOR_MERGE_TOLERANCE_SEC}" \
@@ -103,7 +106,7 @@ for i in $(seq 1 "$CYCLES"); do
   fi
 
   echo "[INFO] plot dataset for ${RUN_ID}"
-  python "${HOME}/AutoScale/experiments/thermal_analysis/plot_thermal_yolo_dataset.py" \
+  python "${EXPERIMENT_LAYER_DIR}/thermal_analysis/plot_thermal_yolo_dataset.py" \
     --run-dir "${RUN_DIR}"
 
   echo "[INFO] finished cycle ${i}/${CYCLES}: ${RUN_ID}"

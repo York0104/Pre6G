@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXPERIMENT_LAYER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 RUN_ID="${1:-single_yolo26_rate_sweep_$(date +%Y%m%d_%H%M%S)}"
 OUTDIR="${OUTDIR:-${HOME}/exp_runs/${RUN_ID}}"
 
 NS="${NS:-intent-lab}"
 DEPLOY="${DEPLOY:-yolo26n-focus}"
-WORKER_IP="${WORKER_IP:-100.105.48.97}"
+WORKER_IP="${WORKER_IP:-140.113.179.6}"
 PORT="${PORT:-18081}"
 DURATION="${DURATION:-120}"
 WARMUP_SECONDS="${WARMUP_SECONDS:-20}"
@@ -16,8 +19,8 @@ COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-15}"
 # Comma-separated request rates. The script converts each rate to interval=1/rps.
 RATES_RPS="${RATES_RPS:-1,2,3,4,5,6,8,10,12,15,20}"
 
-IMAGE_PATH="${TEST_IMAGE:-${HOME}/AutoScale/experiments/yolo26_k8s/test_images/sanity_input.png}"
-CLIENT="${CLIENT:-${HOME}/AutoScale/experiments/thermal_analysis/yolo26_latency_client_stable.py}"
+IMAGE_PATH="${TEST_IMAGE:-${EXPERIMENT_LAYER_DIR}/yolo26_k8s/test_images/sanity_input.png}"
+CLIENT="${CLIENT:-${EXPERIMENT_LAYER_DIR}/thermal_analysis/yolo26_latency_client_stable.py}"
 
 mkdir -p "${OUTDIR}/raw" "${OUTDIR}/logs" "${OUTDIR}/k8s" "${OUTDIR}/summary"
 

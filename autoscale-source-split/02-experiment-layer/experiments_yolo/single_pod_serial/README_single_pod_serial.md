@@ -149,7 +149,7 @@ bash experiments/experiments_yolo/single_pod_serial/run_single_pod_serial_with_m
 - `NAMESPACE`
   - 預設 `intent-lab`
 - `NODE_SSH`
-  - 用於收集遠端 `nvidia-smi`，預設 `icclz1@100.105.48.97`
+  - 用於收集遠端 `nvidia-smi`，預設 `icclz1@140.113.179.6`
 
 ### 6.5 Outputs After Run
 

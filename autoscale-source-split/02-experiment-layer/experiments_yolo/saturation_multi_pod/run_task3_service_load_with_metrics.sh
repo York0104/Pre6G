@@ -5,9 +5,9 @@ NAMESPACE="intent-lab"
 APP="yolo26n"
 EXP="task3-saturation"
 NODE_NAME="icclz1"
-NODE_SSH="icclz1@100.105.48.97"
-VM_URL="${VM_URL:-http://100.68.32.118:31888}"
-NETDATA_URL="${NETDATA_URL:-http://100.68.32.118:32163}"
+NODE_SSH="icclz1@140.113.179.6"
+VM_URL="${VM_URL:-http://140.113.179.9:31888}"
+NETDATA_URL="${NETDATA_URL:-http://140.113.179.9:32163}"
 NETDATA_CHILD_URL="${NETDATA_CHILD_URL:-$NETDATA_URL}"
 NETDATA_PARENT_BASE_URL="${NETDATA_PARENT_BASE_URL:-$NETDATA_URL}"
 
@@ -43,8 +43,11 @@ echo "[INFO] RUN_DIR=${RUN_DIR}"
 
 cd "${BASE_DIR}"
 
-if [ -f ~/AutoScale/iccl/bin/activate ]; then
-  source ~/AutoScale/iccl/bin/activate
+PRE6G_ROOT="$(cd "${SPLIT_ROOT}/.." && pwd)"
+VENV_ACTIVATE="${PRE6G_ROOT}/iccl/bin/activate"
+
+if [ -f "${VENV_ACTIVATE}" ]; then
+  source "${VENV_ACTIVATE}"
 fi
 
 echo "[INFO] Checking pods..."

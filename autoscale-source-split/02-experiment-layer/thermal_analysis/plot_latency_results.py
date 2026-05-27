@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# /home/iccls2/AutoScale/experiments/thermal_analysis/plot_latency_results.py
+# /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/thermal_analysis/plot_latency_results.py
 import argparse
 import csv
 import math

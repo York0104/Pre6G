@@ -21,6 +21,7 @@ Scope: `Pre6G` 交付包在新 `k3s` 環境上的監控層移植測試
 
 - `z590-aorus-xtreme`：GPU 註冊與 DCGM 曾驗證成功，但目前受主機磁碟滿影響，不列為穩定監控節點
 - `iccl-cluster-z2`：成功
+- `icclz1`：新增後已自動套用完整監控，並被辨識為 `GTX 1080 Ti` GPU worker
 - `icclz3`：已修復成功
 
 因此之後切到正式節點時，建議把這次整理出的 `monitoring-rebuild/` 當成新基底，並直接沿用分散式 `vmagent` 設計，而不是回到單一 `vmagent` 直抓所有 node IP。
@@ -191,6 +192,18 @@ log 會出現：
 
 - 中央監控恢復穩定
 - `run_vm_aggregator_once.sh` 也改為預設走 `140.113.179.9` 的 NodePort
+
+## Additional Validated Outcome
+
+後續新增 `icclz1` 加入目前 `k3s` 後，已驗證：
+
+- `node-exporter`、`vmagent-node-local`、`Netdata child` 自動套用成功
+- `Node Feature Discovery` 已自動補上 GPU 相關 label
+- `nvidia-device-plugin`、`dcgm-exporter` 已自動排程到 `icclz1`
+- `nvidia.com/gpu` 已出現在 node `Capacity` / `Allocatable`，值為 `1`
+- `vm_aggregator` 已成功讀到 `NVIDIA GeForce GTX 1080 Ti` 指標
+
+這代表目前的 `NFD + device-plugin + dcgm-exporter + node-local vmagent` 設計，對新加入的 NVIDIA GPU worker 已可自動接管。
 
 ## Recommended Formal Layout
 

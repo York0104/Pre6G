@@ -33,6 +33,7 @@ NETDATA_URL = os.getenv("NETDATA_URL", "http://netdata.netdata.svc:19999").rstri
 NETDATA_CHILD_URL = os.getenv("NETDATA_CHILD_URL", NETDATA_URL).rstrip("/")
 NETDATA_PARENT_BASE_URL = os.getenv("NETDATA_PARENT_BASE_URL", "http://netdata.netdata.svc:19999").rstrip("/")
 NETDATA_HOST = os.getenv("NETDATA_HOST", "").strip()
+KSM_URL = os.getenv("KSM_URL", "http://kube-state-metrics.monitoring.svc:8080").rstrip("/")
 
 SYSTEM_PRODUCT_SUFFIX = "-system-product-name"
 
@@ -710,6 +711,41 @@ def vm_query_optional(promql: str):
         return vm_query(promql)
     except Exception:
         return []
+
+
+def fetch_ksm_metrics_text() -> str:
+    req = urllib.request.Request(f"{KSM_URL}/metrics")
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
+def ksm_resource_metric_by_node(metric_name: str, resource_name: str) -> Dict[str, int]:
+    text = fetch_ksm_metrics_text()
+    line_re = re.compile(rf'^{re.escape(metric_name)}\{{(.*?)\}}\s+([-+]?\d+(?:\.\d+)?)$')
+    label_re = re.compile(r'(\w+)="((?:\\.|[^"\\])*)"')
+    out: Dict[str, int] = {}
+    for line in text.splitlines():
+        if not line or line.startswith('#'):
+            continue
+        m = line_re.match(line)
+        if not m:
+            continue
+        labels_blob = m.group(1)
+        value = safe_int(m.group(2), None)
+        if value is None:
+            continue
+        labels: Dict[str, str] = {}
+        for km in label_re.finditer(labels_blob):
+            k = km.group(1)
+            v = bytes(km.group(2), 'utf-8').decode('unicode_escape')
+            labels[k] = v
+        if labels.get('resource') != resource_name:
+            continue
+        node = clean_name(labels.get('node'))
+        if not node:
+            continue
+        out[node] = value
+    return out
 
 
 def split_instance_host(instance: str) -> str:
@@ -1546,18 +1582,40 @@ def collect_state_for_node(
         'count(DCGM_FI_DEV_GPU_UTIL)'
     ), 0.0), 0)
 
-    cluster_gpu_capacity = safe_int(first_value(vm_query_optional(
+    cluster_gpu_capacity = safe_int(first_value_optional(vm_query_optional(
         'sum(kube_node_status_capacity{resource="nvidia_com_gpu"})'
-    ), 0.0), 0)
-    cluster_gpu_allocatable = safe_int(first_value(vm_query_optional(
+    )), None)
+    cluster_gpu_allocatable = safe_int(first_value_optional(vm_query_optional(
         'sum(kube_node_status_allocatable{resource="nvidia_com_gpu"})'
-    ), 0.0), 0)
-    target_gpu_capacity = safe_int(first_value(vm_query_optional(
+    )), None)
+    target_gpu_capacity = safe_int(first_value_optional(vm_query_optional(
         f'sum(kube_node_status_capacity{{node="{target_k8s_node}",resource="nvidia_com_gpu"}})'
-    ), 0.0), 0)
-    target_gpu_allocatable = safe_int(first_value(vm_query_optional(
+    )), None)
+    target_gpu_allocatable = safe_int(first_value_optional(vm_query_optional(
         f'sum(kube_node_status_allocatable{{node="{target_k8s_node}",resource="nvidia_com_gpu"}})'
-    ), 0.0), 0)
+    )), None)
+
+    if None in (cluster_gpu_capacity, cluster_gpu_allocatable, target_gpu_capacity, target_gpu_allocatable):
+        try:
+            ksm_capacity_by_node = ksm_resource_metric_by_node('kube_node_status_capacity', 'nvidia_com_gpu')
+            ksm_allocatable_by_node = ksm_resource_metric_by_node('kube_node_status_allocatable', 'nvidia_com_gpu')
+        except Exception:
+            ksm_capacity_by_node = {}
+            ksm_allocatable_by_node = {}
+
+        if cluster_gpu_capacity is None:
+            cluster_gpu_capacity = sum(ksm_capacity_by_node.values())
+        if cluster_gpu_allocatable is None:
+            cluster_gpu_allocatable = sum(ksm_allocatable_by_node.values())
+        if target_gpu_capacity is None:
+            target_gpu_capacity = safe_int(ksm_capacity_by_node.get(target_k8s_node), 0)
+        if target_gpu_allocatable is None:
+            target_gpu_allocatable = safe_int(ksm_allocatable_by_node.get(target_k8s_node), 0)
+
+    cluster_gpu_capacity = safe_int(cluster_gpu_capacity, 0)
+    cluster_gpu_allocatable = safe_int(cluster_gpu_allocatable, 0)
+    target_gpu_capacity = safe_int(target_gpu_capacity, 0)
+    target_gpu_allocatable = safe_int(target_gpu_allocatable, 0)
 
     gpu_workload_fb_vec = vm_query_optional(
         'sum by (namespace, pod) (DCGM_FI_DEV_FB_USED{namespace!="",pod!=""})'

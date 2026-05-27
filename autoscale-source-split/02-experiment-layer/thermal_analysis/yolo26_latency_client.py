@@ -10,7 +10,7 @@ import requests
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", required=True, help="e.g. http://100.105.48.97:30026/infer")
+    ap.add_argument("--url", required=True, help="e.g. http://140.113.179.6:30026/infer")
     ap.add_argument("--image", required=True, help="fixed input image path")
     ap.add_argument("--out", required=True, help="latency csv output")
     ap.add_argument("--seconds", type=int, required=True)

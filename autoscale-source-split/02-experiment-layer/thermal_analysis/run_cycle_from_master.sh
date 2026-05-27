@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export NODE_EXPORTER_INSTANCE=100.105.48.97:9100
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXPERIMENT_LAYER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SPLIT_ROOT="$(cd "${EXPERIMENT_LAYER_DIR}/.." && pwd)"
+PRE6G_ROOT="$(cd "${SPLIT_ROOT}/.." && pwd)"
+SHARED_API_DIR="${SPLIT_ROOT}/03-shared-api-dashboard/autoscale_api"
+
+export NODE_EXPORTER_INSTANCE="${NODE_EXPORTER_INSTANCE:-140.113.179.6:9100}"
 RUN_ID="${1:-${RUN_ID:?missing run id}}"
 
-AUTOSCALE_DIR="${AUTOSCALE_DIR:-$HOME/AutoScale}"
+AUTOSCALE_DIR="${AUTOSCALE_DIR:-$EXPERIMENT_LAYER_DIR}"
 OUT_DIR="${OUT_DIR:-$HOME/exp_runs/$RUN_ID}"
 
 mkdir -p "$OUT_DIR"
@@ -23,7 +30,7 @@ echo "TARGET_C=$TARGET_C"
 echo "PLOT_TARGET_C=$PLOT_TARGET_C"
 echo "LATENCY_GLOB=$LATENCY_GLOB"
 
-WORKER_HOST="${WORKER_HOST:-100.105.48.97}"
+WORKER_HOST="${WORKER_HOST:-140.113.179.6}"
 WORKER_USER="${WORKER_USER:-icclz1}"
 WORKER_REPO="${WORKER_REPO:-/home/icclz1/gpu-tempctl-lab}"
 WORKER_SSH="${WORKER_USER}@${WORKER_HOST}"
@@ -83,7 +90,7 @@ export INTERVAL_SEC="$INTERVAL_SEC"
 export OUT_DIR="$OUT_DIR"
 export RUN_TAG="$RUN_ID"
 
-python autoscale_api/scripts/record_stress_metrics.py > "$OUT_DIR/recorder.log" 2>&1 &
+python "${SHARED_API_DIR}/scripts/record_stress_metrics.py" > "$OUT_DIR/recorder.log" 2>&1 &
 RECORDER_PID=$!
 
 cleanup() {
@@ -131,7 +138,7 @@ while kill -0 "$WORKER_PID" >/dev/null 2>&1; do
     "${WORKER_SSH}:${WORKER_REPO}/fan_control_lab/logs/${RUN_ID}/" \
     "$OUT_DIR/worker_logs_live/" >/dev/null 2>&1 || true
 
-  python "$AUTOSCALE_DIR/experiments/thermal_analysis/live_cycle_plot.py" \
+  python "${SCRIPT_DIR}/live_cycle_plot.py" \
     --csv "$OUT_DIR/worker_logs_live/thermal.csv" \
     --out "$OUT_DIR/live_plot.png" \
     --target "$PLOT_TARGET_C" \
@@ -154,7 +161,7 @@ rsync -e "ssh ${SSH_OPTS}" -av \
   "${WORKER_SSH}:${WORKER_REPO}/fan_control_lab/logs/${RUN_ID}/" \
   "$OUT_DIR/worker_logs/"
 
-python "$AUTOSCALE_DIR/experiments/thermal_analysis/live_cycle_plot.py" \
+python "${SCRIPT_DIR}/live_cycle_plot.py" \
   --csv "$OUT_DIR/worker_logs/thermal.csv" \
   --out "$OUT_DIR/final_plot.png" \
   --target "$PLOT_TARGET_C" \
@@ -163,7 +170,7 @@ python "$AUTOSCALE_DIR/experiments/thermal_analysis/live_cycle_plot.py" \
   --band "$BAND" \
   --title "Final Thermal Curve - ${RUN_ID}" || true
 
-python "$AUTOSCALE_DIR/experiments/thermal_analysis/merge_run.py" \
+python "${SCRIPT_DIR}/merge_run.py" \
   --run-dir "$OUT_DIR"
 
 echo

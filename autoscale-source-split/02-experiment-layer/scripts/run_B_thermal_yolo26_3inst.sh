@@ -11,7 +11,7 @@ MONITORING_DIR="${SPLIT_ROOT}/01-monitoring-layer"
 
 NS="${NS:-intent-lab}"
 WORKER_NODE="${WORKER_NODE:-icclz1}"
-WORKER_IP="${WORKER_IP:-100.105.48.97}"
+WORKER_IP="${WORKER_IP:-140.113.179.6}"
 WORKER_USER="${WORKER_USER:-${WORKER_NODE}}"
 WORKER_SSH="${WORKER_USER}@${WORKER_IP}"
 SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5"
@@ -130,7 +130,7 @@ done | tee "${RUN_DIR}/logs/pre_healthz.txt"
 if [ -n "${TEST_IMAGE:-}" ]; then
   IMAGE_PATH="${TEST_IMAGE}"
 else
-  IMAGE_PATH="${HOME}/AutoScale/experiments/yolo26_k8s/test_images/sanity_input.png"
+  IMAGE_PATH="${EXPERIMENT_LAYER_DIR}/yolo26_k8s/test_images/sanity_input.png"
 fi
 
 if [ ! -f "${IMAGE_PATH}" ]; then
@@ -196,7 +196,7 @@ VM_AGGREGATOR_NETDATA_CHILD_URL="${VM_AGGREGATOR_NETDATA_CHILD_URL:-${NETDATA_CH
 VM_AGGREGATOR_NETDATA_PARENT_BASE_URL="${VM_AGGREGATOR_NETDATA_PARENT_BASE_URL:-${NETDATA_PARENT_BASE_URL:-}}"
 VM_AGGREGATOR_NODE_EXPORTER_INSTANCE="${VM_AGGREGATOR_NODE_EXPORTER_INSTANCE:-${NODE_EXPORTER_INSTANCE:-}}"
 if [ -z "${VM_AGGREGATOR_NODE_EXPORTER_INSTANCE}" ] && [ "${WORKER_NODE}" = "icclz1" ]; then
-  VM_AGGREGATOR_NODE_EXPORTER_INSTANCE="100.105.48.97:9100"
+  VM_AGGREGATOR_NODE_EXPORTER_INSTANCE="140.113.179.6:9100"
 fi
 VM_AGGREGATOR_AUTO_PORT_FORWARD="${VM_AGGREGATOR_AUTO_PORT_FORWARD:-1}"
 VM_AGGREGATOR_VM_LOCAL_PORT="${VM_AGGREGATOR_VM_LOCAL_PORT:-18428}"
@@ -292,7 +292,7 @@ if [ "${VM_AGGREGATOR_ENABLED}" = "1" ]; then
 
   sleep 2
 
-  python "${HOME}/AutoScale/experiments/thermal_analysis/collect_vm_aggregator_csv.py" \
+  python "${EXPERIMENT_LAYER_DIR}/thermal_analysis/collect_vm_aggregator_csv.py" \\
     --aggregator "${VM_AGGREGATOR_PATH}" \
     --out "${VM_AGGREGATOR_OUT}" \
     --seconds "${DURATION}" \
@@ -312,7 +312,7 @@ fi
 
 echo "[INFO] Start YOLO latency clients"
 
-python "${HOME}/AutoScale/experiments/thermal_analysis/yolo26_latency_client_stable.py" \
+python "${EXPERIMENT_LAYER_DIR}/thermal_analysis/yolo26_latency_client_stable.py" \\
   --url "http://${WORKER_IP}:18081/infer" \
   --image "${IMAGE_PATH}" \
   --seconds "${DURATION}" \
@@ -321,7 +321,7 @@ python "${HOME}/AutoScale/experiments/thermal_analysis/yolo26_latency_client_sta
   > "${RUN_DIR}/logs/focus_client.log" 2>&1 &
 FOCUS_PID=$!
 
-python "${HOME}/AutoScale/experiments/thermal_analysis/yolo26_latency_client_stable.py" \
+python "${EXPERIMENT_LAYER_DIR}/thermal_analysis/yolo26_latency_client_stable.py" \\
   --url "http://${WORKER_IP}:18082/infer" \
   --image "${IMAGE_PATH}" \
   --seconds "${DURATION}" \
@@ -330,7 +330,7 @@ python "${HOME}/AutoScale/experiments/thermal_analysis/yolo26_latency_client_sta
   > "${RUN_DIR}/logs/bg1_client.log" 2>&1 &
 BG1_PID=$!
 
-python "${HOME}/AutoScale/experiments/thermal_analysis/yolo26_latency_client_stable.py" \
+python "${EXPERIMENT_LAYER_DIR}/thermal_analysis/yolo26_latency_client_stable.py" \\
   --url "http://${WORKER_IP}:18083/infer" \
   --image "${IMAGE_PATH}" \
   --seconds "${DURATION}" \
@@ -404,7 +404,7 @@ kubectl -n "${NS}" get events --sort-by=.lastTimestamp > "${RUN_DIR}/k8s/events_
 
 echo "[INFO] Run outage labeling"
 
-python "${HOME}/AutoScale/experiments/thermal_analysis/detect_service_outage.py" \
+python "${EXPERIMENT_LAYER_DIR}/thermal_analysis/detect_service_outage.py" \\
   --run-dir "${RUN_DIR}" \
   --window-sec 5 \
   --min-instances 2 \
@@ -417,7 +417,7 @@ python "${HOME}/AutoScale/experiments/thermal_analysis/detect_service_outage.py"
 
 if [ "${VM_AGGREGATOR_ENABLED}" = "1" ] && [ "${VM_AGGREGATOR_AUTO_MERGE}" = "1" ]; then
   echo "[INFO] Merge VM aggregator metrics into labeled dataset"
-  python "${HOME}/AutoScale/experiments/thermal_analysis/merge_vmagg_into_thermal_dataset.py" \
+  python "${EXPERIMENT_LAYER_DIR}/thermal_analysis/merge_vmagg_into_thermal_dataset.py" \\
     --run-dir "${RUN_DIR}" \
     --vmagg-csv "${VM_AGGREGATOR_OUT}" \
     --tolerance-sec "${VM_AGGREGATOR_MERGE_TOLERANCE_SEC}" \

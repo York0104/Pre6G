@@ -1,6 +1,6 @@
 # Experiment Layer Dependency Trace
 
-本文件確認 `02-experiment-layer/experiments_yolo/` 是否依賴 AutoScale 中較舊的實驗資料夾，並說明 fan control 與 background load 的實際來源。
+本文件確認 `02-experiment-layer/experiments_yolo/` 是否依賴較舊的 AutoScale 實驗資料夾，並說明 fan control、background load 與目前 k3s 重現前提。
 
 ## 結論
 
@@ -12,16 +12,16 @@ experiments/model_load/
 experiments/monitoring/
 ```
 
-唯一出現 `experiments/monitoring` 的地方是 `scripts/README_yolo26_3inst.md` 的舊路徑提醒，內容是提醒不要使用舊路徑。
+唯一還會提到舊路徑的地方，已只保留在歷史說明或範例背景中，不再是目前執行入口。
 
 ## Fan Control 來源
 
-fan control 不是來自 AutoScale 的 `experiments/load_injection/`。
+fan control 不是來自舊的 `experiments/load_injection/`。
 
 目前是由 master 端腳本透過 SSH 啟動 worker：
 
 ```text
-WORKER_HOST=100.105.48.97
+WORKER_HOST=140.113.179.6
 WORKER_USER=icclz1
 WORKER_REPO=/home/icclz1/gpu-tempctl-lab
 ```
@@ -47,32 +47,38 @@ fan_control_lab/gpu_cycle_runner.py
 fan_control_lab/gpu_supervisor_80.py
 ```
 
-這些 worker-side 檔案不在本機交接包內；請參考 `k3s-migration-bundle-sanitized/external-worker/`。
+這些 worker-side 檔案不在本 repo 內；請搭配 `current-lab-handoff-private/` 與 worker 主機現場內容交付。
+
+## YOLO service image 來源
+
+YOLO service workload 目前依賴下列本地 image tag：
+
+```text
+local/yolo26n:0.1
+local/yolo26n:0.5
+```
+
+目前 repo 內已提供可重建 image 的來源：
+
+```text
+02-experiment-layer/yolo26_k8s/Dockerfile
+02-experiment-layer/yolo26_k8s/app.py
+02-experiment-layer/yolo26_k8s/build_and_import_image_to_k3s.sh
+```
+
+因此新 k3s 環境不需要回頭找舊 image tar，只要先 build / import 即可。
 
 ## Background Load 來源
 
 ### YOLO service load
 
-YOLO service load 由 k8s YOLO pods 與本層 request client 產生：
+YOLO service load 由 k3s YOLO pods 與本層 request client 產生：
 
 ```text
 experiments_yolo/saturation_multi_pod/yolo26_task3_saturation.yaml
 experiments_yolo/saturation_multi_pod/run_task3_service_load_with_metrics.sh
 experiments_yolo/common/request_client_parallel.py
 experiments_yolo/common/request_client_serial.py
-```
-
-`yolo26_task3_saturation.yaml` 會建立：
-
-```text
-yolo26n-task3-focus
-yolo26n-task3-bg
-```
-
-兩者皆使用：
-
-```text
-local/yolo26n:0.5
 ```
 
 ### Worker GPU thermal/background load
@@ -83,11 +89,38 @@ worker GPU thermal/background load 由 worker 端 `gpu-tempctl-lab` 提供。`ru
 from fan_control_lab.gpu_supervisor_80 import read_gpu_metrics, start_workload, stop_process
 ```
 
-因此 `start_workload(...)` 不在 AutoScale 的 `experiments/load_injection/`，而是必須從 worker 端 `gpu-tempctl-lab` 恢復。
+因此 `start_workload(...)` 不在舊的 AutoScale `experiments/load_injection/`，而是必須從 worker 端 `gpu-tempctl-lab` 恢復。
+
+## GPU sharing / saturation 依賴
+
+多 pod saturation 與三實例 YOLO workload 仍依賴：
+
+```text
+nvidia.com/gpu.shared
+```
+
+目前 repo 已直接收錄本機 reference config：
+
+```text
+experiments_yolo/saturation_multi_pod/gpu-sharing-icclz1.yaml
+```
+
+若 cluster 尚未出現 `nvidia.com/gpu.shared`：
+
+- `single_pod_serial`
+- `single_pod_serial_fault_fan`
+- `single_pod_bgload_fan_cycle`
+
+仍可先做；但：
+
+- `yolo26_3inst_icclz1.yaml`
+- `yolo26_task3_saturation.yaml`
+
+不能直接排程成功。
 
 ## 保持排除
 
-以下資料夾可繼續排除於目前交接 source split：
+以下資料夾可繼續排除於目前重建主線：
 
 ```text
 experiments/load_injection/
