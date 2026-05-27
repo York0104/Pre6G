@@ -5,7 +5,7 @@ metadata:
 spec:
   restartPolicy: Never
   nodeSelector:
-    kubernetes.io/hostname: icclz1
+    kubernetes.io/hostname: REPLACE_GPU_NODE
   containers:
   - name: cuda
     image: nvidia/cuda:12.2.0-base-ubuntu22.04
@@ -21,7 +21,7 @@ metadata:
 spec:
   restartPolicy: Never
   nodeSelector:
-    kubernetes.io/hostname: icclz1
+    kubernetes.io/hostname: REPLACE_GPU_NODE
   containers:
   - name: cuda
     image: nvidia/cuda:12.2.0-base-ubuntu22.04
@@ -37,7 +37,7 @@ metadata:
 spec:
   restartPolicy: Never
   nodeSelector:
-    kubernetes.io/hostname: icclz1
+    kubernetes.io/hostname: REPLACE_GPU_NODE
   containers:
   - name: cuda
     image: nvidia/cuda:12.2.0-base-ubuntu22.04
@@ -53,7 +53,7 @@ metadata:
 spec:
   restartPolicy: Never
   nodeSelector:
-    kubernetes.io/hostname: icclz1
+    kubernetes.io/hostname: REPLACE_GPU_NODE
   containers:
   - name: cuda
     image: nvidia/cuda:12.2.0-base-ubuntu22.04

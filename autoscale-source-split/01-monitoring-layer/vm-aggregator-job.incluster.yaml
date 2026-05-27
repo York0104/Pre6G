@@ -4,13 +4,15 @@ metadata:
   name: vm-aggregator-once
   namespace: monitoring
 spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 0
   template:
     spec:
       restartPolicy: Never
       containers:
         - name: aggregator
           image: python:3.12-slim
-          command: ["python", "/app/vm_aggregator.py"]
+          command: ["python", "-u", "/app/vm_aggregator.py"]
           env:
             - name: VM_URL
               value: "http://vm-victoria-metrics-single-server.monitoring.svc:8428"

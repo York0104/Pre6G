@@ -15,7 +15,7 @@ INTERVAL = int(os.getenv("INTERVAL", "10"))
 
 # VictoriaMetrics import endpoint.
 # 請依你的 VM service 或 port-forward 修改。
-VM_URL = os.getenv("VM_URL", "http://100.68.32.118:31888/api/v1/import/prometheus")
+VM_URL = os.getenv("VM_URL", "http://140.113.179.9:31888/api/v1/import/prometheus")
 
 # 不建議直接把 client MAC 存進長期資料庫，這裡用 hash 匿名化。
 MAC_SALT = os.getenv("MAC_SALT", "pre6g_ap_gateway")

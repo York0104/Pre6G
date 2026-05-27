@@ -34,7 +34,7 @@ Frontend / External Service
 範例：
 
 ```env
-AUTOSCALE_API_BASE=http://100.68.32.118:8000
+AUTOSCALE_API_BASE=http://<CONTROL_PLANE_IP>:8000
 AUTOSCALE_API_TOKEN=replace-with-issued-token
 ```
 
@@ -74,7 +74,7 @@ AUTOSCALE_API_TOKEN=replace-with-issued-token
   "error_count": 2,
   "nodes": [
     {
-      "node_name": "icclz1",
+      "node_name": "REPLACE_NODE",
       "node_type": "k8s",
       "aggregator": "vm_aggregator.py",
       "payload": {
@@ -146,14 +146,14 @@ curl \
 ```bash
 curl \
   -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" \
-  "$API_BASE_URL/api/v1/full-metrics/icclz1" | jq
+  "$API_BASE_URL/api/v1/full-metrics/REPLACE_NODE" | jq
 ```
 
 ## 9. 每 30 秒持續落地 raw JSON 與 CSV
 
 repo 已提供一個範例 wrapper：
 
-- [run_full_metrics_api_collector.sh](/home/iccls2/AutoScale/run_full_metrics_api_collector.sh)
+- [run_full_metrics_api_collector.sh](/home/icclz2/Pre6G/run_full_metrics_api_collector.sh)
 
 用途：
 
@@ -171,16 +171,16 @@ $HOME/node_metric_csv_logs/YYYYMMDD_HHMMSS/
 例如：
 
 ```text
-/home/iccls2/node_metric_csv_logs/20260519_004958
+/home/iccl-cluster-z2/node_metric_csv_logs/20260519_004958
 ```
 
 執行範例：
 
 ```bash
-API_BASE_URL=http://100.68.32.118:8000 \
+API_BASE_URL=http://<CONTROL_PLANE_IP>:8000 \
 API_TOKEN=replace-with-issued-token \
 INTERVAL_SECONDS=30 \
-bash /home/iccls2/AutoScale/run_full_metrics_api_collector.sh
+bash /home/icclz2/Pre6G/run_full_metrics_api_collector.sh
 ```
 
 若不需要 token，可省略 `API_TOKEN`。
@@ -190,16 +190,16 @@ bash /home/iccls2/AutoScale/run_full_metrics_api_collector.sh
 ```text
 $HOME/node_metric_csv_logs/20260519_004958/
 ├── ap_gateway_openwrt_ap.csv
-├── k8s_iccls2.csv
-├── k8s_icclz1.csv
+├── k8s_iccl-cluster-z2.csv
+├── k8s_REPLACE_NODE.csv
 ├── rfsoc_rfsoc4x2-pynq.csv
 ├── collector.log
 ├── nodes_manifest.json
 └── raw_json/
     ├── ap_gateway_openwrt_ap.jsonl
     ├── full_metrics_response.jsonl
-    ├── k8s_iccls2.jsonl
-    ├── k8s_icclz1.jsonl
+    ├── k8s_iccl-cluster-z2.jsonl
+    ├── k8s_REPLACE_NODE.jsonl
     └── rfsoc_rfsoc4x2-pynq.jsonl
 ```
 

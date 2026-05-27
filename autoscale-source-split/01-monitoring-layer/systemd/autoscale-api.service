@@ -5,22 +5,17 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=iccls2
-Group=iccls2
+User=icclz2
+Group=icclz2
 
-WorkingDirectory=/home/iccls2/AutoScale/autoscale_api
+WorkingDirectory=/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api
 
-Environment="HOME=/home/iccls2"
-Environment="KUBECONFIG=/home/iccls2/.kube/config"
-Environment="PYTHONPATH=/home/iccls2/AutoScale:/home/iccls2/AutoScale/autoscale_api"
-EnvironmentFile=-/home/iccls2/AutoScale/systemd/autoscale-api.env
+Environment="HOME=/home/icclz2"
+Environment="KUBECONFIG=/home/icclz2/.kube/config"
+Environment="PYTHONPATH=/home/icclz2/Pre6G:/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api"
+EnvironmentFile=-/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
 
-Environment="VM_URL=http://100.68.32.118:31888"
-Environment="NETDATA_PARENT_BASE_URL=http://100.68.32.118:32163"
-Environment="NETDATA_URL=http://100.68.32.118:32163"
-Environment="NETDATA_CHILD_URL=http://100.68.32.118:32163"
-
-ExecStart=/home/iccls2/AutoScale/iccl/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/bin/bash -lc '/home/icclz2/Pre6G/iccl/bin/uvicorn app.main:app --host "${AUTOSCALE_API_HOST:-0.0.0.0}" --port "${AUTOSCALE_API_PORT:-8000}"'
 
 Restart=always
 RestartSec=5

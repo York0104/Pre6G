@@ -1,6 +1,6 @@
 # AutoScale Source Split
 
-本資料夾是從 `/home/iccls2/AutoScale` 整理出的 source-level 交接版本，用於讓接手者不必先理解整個歷史 repo，就能重建目前需要的監控、實驗與 API/UI。
+本資料夾是從 `/home/icclz2/Pre6G` 整理出的 source-level 交接版本，用於讓接手者不必先理解整個歷史 repo，就能重建目前需要的監控、實驗與 API/UI。
 
 ## 分層原則
 
@@ -39,6 +39,6 @@
 
 ## 接手建議
 
-1. 先看 `01-monitoring-layer/README.md`，重建監控資料來源。
-2. 再看 `03-shared-api-dashboard/README.md`，啟動 API/UI。
-3. 最後看 `02-experiment-layer/README.md`，恢復 thermal YOLO 實驗。
+1. 先看 `../MONITORING_REBUILD_SOP.md`，照正式 `k3s` 重建順序部署監控。
+2. 再看 `01-monitoring-layer/README.md` 與 `03-shared-api-dashboard/README.md`，啟動 API/UI。
+3. `02-experiment-layer/README.md` 雖尚未列入本次 `k3s` 重建驗收，但必要 source/workload 已保留，可在下一台 `k3s` 環境接續完成實驗層。

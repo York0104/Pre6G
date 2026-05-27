@@ -24,7 +24,7 @@ LAB_IP = os.getenv("LAB_IP", "192.168.100.217").strip()
 TAILSCALE_IP = os.getenv("TAILSCALE_IP", "100.91.37.32").strip()
 OBSERVER = socket.gethostname()
 PL_STATUS_SSH_TARGET = os.getenv("PL_STATUS_SSH_TARGET", "rfsoc4x2-pynq").strip()
-PL_STATUS_SSH_KEY = os.getenv("PL_STATUS_SSH_KEY", "/home/iccls2/.ssh/id_ed25519_rfsoc").strip()
+PL_STATUS_SSH_KEY = os.getenv("PL_STATUS_SSH_KEY", "/home/icclz2/.ssh/id_ed25519_rfsoc").strip()
 PL_STATUS_SSH_TIMEOUT = float(os.getenv("PL_STATUS_SSH_TIMEOUT", "3"))
 PL_STATUS_REMOTE_CMD = os.getenv(
     "PL_STATUS_REMOTE_CMD",

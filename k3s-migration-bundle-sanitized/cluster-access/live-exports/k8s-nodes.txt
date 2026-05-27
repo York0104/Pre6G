@@ -1,7 +1,0 @@
-NAME                STATUS   ROLES           AGE   VERSION    INTERNAL-IP      EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION      CONTAINER-RUNTIME
-iccl-s3-251230      Ready    <none>          45d   v1.32.4    100.90.127.1     <none>        Ubuntu 24.04.3 LTS   6.17.0-22-generic   containerd://1.7.28
-iccls2              Ready    control-plane   67d   v1.32.4    100.68.32.118    <none>        Ubuntu 22.04.5 LTS   6.8.0-111-generic   containerd://2.2.2
-icclz1              Ready    <none>          66d   v1.32.4    100.105.48.97    <none>        Ubuntu 22.04.5 LTS   6.8.0-110-generic   containerd://2.2.1
-icclz3              Ready    <none>          66d   v1.32.4    100.109.98.27    <none>        Ubuntu 22.04.5 LTS   6.8.0-59-generic    containerd://2.2.1
-mirc516-20250605    Ready    <none>          33d   v1.32.13   100.118.188.66   <none>        Ubuntu 24.04.3 LTS   6.17.0-22-generic   containerd://2.2.1
-z590-aorus-xtreme   Ready    <none>          45d   v1.32.13   100.120.61.21    <none>        Ubuntu 24.04.2 LTS   6.17.0-20-generic   containerd://1.7.28

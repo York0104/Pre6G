@@ -1,6 +1,8 @@
 # 03 Shared API / Dashboard
 
-本層是監控與實驗的共用介面層。`autoscale_api/` 同時提供 monitoring endpoints 與 experiment-control endpoints，因此不歸入單一監控層或實驗層。
+本層是監控與實驗的共用介面層。
+
+目前 `k3s` 重建已驗證的是 `Cluster Monitor` 主線；experiment-control 相關程式仍保留在此層，但不列入本次正式重建驗收。
 
 ## 目錄與檔案說明
 
@@ -62,4 +64,6 @@
 
 ## 注意事項
 
-真實 `.env` 未放在本層；請使用 `../current-lab-handoff-private/private-files-to-fill/` 中的 private handoff。
+- 若目標是目前可交付的 `k3s` 監控重建，請優先使用 `autoscale_api/README.md` 與 `cluster-dashboard/README.md`。
+- `app/services/fan_cycle_experiment_service.py`、`app/services/yolo_demo_service.py` 與 experiment routers 仍屬未驗證的實驗層接口。
+- 真實 `.env` 未放在本層；請使用 `../current-lab-handoff-private/private-files-to-fill/` 中的 private handoff。

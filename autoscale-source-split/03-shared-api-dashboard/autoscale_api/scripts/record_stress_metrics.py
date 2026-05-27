@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# /home/iccls2/AutoScale/autoscale_api/scripts/record_stress_metrics.py
+# /home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/scripts/record_stress_metrics.py
 import sys
 import os
 import json

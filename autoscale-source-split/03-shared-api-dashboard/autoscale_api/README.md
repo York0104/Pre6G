@@ -1,319 +1,111 @@
 # Pre6G AutoScale API
 
-## 1. 專案目的
+## Purpose
 
-本專案提供 Pre6G / AutoScale 監控查詢 API，將 Kubernetes、VictoriaMetrics、Netdata、DCGM 等來源的資料整理成固定 JSON 查詢格式，作為後續 LLM、前端介面或 orchestration 模組的統一入口。
+`autoscale_api` 是 `Pre6G` 在 `k3s` 監控重建後的查詢入口，負責把：
 
-目前已完成的核心查詢為：
+- Kubernetes node metadata
+- VictoriaMetrics 指標
+- Netdata host-scoped 資料
+- DCGM GPU 指標
 
-- `node_list`：提供 cluster 內可查詢節點的固定 inventory
-- `node_status`：提供單一節點或全部節點的即時運算資源狀態
-- `full_metrics`：提供每個節點 aggregator 的完整原始 JSON
+整理成固定 JSON schema，供 `Cluster Monitor` dashboard 使用。
 
-## 2. 目錄結構
+本 README 只描述目前已驗證的 `monitoring + cluster monitor` 主線；experiment 相關 API 不列入本次正式重建驗收。
 
-```text
-autoscale_api/
-├─ app/
-│  ├─ main.py
-│  ├─ routers/
-│  │  └─ nodes.py
-│  ├─ services/
-│  │  ├─ cache_service.py
-│  │  ├─ node_inventory_service.py
-│  │  └─ node_status_service.py
-│  ├─ schemas/
-│  │  └─ node.py
-│  └─ adapters/
-│     └─ k8s_adapter.py
-└─ README.md
-```
+## Main Endpoints
 
-## 3. 分層設計
-
-### `main.py`
-
-FastAPI 入口，負責建立 app 並註冊 routers。
-
-### `routers/`
-
-定義 HTTP API 路徑與 response model。
-
-### `services/`
-
-負責業務邏輯、資料整理與 cache 控制。
-
-### `schemas/`
-
-定義 API 回傳格式（Pydantic models）。
-
-### `adapters/`
-
-負責與外部資料來源互動，例如 Kubernetes API。
-
-目前：
-
-- `node_list` 主要由 Kubernetes Node metadata / status 取得
-- `node_status` 目前透過 `vm_aggregator.py` 整合 VM / Netdata / DCGM / K8s 資料後再轉換為固定 API schema
-
-## 4. 已完成 API
-
-### `GET /`
-
-```json
-{
-  "message": "Pre6G AutoScale API is running"
-}
-```
-
-### `GET /api/v1/nodes`
-
-回傳所有節點的固定 inventory，包括：
-
-- `node_name`
-- `role`
-- `k8s_ip`
-- `os_image`
-- `kernel_version`
-- `container_runtime`
-- CPU core 數
-- memory 大小（MiB）
-- NVIDIA GPU inventory
-
-### `GET /api/v1/nodes/{node_name}/status`
-
-回傳指定節點的即時狀態，包括：
-
-- CPU usage %
-- CPU used cores
-- memory usage %
-- memory working set
-- disk root usage %
-- GPU status / count / frame buffer used
-
-### `GET /api/v1/nodes/status`
-
-回傳所有節點的即時狀態。
-
-### `GET /api/v1/full-metrics`
-
-回傳所有 configured nodes 的完整 aggregator JSON，包括：
-
-- k8s nodes 透過 `vm_aggregator.py`
-- RFSoC 透過 `vm_agg_rfsoc.py`
-- AP gateway 透過 `vm_agg_ap_gateway.py`
-
-### `GET /api/v1/full-metrics/{node_name}`
-
-回傳指定節點的完整 aggregator JSON。
-
-## 5. 目前設計重點
-
-- `node_list` 與 `node_status` 分離
-- `node_list`：固定 inventory
-- `node_status`：即時狀態
-- `node_list` 主要由 Kubernetes API 取得
-- `node_status` 目前透過 `vm_aggregator.collect_state_for_node()` 取得真實資料
-
-目前行為補充：
-
-- `node_list` 已加入簡單 TTL cache
-- `node_status` 已加入短 TTL cache
-- memory 在 `node_list` 中以 `total_MiB` 呈現
-- `gpu.models` 目前主要來自 Kubernetes node labels，例如 `nvidia.com/gpu.product`
-- `node_status` 的資料來源為：
-  - node metrics：`vm + netdata`
-  - gpu metrics：`dcgm_exporter + k8s`
-- `node_status` 在 CPU / Memory 會優先讀 `node_pressure_instant`，若 instant 欄位缺值，則 fallback 到 `node_pressure`
-- `vm_aggregator` 對 Netdata host-scoped instant chart 已加入 fallback：
-  - `urllib` 讀 `/api/v1/data` 若遇到 `404`，會改用 `curl`
-  - 若短視窗 `after=-2` 沒資料，會自動退回較長視窗 `after=-60`
-  - 這是為了修正像 `ICCL-S3-251230` 這類 mirrored host 的 instant metrics 取值相容性問題
-
-## 6. 回傳範例
-
-### `GET /api/v1/nodes`
-
-```json
-{
-  "schema": "pre6g.node_list.v1",
-  "ts": 1773587432,
-  "count": 3,
-  "nodes": [
-    {
-      "node_name": "iccls2",
-      "role": "control-plane",
-      "k8s_ip": "100.68.32.118",
-      "os_image": "Ubuntu 22.04.4 LTS",
-      "kernel_version": "6.8.0-101-generic",
-      "container_runtime": "containerd://2.2.1",
-      "cpu": {
-        "cores_total": 64
-      },
-      "memory": {
-        "total_MiB": 63938
-      },
-      "gpu": {
-        "has_gpu": true,
-        "count": 1,
-        "models": [
-          "NVIDIA-GeForce-GTX-1050-Ti"
-        ]
-      },
-      "query_enabled": true
-    }
-  ]
-}
-```
-
-### `GET /api/v1/nodes/icclz3/status`
-
-```json
-{
-  "schema": "pre6g.node_status.v1",
-  "ts": 1773589804,
-  "node": {
-    "node_name": "icclz3",
-    "k8s_ip": "100.109.98.27",
-    "sources": {
-      "node_metrics": "vm+netdata",
-      "gpu_metrics": "dcgm_exporter+k8s"
-    },
-    "cpu": {
-      "usage_percent": 20.912547399999998,
-      "used_cores": 1.6730037919999998
-    },
-    "memory": {
-      "usage_percent": 22.730276810623977,
-      "working_set_bytes": 7630532640,
-      "working_set_mib": 7277
-    },
-    "disk": {
-      "root_usage_percent": 75.7723686697809
-    },
-    "gpu": {
-      "status": "no_gpu_or_not_observed",
-      "count": 0,
-      "fb_used_bytes": 0,
-      "fb_used_mib": 0
-    }
-  }
-}
-```
-
-## 7. 後續規劃
-
-### Phase 1
-
+- `GET /`
 - `GET /api/v1/nodes`
-- `GET /api/v1/nodes/{node_name}/status`
 - `GET /api/v1/nodes/status`
+- `GET /api/v1/nodes/{node_name}/status`
+- `GET /api/v1/full-metrics`
+- `GET /api/v1/full-metrics/{node_name}`
 
-### Phase 2
+## Runtime Dependencies
 
-- `GET /api/v1/namespaces`
-- `GET /api/v1/namespaces/{namespace}/workloads`
+此 API 依賴以下端點：
 
-### Phase 3
+- `VM_URL`
+- `NETDATA_URL`
+- `NETDATA_CHILD_URL`
+- `NETDATA_PARENT_BASE_URL`
 
-- Deployment / Job / Pod profile API
-- Cluster summary API
-- 背景快取刷新機制
-- 設定檔與環境變數整理
-- 進一步將 `vm_aggregator` 查詢邏輯 adapter 化
+建議直接沿用：
 
-## 8. 執行環境
+- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example)
+- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example)
 
-### 啟動目錄
+## Start Locally
 
-```bash
-cd ~/AutoScale/autoscale_api
-```
-
-### 啟動方式
+### Preferred
 
 ```bash
-source ../iccl/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+cd /home/icclz2/Pre6G
+bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh
 ```
 
-如需開啟簡單 API 驗證，可先設定：
+這個腳本會：
+
+- 嘗試讀取 `monitoring-runtime.host.env`
+- 嘗試讀取 `systemd/autoscale-api.env`
+- 使用 repo 根下 `iccl` Python env
+
+### Manual
 
 ```bash
-export AUTOSCALE_API_TOKEN='replace-with-a-long-random-token'
+cd /home/icclz2/Pre6G
+source iccl/bin/activate
+cd autoscale-source-split/03-shared-api-dashboard/autoscale_api
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-如果使用 repo 內的 systemd service，建議不要把 token 直接寫進 service file。
-可改用：
+## Systemd
+
+使用模板：
+
+- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service)
+- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example)
+
+複製 env：
 
 ```bash
-cp /home/iccls2/AutoScale/systemd/autoscale-api.env.example \
-   /home/iccls2/AutoScale/systemd/autoscale-api.env
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
 ```
 
-再編輯：
+再填入：
 
 ```bash
 AUTOSCALE_API_TOKEN=replace-with-a-long-random-token
+VM_URL=http://<CONTROL_PLANE_IP>:31888
+NETDATA_PARENT_BASE_URL=http://<CONTROL_PLANE_IP>:32163
+NETDATA_URL=http://<CONTROL_PLANE_IP>:32163
+NETDATA_CHILD_URL=http://<CONTROL_PLANE_IP>:32163
 ```
 
-`systemd/autoscale-api.service` 已支援自動讀取這個 env file。
-
-設定後，所有 `/api/*` 路徑都需要帶下列其中一種 header：
-
-```text
-Authorization: Bearer <token>
-```
-
-或
-
-```text
-X-API-Token: <token>
-```
-
-`/`、`/docs`、`/openapi.json` 仍可直接存取，方便健康檢查與文件查看。
-
-### 查詢指令
-
-API root：
+## Health Check
 
 ```bash
 curl http://127.0.0.1:8000/
-```
-
-Node list：
-
-```bash
 curl http://127.0.0.1:8000/api/v1/nodes | jq
-```
-
-Single node status：
-
-```bash
-curl http://127.0.0.1:8000/api/v1/nodes/icclz3/status | jq
-```
-
-All node status：
-
-```bash
 curl http://127.0.0.1:8000/api/v1/nodes/status | jq
 ```
 
-All full metrics：
+## Example Response Notes
 
-```bash
-curl http://127.0.0.1:8000/api/v1/full-metrics | jq
-```
+回傳內容會隨目前 cluster 狀態改變，因此 README 不再固定展示舊環境節點樣本。
+請以實際 API 查詢結果為準。
 
-Single full metrics：
+## Validated Scope
 
-```bash
-curl http://127.0.0.1:8000/api/v1/full-metrics/iccls2 | jq
-```
+截至目前，已驗證：
 
-若已設定 `AUTOSCALE_API_TOKEN`：
+- `Cluster Monitor` 會使用本 API 成功顯示節點狀態
+- `iccl-cluster-z2` 與 `icclz3` 可正常回傳 node status
+- GPU node 若 host NVIDIA stack 正常，會回帶 DCGM/GPU 指標
 
-```bash
-curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" \
-  http://127.0.0.1:8000/api/v1/nodes/status | jq
-```
+未列入本次驗收：
+
+- `Fan-Cycle Experiment` 頁面
+- `02-experiment-layer` 的 workflow

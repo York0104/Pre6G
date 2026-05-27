@@ -200,8 +200,8 @@
 - `AP_NAME=openwrt_ap`
 - `AP_IFACE=phy0-ap0`
 - `SNMP_IFINDEX=3`
-- VictoriaMetrics query base URL: `http://100.68.32.118:31888`
-- VictoriaMetrics import endpoint: `http://100.68.32.118:31888/api/v1/import/prometheus`
+- VictoriaMetrics query base URL: `http://<CONTROL_PLANE_IP>:31888`
+- VictoriaMetrics import endpoint: `http://<CONTROL_PLANE_IP>:31888/api/v1/import/prometheus`
 
 這裡要特別注意兩種 `VM_URL` 的語意不同：
 
@@ -216,7 +216,7 @@
 
 ```bash
 cd ~/AutoScale/ap_gateway
-VM_URL=http://100.68.32.118:31888/api/v1/import/prometheus \
+VM_URL=http://<CONTROL_PLANE_IP>:31888/api/v1/import/prometheus \
 OPENWRT=192.168.1.1 \
 AP_NAME=openwrt_ap \
 AP_IFACE=phy0-ap0 \
@@ -227,7 +227,7 @@ python3 ap_gateway.py
 
 ```bash
 cd ~/AutoScale/ap_gateway
-VM_URL=http://100.68.32.118:31888/api/v1/import/prometheus \
+VM_URL=http://<CONTROL_PLANE_IP>:31888/api/v1/import/prometheus \
 OPENWRT=192.168.1.1 \
 AP_NAME=openwrt_ap \
 AP_IFACE=phy0-ap0 \
@@ -240,7 +240,7 @@ python3 ap_snmp_gateway.py
 
 ```bash
 cd ~/AutoScale
-VM_URL=http://100.68.32.118:31888 \
+VM_URL=http://<CONTROL_PLANE_IP>:31888 \
 AP_NAME=openwrt_ap \
 AP_IFACE=phy0-ap0 \
 OPENWRT=192.168.1.1 \
@@ -264,21 +264,21 @@ pgrep -af 'ap_gateway.py|ap_snmp_gateway.py'
 ### 確認 VictoriaMetrics 有收到無線資料
 
 ```bash
-curl -s 'http://100.68.32.118:31888/api/v1/query?query=ap_wifi_station_count' | jq '.data.result'
+curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_wifi_station_count' | jq '.data.result'
 ```
 
 ### 確認 VictoriaMetrics 有收到硬體資料
 
 ```bash
-curl -s 'http://100.68.32.118:31888/api/v1/query?query=ap_node_cpu_usage_percent' | jq '.data.result'
+curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_node_cpu_usage_percent' | jq '.data.result'
 ```
 
 ### 一次檢查 collector 與 VM
 
 ```bash
 pgrep -af 'ap_gateway.py|ap_snmp_gateway.py' && echo '---' && \
-curl -s 'http://100.68.32.118:31888/api/v1/query?query=ap_wifi_station_count' | jq '.data.result' && \
-curl -s 'http://100.68.32.118:31888/api/v1/query?query=ap_node_cpu_usage_percent' | jq '.data.result'
+curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_wifi_station_count' | jq '.data.result' && \
+curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_node_cpu_usage_percent' | jq '.data.result'
 ```
 
 ## Current Output Design
@@ -514,7 +514,7 @@ curl -s 'http://100.68.32.118:31888/api/v1/query?query=ap_node_cpu_usage_percent
 
 ```bash
 cd ~/AutoScale
-VM_URL=http://100.68.32.118:31888 \
+VM_URL=http://<CONTROL_PLANE_IP>:31888 \
 AP_NAME=openwrt_ap_gw1 \
 AP_IFACE=phy0-ap0 \
 OPENWRT=192.168.1.1 \

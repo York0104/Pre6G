@@ -11,7 +11,7 @@ AP_IFACE = os.getenv("AP_IFACE", "phy0-ap0")
 SNMP_COMMUNITY = os.getenv("SNMP_COMMUNITY", "public")
 SNMP_IFINDEX = os.getenv("SNMP_IFINDEX", "3")
 INTERVAL = int(os.getenv("INTERVAL", "10"))
-VM_URL = os.getenv("VM_URL", "http://100.68.32.118:31888/api/v1/import/prometheus")
+VM_URL = os.getenv("VM_URL", "http://140.113.179.9:31888/api/v1/import/prometheus")
 
 OIDS = {
     "load1": ".1.3.6.1.4.1.2021.10.1.6.1",

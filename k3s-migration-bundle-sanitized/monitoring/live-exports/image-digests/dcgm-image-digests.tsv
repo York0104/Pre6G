@@ -1,3 +1,0 @@
-dcgm-exporter-4rrpp	nvcr.io/nvidia/k8s/dcgm-exporter:4.5.2-4.8.1-distroless	nvcr.io/nvidia/k8s/dcgm-exporter@sha256:ed594cf53fe6942e84b07b0740cdcbb249fa4b39cb21feeebf93881ae51f0b5e
-dcgm-exporter-cxw45	nvcr.io/nvidia/k8s/dcgm-exporter:4.5.2-4.8.1-distroless	nvcr.io/nvidia/k8s/dcgm-exporter@sha256:ed594cf53fe6942e84b07b0740cdcbb249fa4b39cb21feeebf93881ae51f0b5e
-dcgm-exporter-zd9s5	nvcr.io/nvidia/k8s/dcgm-exporter:4.5.2-4.8.1-distroless	nvcr.io/nvidia/k8s/dcgm-exporter@sha256:ed594cf53fe6942e84b07b0740cdcbb249fa4b39cb21feeebf93881ae51f0b5e

@@ -1,9 +1,0 @@
-NAME         	NAMESPACE           	REVISION	UPDATED                                	STATUS  	CHART                          	APP VERSION
-chaos-mesh   	chaos-mesh          	1       	2026-03-17 19:13:13.552875874 +0800 CST	deployed	chaos-mesh-2.8.1               	2.8.1      
-dcgm-exporter	gpu-monitoring      	1       	2026-03-13 16:34:37.522710789 +0800 CST	deployed	dcgm-exporter-4.8.1            	4.8.1      
-ksm          	monitoring          	2       	2026-03-12 22:39:43.476889675 +0800 CST	deployed	kube-state-metrics-7.2.0       	2.18.0     
-netdata      	netdata             	5       	2026-04-11 15:02:41.020912636 +0800 CST	deployed	netdata-3.7.160                	v2.9.0     
-node-exporter	monitoring          	3       	2026-04-11 16:05:15.317003334 +0800 CST	deployed	prometheus-node-exporter-4.52.0	1.10.2     
-nvdp         	nvidia-device-plugin	3       	2026-04-25 22:01:40.5611239 +0800 CST  	deployed	nvidia-device-plugin-0.19.1    	0.19.1     
-vm           	monitoring          	1       	2026-03-12 22:29:04.126328515 +0800 CST	deployed	victoria-metrics-single-0.31.0 	v1.136.0   
-vmagent      	monitoring          	5       	2026-03-12 22:44:48.33581078 +0800 CST 	deployed	victoria-metrics-agent-0.31.0  	v1.135.0   

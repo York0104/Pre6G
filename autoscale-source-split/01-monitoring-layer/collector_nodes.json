@@ -7,7 +7,7 @@
       "env": {
         "NETDATA_URL": "http://192.168.100.200:32163",
         "NETDATA_HOST": "pynq",
-        "VM_URL": "http://100.68.32.118:31888",
+        "VM_URL": "http://140.113.179.9:31888",
         "JOB": "rfsoc4x2-node-exporter",
         "ACCESS": "lab-lan",
         "BOARD": "RFSoC4x2",
@@ -25,7 +25,7 @@
       "node_type": "ap_gateway",
       "aggregator": "vm_agg_ap_gateway.py",
       "env": {
-        "VM_URL": "http://100.68.32.118:31888",
+        "VM_URL": "http://140.113.179.9:31888",
         "OPENWRT": "192.168.1.1",
         "AP_NAME": "openwrt_ap",
         "AP_IFACE": "phy0-ap0",

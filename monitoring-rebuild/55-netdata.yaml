@@ -1,0 +1,627 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: netdata
+  namespace: netdata
+  labels:
+    app: netdata
+    chart: netdata-3.7.160
+    heritage: Helm
+    release: netdata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: netdata
+  namespace: netdata
+  labels:
+    app: netdata
+    chart: netdata-3.7.160
+    heritage: Helm
+    release: netdata
+    role: parent
+spec:
+  ports:
+  - name: http
+    port: 19999
+    protocol: TCP
+    targetPort: http
+  selector:
+    app: netdata
+    release: netdata
+    role: parent
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: netdata-nodeport
+  namespace: netdata
+  labels:
+    app.kubernetes.io/part-of: pre6g-autoscale
+    pre6g/component: netdata-nodeport
+spec:
+  ports:
+  - name: http
+    nodePort: 32163
+    port: 19999
+    protocol: TCP
+    targetPort: 19999
+  selector:
+    app: netdata
+    release: netdata
+    role: parent
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netdata-parent
+  namespace: netdata
+  labels:
+    app: netdata
+    chart: netdata-3.7.160
+    heritage: Helm
+    release: netdata
+    role: parent
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: netdata
+      release: netdata
+      role: parent
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: netdata
+        release: netdata
+        role: parent
+      annotations:
+        checksum/config: f77e86bbe71011f09088e1d512f703ba999d7a74a7a1d4e9674a003dae6d9744
+    spec:
+      containers:
+      - env:
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: NETDATA_LISTENER_PORT
+          value: '19999'
+        image: netdata/netdata:v2.9.0
+        imagePullPolicy: Always
+        livenessProbe:
+          exec:
+            command:
+            - /usr/sbin/netdatacli
+            - ping
+          failureThreshold: 3
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: netdata
+        ports:
+        - containerPort: 19999
+          name: http
+          protocol: TCP
+        readinessProbe:
+          exec:
+            command:
+            - /usr/sbin/netdatacli
+            - ping
+          failureThreshold: 3
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        securityContext:
+          runAsGroup: 201
+          runAsUser: 201
+        volumeMounts:
+        - mountPath: /host/etc/os-release
+          name: os-release
+        - mountPath: /etc/netdata/health_alarm_notify.conf
+          name: configmap
+          subPath: health
+        - mountPath: /etc/netdata/netdata.conf
+          name: configmap
+          subPath: netdata
+        - mountPath: /etc/netdata/stream.conf
+          name: configmap
+          subPath: stream
+      dnsPolicy: Default
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 201
+      serviceAccountName: netdata
+      terminationGracePeriodSeconds: 300
+      tolerations:
+      - operator: Exists
+      volumes:
+      - hostPath:
+          path: /etc/os-release
+          type: ''
+        name: os-release
+      - configMap:
+          defaultMode: 420
+          name: netdata-conf-parent
+          optional: true
+        name: configmap
+      - name: configsecret
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: netdata-conf-parent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netdata-k8s-state
+  namespace: netdata
+  labels:
+    app: netdata
+    chart: netdata-3.7.160
+    heritage: Helm
+    release: netdata
+    role: k8sState
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: netdata
+      release: netdata
+      role: k8sState
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: netdata
+        release: netdata
+        role: k8sState
+      annotations:
+        checksum/config: 711893b999c0ce9f23d514f33ab0cf5ac9c561266cddf5155f1419bbafe05bbb
+        container.apparmor.security.beta.kubernetes.io/netdata: unconfined
+    spec:
+      containers:
+      - env:
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: NETDATA_LISTENER_PORT
+          value: '19999'
+        image: netdata/netdata:v2.9.0
+        imagePullPolicy: Always
+        livenessProbe:
+          exec:
+            command:
+            - /usr/sbin/netdatacli
+            - ping
+          failureThreshold: 3
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: netdata
+        ports:
+        - containerPort: 19999
+          name: http
+          protocol: TCP
+        readinessProbe:
+          exec:
+            command:
+            - /usr/sbin/netdatacli
+            - ping
+          failureThreshold: 3
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        volumeMounts:
+        - mountPath: /host/etc/os-release
+          name: os-release
+        - mountPath: /etc/netdata/go.d.conf
+          name: configmap
+          subPath: go.d
+        - mountPath: /etc/netdata/go.d/k8s_state.conf
+          name: configmap
+          subPath: go.d-k8s_state
+        - mountPath: /etc/netdata/netdata.conf
+          name: configmap
+          subPath: netdata
+        - mountPath: /etc/netdata/stream.conf
+          name: configmap
+          subPath: stream
+      dnsPolicy: ClusterFirstWithHostNet
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 201
+      serviceAccountName: netdata
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - operator: Exists
+      volumes:
+      - hostPath:
+          path: /etc/os-release
+          type: ''
+        name: os-release
+      - configMap:
+          defaultMode: 420
+          name: netdata-conf-k8s-state
+          optional: true
+        name: configmap
+      - name: configsecret
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: netdata-conf-k8s-state
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: netdata-child
+  namespace: netdata
+  labels:
+    app: netdata
+    chart: netdata-3.7.160
+    heritage: Helm
+    release: netdata
+    role: child
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: netdata
+      release: netdata
+      role: child
+  template:
+    metadata:
+      labels:
+        app: netdata
+        release: netdata
+        role: child
+      annotations:
+        checksum/config: 79557a557fc8d0dd7090eddf733ab8eeaa1ece47ecdc180e0696cbce96e58359
+        container.apparmor.security.beta.kubernetes.io/netdata: unconfined
+    spec:
+      containers:
+      - env:
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: MY_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: NETDATA_LISTENER_PORT
+          value: '19999'
+        image: netdata/netdata:v2.9.0
+        imagePullPolicy: Always
+        livenessProbe:
+          exec:
+            command:
+            - /usr/sbin/netdatacli
+            - ping
+          failureThreshold: 3
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: netdata
+        ports:
+        - containerPort: 19999
+          name: http
+          protocol: TCP
+        readinessProbe:
+          exec:
+            command:
+            - /usr/sbin/netdatacli
+            - ping
+          failureThreshold: 3
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        securityContext:
+          capabilities:
+            add:
+            - SYS_PTRACE
+            - SYS_ADMIN
+        volumeMounts:
+        - mountPath: /host/proc
+          name: proc
+          readOnly: true
+        - mountPath: /host/sys
+          name: sys
+        - mountPath: /host/etc/os-release
+          name: os-release
+        - mountPath: /host/var/log
+          name: varlog
+        - mountPath: /etc/netdata/go.d.conf
+          name: configmap
+          subPath: go.d
+        - mountPath: /etc/netdata/go.d/k8s_kubeproxy.conf
+          name: configmap
+          subPath: kubeproxy
+        - mountPath: /etc/netdata/netdata.conf
+          name: configmap
+          subPath: netdata
+        - mountPath: /etc/netdata/go.d/prometheus.conf
+          name: configmap
+          subPath: prometheus
+        - mountPath: /etc/netdata/stream.conf
+          name: configmap
+          subPath: stream
+        - mountPath: /var/lib/netdata
+          name: persistencevarlibdir
+        - mountPath: /etc/netdata/go.d/sd/k8s.conf
+          name: sdconfigmap
+          subPath: config.yml
+      dnsPolicy: ClusterFirstWithHostNet
+      hostIPC: true
+      hostNetwork: true
+      hostPID: true
+      initContainers:
+      - args:
+        - -c
+        - ' chmod 777 /persistencevarlibdir; '
+        command:
+        - /bin/sh
+        image: alpine:latest
+        imagePullPolicy: Always
+        name: init-persistence
+        resources:
+          requests:
+            cpu: 10m
+        volumeMounts:
+        - mountPath: /persistencevarlibdir
+          name: persistencevarlibdir
+      restartPolicy: Always
+      serviceAccountName: netdata
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - operator: Exists
+      volumes:
+      - hostPath:
+          path: /proc
+          type: ''
+        name: proc
+      - hostPath:
+          path: /sys
+          type: ''
+        name: sys
+      - hostPath:
+          path: /etc/os-release
+          type: ''
+        name: os-release
+      - hostPath:
+          path: /var/log
+          type: ''
+        name: varlog
+      - configMap:
+          defaultMode: 420
+          name: netdata-conf-child
+          optional: true
+        name: configmap
+      - name: configsecret
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: netdata-conf-child
+      - hostPath:
+          path: /var/lib/netdata-k8s-child/var/lib/netdata
+          type: DirectoryOrCreate
+        name: persistencevarlibdir
+      - configMap:
+          defaultMode: 420
+          name: netdata-child-sd-config-map
+          optional: true
+        name: sdconfigmap
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+---
+apiVersion: v1
+data:
+  config.yml: "disabled: no\n\nname: 'kubernetes'\n\ndiscover:\n  - discoverer: k8s\n\
+    \    k8s:\n      - tags: unknown\n        role: pod\n        pod:\n          local_mode:\
+    \ yes\nclassify:\n  - name: \"Control-Plane\"\n    selector: unknown\n    tags:\
+    \ -unknown control_plane\n    match:\n      - tags: kube_scheduler\n        expr:\
+    \ '{{ glob .Image \"k8s.gcr.io/kube-scheduler:*\" }}'\n      - tags: kube_controller_manager\n\
+    \        expr: '{{ glob .Image \"k8s.gcr.io/kube-controller-manager:*\" }}'\n\
+    \  - name: \"Applications\"\n    selector: unknown\n    tags: -unknown applications\n\
+    \    match:\n      - tags: activemq\n        expr: '{{ and (eq .Port \"8161\"\
+    ) (glob .Image \"*/activemq*\") }}'\n      - tags: apache\n        expr: '{{ and\
+    \ (eq .Port \"80\" \"8080\") (glob .Image \"httpd*\" \"*/httpd*\") }}'\n     \
+    \ - tags: bind\n        expr: '{{ and (eq .Port \"8653\") (glob .Image \"*/bind*\"\
+    ) }}'\n      - tags: cockroachdb\n        expr: '{{ and (eq .Port \"8080\") (glob\
+    \ .Image \"*/cockroach*\") }}'\n      - tags: consul\n        expr: '{{ and (eq\
+    \ .Port \"8500\") (glob .Image \"consul*\" \"*/consul*\") }}'\n      - tags: coredns\n\
+    \        expr: '{{ and (eq .Port \"9153\") (glob .Image \"*/coredns*\") }}'\n\
+    \      - tags: elasticsearch\n        expr: '{{ and (eq .Port \"9200\") (glob\
+    \ .Image \"elasticsearch:*\" \"*/elasticsearch:*\") }}'\n      - tags: fluentd\n\
+    \        expr: '{{ and (eq .Port \"24220\") (glob .Image \"fluentd*\" \"*/fluentd*\"\
+    ) }}'\n      - tags: freeradius\n        expr: '{{ and (eq .Port \"18121\") (glob\
+    \ .Image \"*/freeradius*\") }}'\n      - tags: hdfs\n        expr: '{{ and (eq\
+    \ .Port \"50070\") (glob .Image \"*/hdfs*\") }}'\n      - tags: lighttpd\n   \
+    \     expr: '{{ and (eq .Port \"80\" \"8080\") (glob .Image \"*/lighttpd*\") }}'\n\
+    \      - tags: logstash\n        expr: '{{ and (eq .Port \"9600\") (glob .Image\
+    \ \"logstash*\" \"*/logstash*\") }}'\n      - tags: mysql\n        expr: '{{ and\
+    \ (eq .Port \"3306\") (glob .Image \"mysql*\" \"*/mysql*\" \"mariadb*\" \"*/mariadb*\"\
+    ) }}'\n      - tags: nginx\n        expr: '{{ and (eq .Port \"80\" \"8080\") (glob\
+    \ .Image \"nginx*\" \"*/nginx*\") }}'\n      - tags: openvpn\n        expr: '{{\
+    \ and (eq .Port \"7505\") (glob .Image \"*/openvpn\") }}'\n      - tags: phpfpm\n\
+    \        expr: '{{ and (eq .Port \"80\" \"8080\") (glob .Image \"*/phpfpm*\" \"\
+    */php-fpm*\") }}'\n      - tags: rabbitmq\n        expr: '{{ and (eq .Port \"\
+    15672\") (glob .Image \"rabbitmq*\" \"*/rabbitmq*\") }}'\n      - tags: solr\n\
+    \        expr: '{{ and (eq .Port \"8983\") (glob .Image \"solr*\" \"*/solr*\"\
+    ) }}'\n      - tags: tengine\n        expr: '{{ and (eq .Port \"80\" \"8080\"\
+    ) (glob .Image \"*/tengine*\") }}'\n      - tags: unbound\n        expr: '{{ and\
+    \ (eq .Port \"8953\") (glob .Image \"*/unbound*\") }}'\n      - tags: vernemq\n\
+    \        expr: '{{ and (eq .Port \"8888\") (glob .Image \"*/vernemq*\") }}'\n\
+    \      - tags: zookeeper\n        expr: '{{ and (eq .Port \"2181\") (glob .Image\
+    \ \"zookeeper*\" \"*/zookeeper*\") }}'\n      - tags: consul_envoy\n        expr:\
+    \ |\n          {{ $imageOK := glob .Image \"*/consul-dataplane*\" -}}\n      \
+    \    {{ $scrapeOK := eq (get .Annotations \"prometheus.io/scrape\") \"true\" -}}\n\
+    \          {{ $promPort := get .Annotations \"prometheus.io/port\" -}}\n     \
+    \     {{ $portOK1 := and (eq .Port $promPort) (not (empty .Port)) -}}\n      \
+    \    {{ $portOK2 := and (empty .Port) (not (empty $promPort)) -}}\n          {{\
+    \ and $imageOK $scrapeOK (or $portOK1 $portOK2) }}\n  - name: \"Prometheus Generic\
+    \ Applications\"\n    selector: unknown\n    tags: -unknown prometheus_generic\n\
+    \    match:\n      - tags: prometheus_generic\n        expr: |\n          {{ $scrapeOK\
+    \ := eq (get .Annotations \"prometheus.io/scrape\") \"true\" -}}\n          {{\
+    \ $portOK := eq (default .Port (get .Annotations \"prometheus.io/port\")) .Port\
+    \ -}}\n          {{ $imageOK := not (glob .Image \"netdata/netdata*\" \"*pulsar*\"\
+    \ \"*telegraf*\") -}}\n          {{ and $scrapeOK $portOK $imageOK }}\ncompose:\n\
+    \  - name: \"Control-Plane\"\n    selector: '!unknown control_plane'\n    config:\n\
+    \      - selector: kube_scheduler\n        template: |\n          - module: prometheus\n\
+    \            name: prometheus-{{.TUID}}\n            url: http://{{.PodIP}}:{{default\
+    \ \"10251\" .Port}}/metrics\n            app: '{{.ContName}}'\n            update_every:\
+    \ 10\n            max_time_series: 1000\n      - selector: kube_controller_manager\n\
+    \        template: |\n          - module: prometheus\n            name: prometheus-{{.TUID}}\n\
+    \            url: http://{{.PodIP}}:{{default \"10252\" .Port}}/metrics\n    \
+    \        app: '{{.ContName}}'\n            update_every: 10\n            max_time_series:\
+    \ 2000\n  - name: \"Prometheus Generic Applications\"\n    selector: '!unknown\
+    \ prometheus_generic'\n    config:\n      - selector: prometheus_generic\n   \
+    \     template: |\n          {{ $path := default \"/metrics\" (get .Annotations\
+    \ \"prometheus.io/path\") -}}\n          - module: prometheus\n            name:\
+    \ prometheus-{{.TUID}}\n            url: http://{{.Address}}{{$path}}\n      \
+    \      app: '{{.ContName}}'\n            update_every: 10\n            max_time_series:\
+    \ 4000\n  - name: \"Applications\"\n    selector: '!unknown applications'\n  \
+    \  tags: file\n    config:\n      - selector: activemq\n        template: |\n\
+    \          - module: activemq\n            name: activemq-{{.TUID}}\n        \
+    \    url: http://{{.Address}}\n      - selector: apache\n        template: |\n\
+    \          - module: apache\n            name: apache-{{.TUID}}\n            url:\
+    \ http://{{.Address}}/server-status?auto\n      - selector: bind\n        template:\
+    \ |\n          - module: bind\n            name: bind-{{.TUID}}\n            url:\
+    \ http://{{.Address}}/json/v1\n      - selector: cockroachdb\n        template:\
+    \ |\n          - module: cockroachdb\n            name: cockroachdb-{{.TUID}}\n\
+    \            url: http://{{.Address}}/_status/vars\n      - selector: consul\n\
+    \        template: |\n          - module: consul\n            name: consul-{{.TUID}}\n\
+    \            url: http://{{.Address}}\n      - selector: coredns\n        template:\
+    \ |\n          - module: coredns\n            name: coredns-{{.TUID}}\n      \
+    \      url: http://{{.Address}}/metrics\n      - selector: elasticsearch\n   \
+    \     template: |\n          - module: elasticsearch\n            name: elasticsearch-{{.TUID}}\n\
+    \            url: http://{{.Address}}\n      - selector: consul_envoy\n      \
+    \  template: |\n          {{ $path := default \"/metrics\" (get .Annotations \"\
+    prometheus.io/path\") -}}\n          {{ $promPort := get .Annotations \"prometheus.io/port\"\
+    \ -}}\n          {{ $port := ternary .Port $promPort (not (empty .Port)) -}}\n\
+    \          - module: envoy\n            name: {{.TUID}}\n            url: http://{{\
+    \ .PodIP }}:{{ $port }}{{ $path }}\n      - selector: fluentd\n        template:\
+    \ |\n          - module: fluentd\n            name: fluentd-{{.TUID}}\n      \
+    \      url: http://{{.Address}}\n      - selector: freeradius\n        template:\
+    \ |\n          - module: freeradius\n            name: freeradius-{{.TUID}}\n\
+    \            address: {{.PodIP}}\n            port: {{.Port}}\n      - selector:\
+    \ hdfs\n        template: |\n          - module: hdfs\n            name: hdfs-{{.TUID}}\n\
+    \            url: http://{{.Address}}/jmx\n      - selector: lighttpd\n      \
+    \  template: |\n          - module: lighttpd\n            name: lighttpd-{{.TUID}}\n\
+    \            url: http://{{.Address}}/server-status?auto\n      - selector: logstash\n\
+    \        template: |\n          - module: logstash\n            name: logstash-{{.TUID}}\n\
+    \            url: http://{{.Address}}\n      - selector: mysql\n        template:\
+    \ |\n          - module: mysql\n            name: mysql-{{.TUID}}\n          \
+    \  dsn: 'netdata@tcp({{.Address}})/'\n      - selector: nginx\n        template:\
+    \ |\n          - module: nginx\n            name: nginx-{{.TUID}}\n          \
+    \  url: http://{{.Address}}/stub_status\n      - selector: openvpn\n        template:\
+    \ |\n          - module: openvpn\n            name: openvpn-{{.TUID}}\n      \
+    \      address: {{.Address}}\n      - selector: phpfpm\n        template: |\n\
+    \          - module: phpfpm\n            name: phpfpm-{{.TUID}}\n            url:\
+    \ http://{{.Address}}/status?full&json\n      - selector: rabbitmq\n        template:\
+    \ |\n          - module: rabbitmq\n            name: rabbitmq-{{.TUID}}\n    \
+    \        url: http://{{.Address}}\n      - selector: solr\n        template: |\n\
+    \          - module: solr\n            name: solr-{{.TUID}}\n            url:\
+    \ http://{{.Address}}\n      - selector: tengine\n        template: |\n      \
+    \    - module: tengine\n            name: tengine-{{.TUID}}\n            url:\
+    \ http://{{.Address}}/us\n      - selector: unbound\n        template: |\n   \
+    \       - module: unbound\n            name: unbound-{{.TUID}}\n            address:\
+    \ {{.Address}}\n            use_tls: false\n      - selector: vernemq\n      \
+    \  template: |\n          - module: vernemq\n            name: vernemq-{{.TUID}}\n\
+    \            url: http://{{.Address}}/metrics\n      - selector: zookeeper\n \
+    \       template: |\n          - module: zookeeper\n            name: zookeeper-{{.TUID}}\n\
+    \            address: {{.Address}}\n"
+kind: ConfigMap
+metadata:
+  name: netdata-child-sd-config-map
+  namespace: netdata
+  labels:
+    app: netdata
+    chart: netdata-3.7.160
+    heritage: Helm
+    release: netdata
+---
+apiVersion: v1
+data:
+  go.d: "default_run: no\nmodules:\n  k8s_state: yes\n"
+  go.d-k8s_state: "jobs:\n  - name: k8s_state\n    update_every: 1\n"
+  netdata: "[global]\n  hostname = netdata-k8s-state\n[db]\n  mode = ram\n[web]\n\
+    \  bind to = localhost:19999\n[health]\n  enabled = no\n[ml]\n  enabled = no\n\
+    [plugins]\n  timex = no\n  checks = no\n  idlejitter = no\n  tc = no\n  diskspace\
+    \ = no\n  proc = no\n  cgroups = no\n  enable running new plugins = no\n  slabinfo\
+    \ = no\n  perf = no\n  go.d = yes\n  ioping = no\n  ebpf = no\n  charts.d = no\n\
+    \  apps = no\n  python.d = no\n  fping = no\n"
+  stream: "[stream]\n  enabled = yes\n  destination = netdata:19999\n  api key = 11111111-2222-3333-4444-555555555555\n\
+    \  timeout seconds = 60\n  buffer size bytes = 1048576\n  reconnect delay seconds\
+    \ = 5\n  initial clock resync iterations = 60\n"
+kind: ConfigMap
+metadata:
+  name: netdata-conf-k8s-state
+  namespace: netdata
+  labels:
+    app: netdata
+    chart: netdata-3.7.160
+    heritage: Helm
+    release: netdata
+---
+apiVersion: v1
+data:
+  health: 'SEND_EMAIL="NO"
+
+    SEND_SLACK="YES"
+
+    SLACK_WEBHOOK_URL=""
+
+    DEFAULT_RECIPIENT_SLACK=""
+
+    '
+  netdata: "[global]\n  hostname = netdata-parent\n[db]\n  mode = dbengine\n\n[plugins]\n\
+    \  cgroups = no\n  tc = no\n  enable running new plugins = no\n  check for new\
+    \ plugins every = 72000\n  python.d = no\n  charts.d = no\n  go.d = no\n  node.d\
+    \ = no\n  apps = no\n  proc = no\n  idlejitter = no\n  diskspace = no\n"
+  stream: "[11111111-2222-3333-4444-555555555555]\n  enabled = yes\n  history = 3600\n\
+    \  default memory mode = dbengine\n  health enabled by default = auto\n  allow\
+    \ from = *\n"
+kind: ConfigMap
+metadata:
+  name: netdata-conf-parent
+  namespace: netdata
+  labels:
+    app: netdata
+    chart: netdata-3.7.160
+    heritage: Helm
+    release: netdata

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API_BASE_URL="${API_BASE_URL:-${AUTOSCALE_API_BASE:-http://100.68.32.118:8000}}"
+API_BASE_URL="${API_BASE_URL:-${AUTOSCALE_API_BASE:-http://140.113.179.9:8000}}"
 API_TOKEN="${API_TOKEN:-${AUTOSCALE_API_TOKEN:-}}"
 INTERVAL_SECONDS="${INTERVAL_SECONDS:-30}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$HOME/node_metric_csv_logs}"
@@ -16,4 +16,5 @@ echo "API_BASE_URL=$AUTOSCALE_API_BASE"
 echo "INTERVAL_SECONDS=$INTERVAL_SECONDS"
 echo "OUTPUT_ROOT=$OUTPUT_ROOT"
 
-exec "$PYTHON_BIN" /home/iccls2/AutoScale/collect_full_metrics_api_csv.py
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$PYTHON_BIN" "$SCRIPT_DIR/collect_full_metrics_api_csv.py"

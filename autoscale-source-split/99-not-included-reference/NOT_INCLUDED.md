@@ -1,6 +1,6 @@
 # 未納入項目說明
 
-本文件說明從 `/home/iccls2/AutoScale` 製作 source split 時刻意排除的內容。
+本文件說明從 `/home/icclz2/Pre6G` 製作 source split 時刻意排除的內容。
 
 ## 大型或可重建項目
 
@@ -44,7 +44,7 @@ report.dd
 ## 備份與 debug
 
 ```text
-experiments/yolo26_k8s/*.bak*
+experiments/yolo26_workload/*.bak*
 experiments/experiments_yolo/debug/
 ```
 

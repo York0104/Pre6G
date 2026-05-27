@@ -8,7 +8,7 @@ import urllib.request
 import urllib.error
 
 
-VM_URL = os.getenv("VM_URL", "http://100.68.32.118:31888").rstrip("/")
+VM_URL = os.getenv("VM_URL", "http://140.113.179.9:31888").rstrip("/")
 
 AP_NAME = os.getenv("AP_NAME", "openwrt_ap")
 AP_IFACE = os.getenv("AP_IFACE", "phy0-ap0")

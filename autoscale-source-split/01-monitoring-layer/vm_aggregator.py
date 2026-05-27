@@ -11,7 +11,7 @@ from typing import Dict, Tuple, Optional, List, Any
 import socket
 import traceback
 
-VM_URL = os.getenv("VM_URL", "http://100.68.32.118:31888")
+VM_URL = os.getenv("VM_URL", "http://vm-victoria-metrics-single-server.monitoring.svc:8428")
 OBSERVER = socket.gethostname()
 
 NODE = (os.getenv("NODE") or OBSERVER).strip()
@@ -29,9 +29,9 @@ QCOUNT = 0
 NODE_EXPORTER_INSTANCE = os.getenv("NODE_EXPORTER_INSTANCE", "").strip()
 CADVISOR_SELECTOR = os.getenv("CADVISOR_SELECTOR", 'job="kubelet-cadvisor"')
 
-NETDATA_URL = os.getenv("NETDATA_URL", "http://100.68.32.118:32163").rstrip("/")
+NETDATA_URL = os.getenv("NETDATA_URL", "http://netdata.netdata.svc:19999").rstrip("/")
 NETDATA_CHILD_URL = os.getenv("NETDATA_CHILD_URL", NETDATA_URL).rstrip("/")
-NETDATA_PARENT_BASE_URL = os.getenv("NETDATA_PARENT_BASE_URL", "http://100.68.32.118:32163").rstrip("/")
+NETDATA_PARENT_BASE_URL = os.getenv("NETDATA_PARENT_BASE_URL", "http://netdata.netdata.svc:19999").rstrip("/")
 NETDATA_HOST = os.getenv("NETDATA_HOST", "").strip()
 
 SYSTEM_PRODUCT_SUFFIX = "-system-product-name"

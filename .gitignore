@@ -27,3 +27,11 @@ __pycache__/
 node_modules/
 dist/
 *.log
+
+# Local Python virtualenv used for API/dashboard bootstrap.
+iccl/
+
+# Generated runtime state from shared dashboard experiment helpers.
+autoscale-source-split/03-shared-api-dashboard/experiments/experiments_yolo/yolo_demo/runtime/
+
+# Out-of-scope duplicate experiment workload copies; keep tracked yolo26_k8s sources only.

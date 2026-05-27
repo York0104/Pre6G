@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: yolo26n-svc
+  namespace: intent-lab
+spec:
+  type: NodePort
+  selector:
+    app: yolo26n-detect
+  ports:
+    - name: http
+      port: 18080
+      targetPort: 18080
+      nodePort: 30026

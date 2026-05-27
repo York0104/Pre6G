@@ -336,18 +336,18 @@ class FanCycleExperimentService:
             ),
             command_preview=FanCycleCommandPreview(
                 smoke_test=(
-                    "cd /home/iccls2/AutoScale\n"
+                    "cd /home/icclz2/Pre6G\n"
                     "CC_PASSWORD='your_coolercontrol_password' \\\n"
                     "CYCLES=1 \\\n"
                     "NORMAL_HOLD_SECONDS=300 \\\n"
                     "FAULT_HOLD_SECONDS=300 \\\n"
                     "RECOVERY_MAX_SECONDS=300 \\\n"
-                    "bash experiments/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle.sh"
+                    "bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle.sh"
                 ),
                 full_experiment=(
-                    "cd /home/iccls2/AutoScale\n"
+                    "cd /home/icclz2/Pre6G\n"
                     "CC_PASSWORD='your_coolercontrol_password' \\\n"
-                    "bash experiments/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle.sh"
+                    "bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle.sh"
                 ),
             ),
             phase_summary=[

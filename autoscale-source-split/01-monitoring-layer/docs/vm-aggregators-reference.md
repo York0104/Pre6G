@@ -133,7 +133,7 @@ python3 vm_aggregator.py
 ```
 
 ```bash
-NODE=icclz1 K8S_NODE=icclz1 NAMESPACE=intent-lab python3 vm_aggregator.py
+NODE=REPLACE_NODE K8S_NODE=REPLACE_NODE NAMESPACE=intent-lab python3 vm_aggregator.py
 ```
 
 ## 2. `vm_agg_rfsoc.py`

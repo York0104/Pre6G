@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: netdata-conf-child
+  namespace: netdata
+  labels:
+    app: netdata
+    release: netdata
+data:
+  go.d: |
+    modules:
+      prometheus: yes
+  kubeproxy: |
+    update_every: 1
+    autodetection_retry: 0
+    jobs:
+      - name: local
+        url: http://127.0.0.1:10249/metrics
+  netdata: |-
+    [global]
+      enable zero metrics = yes
+    [db]
+      mode = ram
+    [web]
+      bind to = localhost:19999
+    [health]
+      enabled = no
+    [ml]
+      enabled = no
+    [plugins]
+      enable running new plugins = yes
+      perf = yes
+    [plugin:perf]
+      update every = 1
+      command options = all
+  prometheus: |
+    jobs:
+      - name: kubelet_cadvisor
+        url: https://127.0.0.1:10250/metrics/cadvisor
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        tls_ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        tls_skip_verify: true
+        update_every: 1
+        debug: true
+
+        selector:
+          allow:
+            - container_cpu_usage_seconds_total
+            - container_memory_working_set_bytes
+            - container_network_receive_bytes_total
+            - container_network_transmit_bytes_total
+          deny: []
+  stream: |
+    [stream]
+      enabled = yes
+      destination = 140.113.179.9:32163
+      api key = 11111111-2222-3333-4444-555555555555
+      timeout seconds = 60
+      buffer size bytes = 1048576
+      reconnect delay seconds = 5
+      initial clock resync iterations = 60
