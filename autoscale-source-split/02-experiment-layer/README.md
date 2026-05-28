@@ -4,7 +4,18 @@
 
 ## 目前環境狀態
 
-目前 `icclz1` 已是新的 k3s GPU worker，並可正常提供：
+截至 2026-05-28，`02-experiment-layer` 已對齊目前 k3s 環境：
+
+- worker node: `icclz1`
+- worker host/IP: `140.113.179.6`
+- worker SSH alias: `icclz1-gpu`
+- worker external repo: `/home/icclz1/gpu-tempctl-lab`
+- VictoriaMetrics: `http://140.113.179.9:31888`
+- Netdata: `http://140.113.179.9:32163`
+- repo root: `/home/icclz2/Pre6G`
+- Python venv: `/home/icclz2/Pre6G/iccl`
+
+`icclz1` 目前已正常提供：
 
 - `node-exporter`
 - `vmagent-node-local`
@@ -12,27 +23,80 @@
 - `nvidia-device-plugin`
 - `dcgm-exporter`
 - `nvidia.com/gpu=1`
-- `nvidia.com/gpu.shared=4`（目前 `icclz1` 已啟用 time-slicing，可供三實例 YOLO/shared-GPU workflow 使用）
+- `nvidia.com/gpu.shared=4`
 
-因此 `02-experiment-layer` 已對齊目前環境的節點名稱、監控入口與 worker SSH 位置：
+## 已完成驗證
 
-- worker node: `icclz1`
-- worker host/IP: `140.113.179.6`
-- worker external repo: `/home/icclz1/gpu-tempctl-lab`
-- VictoriaMetrics: `http://140.113.179.9:31888`
-- Netdata: `http://140.113.179.9:32163`
+### 1. YOLO image 與三實例 shared-GPU service
+
+已完成：
+
+- `local/yolo26n:0.1`
+- `local/yolo26n:0.5`
+
+兩個 image 的 build / import，且已匯入 `iccl-cluster-z2` 與 `icclz1` 的 k3s containerd。
+
+目前 `intent-lab` 中已可正常提供三個 service：
+
+- `yolo26n-focus` -> `18081`
+- `yolo26n-bg-1` -> `18082`
+- `yolo26n-bg-2` -> `18083`
+
+三個 `healthz` 已驗證可回 `200`。
+
+### 2. Baseline single-pod / three-instance smoke test
+
+2026-05-28 已完成短版 baseline smoke test：
+
+- focus: `50/50` success，client mean `137.589 ms`，server mean `18.783 ms`
+- bg-1: `25/25` success，client mean `181.229 ms`，server mean `22.813 ms`
+- bg-2: `25/25` success，client mean `221.967 ms`，server mean `22.610 ms`
+
+### 3. Task3 service-load smoke test
+
+已完成短版 task3 service-load smoke test（暫時切到 `yolo26_task3_saturation.yaml` 的 4-pod topology 後驗證，再恢復回三實例 hostPort stack）：
+
+- `rows=126`
+- `success=126`
+- `success_rate=100%`
+- `client_mean_ms=320.685`
+- `client_p95_ms=394.563`
+- `server_mean_ms=24.344`
+- `server_p95_ms=43.1`
+
+### 4. single_pod_serial_fault_fan 短版 smoke test
+
+已完成短版 smoke test（`TARGET_MODE=pod`、`FAULT_HOLD_SECONDS=10`）：
+
+- `rows=89`
+- `success rate=1.0`
+- `e2e mean=113.141 ms`
+- `server mean=17.566 ms`
+- `server total mean=33.028 ms`
+
+### 5. single_pod_bgload_fan_cycle 短版 smoke test
+
+已完成短版 smoke test（`TARGET_MODE=pod`、`CYCLES=1`、短 cycle 參數）：
+
+- `rows=259`
+- `success rate=1.0`
+- `e2e mean=125.969 ms`
+- `server mean=33.926 ms`
+- `server total mean=45.921 ms`
+
+### 6. 測試結果清理
+
+上述 smoke test 產生的暫存結果已在驗證後刪除。`experiments_yolo/results/single_pod_serial_fault_fan/` 與 `experiments_yolo/results/single_pod_bgload_fan_cycle/` 目前為空。
 
 ## 重現前提
 
-### 1. 單 pod 實驗
+### 1. YOLO image
 
-單 pod 實驗可直接沿用目前 cluster，但需先把 YOLO image 建好並匯入 k3s：
+若在新環境重建，先執行：
 
 ```bash
-cd autoscale-source-split/02-experiment-layer/yolo26_k8s
+cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/yolo26_k8s
 bash build_and_import_image_to_k3s.sh
-kubectl apply -f deployment.yaml
-kubectl apply -f service.yaml
 ```
 
 主要 image tag：
@@ -40,52 +104,61 @@ kubectl apply -f service.yaml
 - `local/yolo26n:0.1`
 - `local/yolo26n:0.5`
 
-### 2. 多 pod saturation / 3-instance 實驗
+注意：若 workload 會排到 GPU worker，該 worker 的 k3s/containerd 也必須有相同 image。
 
-這類實驗使用 `nvidia.com/gpu.shared`。目前 `icclz1` 已完成 time-slicing，現場狀態為：
+### 2. GPU sharing
+
+三實例 shared-GPU 與 task3 saturation 依賴：
+
+- `nvidia.com/gpu.shared`
+
+目前 `icclz1` 已完成 time-slicing，現場狀態為：
 
 - `nvidia.com/gpu.shared: 4`
 - `yolo26n-focus` / `yolo26n-bg-1` / `yolo26n-bg-2` 可在 `intent-lab` 正常 `Running`
-- `18081` / `18082` / `18083` 的 `healthz` 已驗證可回 `200`
 
-本目錄已放入目前可用的 reference config：
+本目錄已放入 reference config：
 
 - `experiments_yolo/saturation_multi_pod/gpu-sharing-icclz1.yaml`
 
-完整背景與舊 bundle 參考見：
+### 3. worker-side fan / background-load control
 
-- `k3s-migration-bundle-sanitized/nvidia-device-plugin/`
+下列 worker 端 repo 與檔案必須存在：
 
-實作注意：
+```text
+/home/icclz1/gpu-tempctl-lab/fan_control_lab/cc.py
+/home/icclz1/gpu-tempctl-lab/fan_control_lab/gpu_cycle_runner.py
+/home/icclz1/gpu-tempctl-lab/fan_control_lab/gpu_supervisor_80.py
+```
 
-- 三實例 manifest 使用 `hostPort`，因此 rollout strategy 應使用 `Recreate`，避免 rolling update 時留下因 port 衝突而長期 `Pending` 的 pod
-- 若未來在另一台 GPU worker 重建，除了 image 匯入外，也要一併確認該節點的 `nvidia.com/gpu.shared` 已出現
+目前 master 端預設透過 `ssh icclz1-gpu` 操作這些 worker-side 工具。
 
 ## 主要用途
 
-- 部署 YOLO26 k3s workload。
-- 產生 inference traffic 並記錄 latency。
-- 透過 worker 端 `gpu-tempctl-lab` 控制 fan/thermal cycle。
-- 收集 `vm_aggregator.py` metrics，合併 latency、thermal phase 與 GPU/Node 指標。
-- 產生實驗 summary、dataset 與圖表。
+- 部署 YOLO26 k3s workload
+- 產生 inference traffic 並記錄 latency
+- 透過 worker 端 `gpu-tempctl-lab` 控制 fan/thermal cycle
+- 收集 `vm_aggregator.py` metrics，合併 latency、thermal phase 與 GPU/Node 指標
+- 產生實驗 summary、dataset 與圖表
 
 ## 根目錄檔案與目錄
 
 | 路徑 | 說明 |
 | --- | --- |
-| `DEPENDENCY_TRACE.md` | 說明本層未依賴舊 `experiments/load_injection/`、`model_load/`、`monitoring/`，並追蹤 fan/load 來源。 |
+| `DEPENDENCY_TRACE.md` | 說明本層不再依賴舊 `experiments/load_injection/`、`model_load/`、`monitoring/`，並追蹤 fan/load 來源。 |
 | `experiments_yolo/` | 目前主要 YOLO 實驗 workflow，包含 saturation、single pod、fault fan、bgload fan cycle。 |
 | `scripts/` | 較早期或通用的 YOLO26 thermal/rate sweep 腳本。 |
 | `thermal_analysis/` | thermal YOLO 資料收集、合併、繪圖與 batch runner。 |
 | `yolo26_k8s/` | YOLO26 inference service Dockerfile、app、k8s manifests、image build/import helper。 |
 
-## Smoke Test 狀態
+## Analyzer / pandas 備註
 
-2026-05-28 已完成短版 baseline smoke test：
+目前 smoke test runner 已調整為：
 
-- focus: `50/50` success，client mean `137.589 ms`，server mean `18.783 ms`
-- bg-1: `25/25` success，client mean `181.229 ms`，server mean `22.813 ms`
-- bg-2: `25/25` success，client mean `221.967 ms`，server mean `22.610 ms`
-- `healthz` 監看與 warmup 皆正常
+- `summary.txt` 不再依賴 `pandas`
+- optional analyzer / plotting 若缺 `pandas`，不會阻斷主流程完成
 
-測試輸出已驗證後刪除；如需重跑，可直接使用 `scripts/run_A_normal_baseline_yolo.sh`，並建議將 `OUTDIR` 指到 `/tmp` 或專案內暫存目錄。
+因此：
+
+- 想驗證 workflow 是否能跑通時，不必先補 `pandas`
+- 若要完整使用 `analyze_*.py` / 某些進階圖表，再另外於對應 Python 環境安裝 `pandas`

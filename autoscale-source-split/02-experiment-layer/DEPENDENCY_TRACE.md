@@ -4,7 +4,7 @@
 
 ## 結論
 
-目前 `experiments_yolo/` 的 active code path 沒有呼叫：
+目前 `experiments_yolo/` 的 active code path 不再依賴：
 
 ```text
 experiments/load_injection/
@@ -12,7 +12,7 @@ experiments/model_load/
 experiments/monitoring/
 ```
 
-唯一還會提到舊路徑的地方，已只保留在歷史說明或範例背景中，不再是目前執行入口。
+唯一還提到舊路徑的地方，已只保留在歷史說明，不再是目前執行入口。
 
 ## Fan Control 來源
 
@@ -23,6 +23,7 @@ fan control 不是來自舊的 `experiments/load_injection/`。
 ```text
 WORKER_HOST=140.113.179.6
 WORKER_USER=icclz1
+WORKER_SSH=icclz1-gpu
 WORKER_REPO=/home/icclz1/gpu-tempctl-lab
 ```
 
@@ -66,7 +67,7 @@ local/yolo26n:0.5
 02-experiment-layer/yolo26_k8s/build_and_import_image_to_k3s.sh
 ```
 
-因此新 k3s 環境不需要回頭找舊 image tar，只要先 build / import 即可。
+在新 k3s 環境中，不需要回頭找舊 image tar；直接 build / import 即可。但若 pod 會排到特定 GPU worker，該 worker 的 k3s/containerd 也必須有同一份 image。
 
 ## Background Load 來源
 
@@ -93,17 +94,23 @@ from fan_control_lab.gpu_supervisor_80 import read_gpu_metrics, start_workload, 
 
 ## GPU sharing / saturation 依賴
 
-多 pod saturation 與三實例 YOLO workload 仍依賴：
+多 pod saturation 與三實例 YOLO workload 依賴：
 
 ```text
 nvidia.com/gpu.shared
 ```
 
-目前 repo 已直接收錄本機 reference config：
+目前 repo 已直接收錄 reference config：
 
 ```text
 experiments_yolo/saturation_multi_pod/gpu-sharing-icclz1.yaml
 ```
+
+目前 `icclz1` live 環境已驗證：
+
+- `nvidia.com/gpu.shared: 4`
+- 3 實例 hostPort stack 可正常運行
+- task3 4-pod stack 可完成短版 service-load smoke test
 
 若 cluster 尚未出現 `nvidia.com/gpu.shared`：
 
@@ -117,6 +124,15 @@ experiments_yolo/saturation_multi_pod/gpu-sharing-icclz1.yaml
 - `yolo26_task3_saturation.yaml`
 
 不能直接排程成功。
+
+## pandas / analyzer 備註
+
+目前主 runner 已調整為：
+
+- summary 階段不再依賴 `pandas`
+- analyzer / plotting 階段若缺 `pandas`，改為 non-blocking，不會讓 smoke test 失敗
+
+因此 `pandas` 不再是重現這些 workflow 的必要前置；它只在完整分析或部份圖表輸出時有幫助。
 
 ## 保持排除
 

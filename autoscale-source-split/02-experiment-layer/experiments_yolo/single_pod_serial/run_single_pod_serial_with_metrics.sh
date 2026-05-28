@@ -3,7 +3,8 @@ set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-intent-lab}"
 NODE_NAME="${NODE_NAME:-icclz1}"
-NODE_SSH="${NODE_SSH:-icclz1@140.113.179.6}"
+NODE_SSH_ALIAS="${NODE_SSH_ALIAS:-icclz1-gpu}"
+NODE_SSH="${NODE_SSH:-$NODE_SSH_ALIAS}"
 FOCUS_DEPLOY="${FOCUS_DEPLOY:-yolo26n-task3-focus}"
 BG_DEPLOY_1="${BG_DEPLOY_1:-yolo26n-task3-bg}"
 BG_DEPLOY_2="${BG_DEPLOY_2:-}"

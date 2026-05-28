@@ -4,55 +4,37 @@
 
 此實驗與 `saturation_multi_pod/` 的差異在於：
 
-- 只保留一個 YOLO serving pod
+- 只保留一個 focus YOLO serving pod
 - 不使用 concurrency 壓測
 - client 僅在前一個 request 完成後，才送出下一個 request
 - 觀察重點改為長時間 serial serving 下的 latency、throughput 與 GPU thermal/resource trend
 
-預設 target mode 為 `service`，也就是 measurement client 會先打到 Kubernetes Service，再由 Service 轉送到唯一的後端 pod。這樣和既有 Task 3 的量測口徑較一致，也較接近真實服務情境。
+## 目前環境對齊
 
-## 1. Experiment Goal
+目前已對齊：
 
-本實驗要回答的問題是：
+- repo root: `/home/icclz2/Pre6G`
+- Python venv: `/home/icclz2/Pre6G/iccl`
+- worker IP: `140.113.179.6`
+- worker SSH alias: `icclz1-gpu`
+- worker node: `icclz1`
+- namespace: `intent-lab`
+- focus deploy: `yolo26n-focus`
+- background deploys: `yolo26n-bg-1` / `yolo26n-bg-2`
 
-1. 單 pod、非 concurrency、closed-loop serial request 下，服務可達到多少自然 throughput。
-2. 長時間持續服務時，`e2e_latency_ms`、`server_latency_ms`、`server_total_latency_ms` 是否隨溫度或功耗逐步漂移。
-3. GPU temperature、power、utilization、VRAM 使用量是否會進入穩定區間。
-4. 與多 pod saturation 實驗相比，單 pod 的 latency 與 GPU resource signature 有何差異。
+## 已驗證狀態
 
-## 2. Request Model
+2026-05-28 已完成 baseline smoke test：
 
-本實驗採用：
+- focus: `50/50` success，client mean `137.589 ms`，server mean `18.783 ms`
+- bg-1: `25/25` success，client mean `181.229 ms`，server mean `22.813 ms`
+- bg-2: `25/25` success，client mean `221.967 ms`，server mean `22.610 ms`
 
-- `closed-loop`
-- `serial`
-- `successive requests`
+測試輸出已於驗證後刪除。
 
-也就是：
+## Main Scripts
 
-1. client 送出一個 request
-2. 等待該 request 成功或失敗返回
-3. 才送下一個 request
-
-這和 Task 3 的 `concurrency > 1` / `open-loop-like high pressure` 不同。
-
-## 3. Directory Structure
-
-```text
-experiments_yolo/
-├── common/
-│   ├── request_client_serial.py
-│   ├── analyze_single_pod_serial.py
-│   ├── plot_task3_full_timeline.py
-│   └── plot_resource_overview.py
-└── single_pod_serial/
-    ├── README_single_pod_serial.md
-    └── run_single_pod_serial_with_metrics.sh
-```
-
-## 4. Main Scripts
-
-### 4.1 `common/request_client_serial.py`
+### `common/request_client_serial.py`
 
 單一 serial client。
 
@@ -65,98 +47,60 @@ experiments_yolo/
   - `inter_request_gap_ms`
   - `loop_elapsed_ms`
 
-### 4.2 `single_pod_serial/run_single_pod_serial_with_metrics.sh`
+### `single_pod_serial/run_single_pod_serial_with_metrics.sh`
 
 此腳本會：
 
-1. scale focus deployment 到 `1`
-2. scale background deployments 到 `0`
+1. scale `yolo26n-focus` 到 `1`
+2. scale `yolo26n-bg-1` / `yolo26n-bg-2` 到 `0`
 3. 蒐集 pod / deployment / event 狀態
 4. 啟動 `nvidia-smi` 與 `kubectl top` 監控
 5. 啟動 serial request client
 6. 產生 `summary.txt`、`serial_analysis.txt`、`plots/`
 
-## 5. Expected Outputs
+## How To Run
 
-每次 run 會輸出到：
-
-`experiments/experiments_yolo/results/single_pod_serial/<RUN_ID>/`
-
-主要檔案：
-
-- `experiment_config.txt`
-- `measurement_raw.csv`
-- `measurement.log`
-- `summary.txt`
-- `serial_analysis.txt`
-- `phase_summary.csv`
-- `nvidia_smi_gpu_1s.csv`
-- `kubectl_top_1s.log`
-- `plots/fig*.png`
-- `plots/gpu_resource_overview.png`
-
-## 6. How To Run
-
-### 6.1 Basic Run
-
-進入專案根目錄後直接執行：
+### Basic Run
 
 ```bash
-cd /home/iccls2/AutoScale
-bash experiments/experiments_yolo/single_pod_serial/run_single_pod_serial_with_metrics.sh
+cd /home/icclz2/Pre6G
+autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_serial/run_single_pod_serial_with_metrics.sh
 ```
 
-此指令會使用預設值：
-
-- `TARGET_MODE=service`
-- `DURATION=1800`
-- `TIMEOUT_SEC=20`
-- `REPEAT=1`
-
-並自動調整 deployment：
-
-- `yolo26n-task3-focus -> replicas=1`
-- `yolo26n-task3-bg -> replicas=0`
-
-### 6.2 Example: 5-Minute Run
+### Example: 5-Minute Run
 
 ```bash
-cd /home/iccls2/AutoScale
-DURATION=300 TIMEOUT_SEC=30 REPEAT=10 \
-bash experiments/experiments_yolo/single_pod_serial/run_single_pod_serial_with_metrics.sh
+cd /home/icclz2/Pre6G
+DURATION=300 TIMEOUT_SEC=30 REPEAT=10 bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_serial/run_single_pod_serial_with_metrics.sh
 ```
 
-### 6.3 Example: Force Pod Mode
-
-若要直接打單一 focus pod，而不是經過 service：
+### Example: Force Pod Mode
 
 ```bash
-cd /home/iccls2/AutoScale
-TARGET_MODE=pod DURATION=300 TIMEOUT_SEC=30 REPEAT=10 \
-bash experiments/experiments_yolo/single_pod_serial/run_single_pod_serial_with_metrics.sh
+cd /home/icclz2/Pre6G
+TARGET_MODE=pod DURATION=300 TIMEOUT_SEC=30 REPEAT=10 bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_serial/run_single_pod_serial_with_metrics.sh
 ```
 
-### 6.4 Common Environment Variables
+## Common Environment Variables
 
 - `DURATION`
-  - 實驗秒數，例如 `300`、`1800`
 - `TIMEOUT_SEC`
-  - 單一 request timeout 秒數
 - `REPEAT`
-  - 傳給 `/infer?repeat=...` 的 repeat 參數
 - `TARGET_MODE`
   - `service` 或 `pod`
 - `NAMESPACE`
   - 預設 `intent-lab`
 - `NODE_SSH`
-  - 用於收集遠端 `nvidia-smi`，預設 `icclz1@140.113.179.6`
+  - 預設 `icclz1-gpu`
+- `WORKER_IP`
+  - 預設 `140.113.179.6`
 
-### 6.5 Outputs After Run
+## Outputs
 
-執行完成後，結果會寫到：
+結果會寫到：
 
 ```text
-experiments/experiments_yolo/results/single_pod_serial/<RUN_ID>/
+autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_serial/<RUN_ID>/
 ```
 
 建議優先查看：
@@ -168,21 +112,7 @@ experiments/experiments_yolo/results/single_pod_serial/<RUN_ID>/
 - `nvidia_smi_gpu_1s.csv`
 - `plots/`
 
-## 7. Reused Common Tools
+## Notes
 
-此實驗直接沿用：
-
-- `common/plot_task3_full_timeline.py`
-- `common/plot_resource_overview.py`
-
-原因是：
-
-- `measurement_raw.csv` schema 保持一致
-- `nvidia_smi_gpu_1s.csv` 格式保持一致
-- 即使沒有 `stable_windows.csv`，這兩個 plotter 仍可直接運作
-
-## 8. Notes
-
-- 這個實驗目前先不強依賴 `stable_windows.csv`
-- 若後續要做「單 pod thermal steady-state window」分析，再另外新增專用 window finder
-- 這版刻意不修改既有 `saturation_multi_pod/` 流程，避免和 Task 3 結果混淆
+- 目前 runner 的 summary 階段已不再依賴 `pandas`
+- 若額外 analyzer / plotter 需要 `pandas`，缺少時不影響 smoke test 主流程完成

@@ -3,9 +3,10 @@ set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-intent-lab}"
 NODE_NAME="${NODE_NAME:-icclz1}"
-NODE_SSH="${NODE_SSH:-icclz1@140.113.179.6}"
-FOCUS_DEPLOY="${FOCUS_DEPLOY:-yolo26n-task3-focus}"
-BG_DEPLOY_1="${BG_DEPLOY_1:-yolo26n-task3-bg}"
+NODE_SSH_ALIAS="${NODE_SSH_ALIAS:-icclz1-gpu}"
+NODE_SSH="${NODE_SSH:-$NODE_SSH_ALIAS}"
+FOCUS_DEPLOY="${FOCUS_DEPLOY:-yolo26n-focus}"
+BG_DEPLOY_1="${BG_DEPLOY_1:-yolo26n-bg-1}"
 TARGET_MODE="${TARGET_MODE:-service}"
 VM_URL="${VM_URL:-http://140.113.179.9:31888}"
 NETDATA_URL="${NETDATA_URL:-http://140.113.179.9:32163}"
@@ -14,7 +15,7 @@ NETDATA_PARENT_BASE_URL="${NETDATA_PARENT_BASE_URL:-$NETDATA_URL}"
 
 TIMEOUT_SEC="${TIMEOUT_SEC:-30}"
 REPEAT="${REPEAT:-10}"
-MEAS_SVC_NAME="${MEAS_SVC_NAME:-yolo26n-task3}"
+MEAS_SVC_NAME="${MEAS_SVC_NAME:-}"
 
 WARMUP_SECONDS="${WARMUP_SECONDS:-0}"
 NORMAL_HOLD_SECONDS="${NORMAL_HOLD_SECONDS:-0}"
@@ -225,25 +226,75 @@ python3 "${VM_AGG_TRAINING}" \
   > "${RUN_DIR}/vm_aggregator_training_features.log" 2>&1 || true
 
 python3 - "${RUN_DIR}" <<'PY' | tee "${RUN_DIR}/summary.txt"
+import csv
+import math
+import statistics
 import sys
+from collections import Counter
 from pathlib import Path
-import pandas as pd
+
+
+def to_float(value):
+    if value in (None, ""):
+        return None
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(num):
+        return None
+    return num
+
+
+def percentile(values, pct):
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    values = sorted(values)
+    pos = (len(values) - 1) * pct
+    lower = math.floor(pos)
+    upper = math.ceil(pos)
+    if lower == upper:
+        return values[int(pos)]
+    weight = pos - lower
+    return values[lower] * (1 - weight) + values[upper] * weight
+
 
 run_dir = Path(sys.argv[1])
 path = run_dir / "measurement_raw.csv"
-df = pd.read_csv(path)
-clean = df[df["error_type"].fillna("") == "normal_success"].copy()
+with path.open(newline="") as fh:
+    rows = list(csv.DictReader(fh))
 
-print("rows:", len(df))
-print("success rate:", df["success"].mean() if len(df) else None)
+clean = [row for row in rows if (row.get("error_type") or "") == "normal_success"]
+success_values = []
+for row in rows:
+    value = row.get("success", "")
+    if str(value).strip().lower() in {"1", "1.0", "true"}:
+        success_values.append(1.0)
+    elif str(value).strip().lower() in {"0", "0.0", "false"}:
+        success_values.append(0.0)
+
+print("rows:", len(rows))
+print("success rate:", (sum(success_values) / len(success_values)) if success_values else None)
 print("\nerror types:")
-print(df["error_type"].value_counts(dropna=False))
+for key, count in Counter((row.get("error_type") or "") for row in rows).items():
+    label = key if key else "<empty>"
+    print(f"{label}: {count}")
 
 for col in ["e2e_latency_ms", "server_latency_ms", "server_total_latency_ms"]:
-    if col in clean.columns:
-        clean[col] = pd.to_numeric(clean[col], errors="coerce")
+    values = [to_float(row.get(col)) for row in clean]
+    values = [v for v in values if v is not None]
+    if values:
         print(f"\nclean {col}:")
-        print(clean[col].describe(percentiles=[0.5, 0.9, 0.95, 0.99]))
+        print(f"count: {len(values)}")
+        print(f"mean: {statistics.fmean(values):.6f}")
+        print(f"min: {min(values):.6f}")
+        print(f"p50: {percentile(values, 0.50):.6f}")
+        print(f"p90: {percentile(values, 0.90):.6f}")
+        print(f"p95: {percentile(values, 0.95):.6f}")
+        print(f"p99: {percentile(values, 0.99):.6f}")
+        print(f"max: {max(values):.6f}")
 
 vm_path = run_dir / "vm_aggregator_timeseries.csv"
 if vm_path.exists():
@@ -253,7 +304,7 @@ if train_path.exists():
     print(f"vm_aggregator_training_features_csv: {train_path}")
 PY
 
-python3 "${THERMAL_ANALYZER}" "${RUN_DIR}" | tee "${RUN_DIR}/fault_fan_analysis.txt"
+python3 "${THERMAL_ANALYZER}" "${RUN_DIR}" | tee "${RUN_DIR}/fault_fan_analysis.txt" || true
 python3 "${THERMAL_PLOTTER}" "${RUN_DIR}" > "${RUN_DIR}/plot_fault_fan.log" 2>&1 || true
 python3 "${TIMELINE_PLOTTER}" "${RUN_DIR}" > "${RUN_DIR}/plot_full_timeline.log" 2>&1 || true
 python3 "${RESOURCE_PLOTTER}" "${RUN_DIR}" > "${RUN_DIR}/plot_resource_overview.log" 2>&1 || true

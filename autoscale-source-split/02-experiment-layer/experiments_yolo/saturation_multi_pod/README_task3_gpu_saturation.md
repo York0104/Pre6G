@@ -1,9 +1,28 @@
 # Task3 GPU Saturation
 
-本實驗在目前 k3s 環境下仍可重建，但有兩個前置條件：
+本實驗在目前 k3s 環境下可重建，前提是：
 
-1. 先匯入 YOLO image
-2. 先啟用 `nvidia.com/gpu.shared`
+1. YOLO image 已匯入 control-plane 與目標 GPU worker 的 k3s/containerd
+2. `icclz1` 已啟用 `nvidia.com/gpu.shared`
+
+## 目前已驗證狀態
+
+截至 2026-05-28：
+
+- `icclz1` 已出現 `nvidia.com/gpu.shared: 4`
+- `yolo26_task3_saturation.yaml` 對應的 4-pod stack 可正常建立
+  - `yolo26n-task3-focus`
+  - `yolo26n-task3-bg` x3
+- 短版 service-load smoke test 已完成
+  - `rows=126`
+  - `success=126`
+  - `success_rate=100%`
+  - `client_mean_ms=320.685`
+  - `server_mean_ms=24.344`
+- 驗證後已恢復原本三實例 hostPort stack
+  - `yolo26n-focus`
+  - `yolo26n-bg-1`
+  - `yolo26n-bg-2`
 
 ## 前置條件
 
@@ -39,3 +58,9 @@ kubectl describe node icclz1 | sed -n '/Allocatable:/,/System Info:/p' | grep -E
 cd /home/icclz2/Pre6G
 bash autoscale-source-split/02-experiment-layer/experiments_yolo/saturation_multi_pod/run_task3_service_load_with_metrics.sh
 ```
+
+## 備註
+
+- 這條 workflow 的主線現在已可跑通
+- 若要完整使用後處理 analyzer / advanced plots，仍可能需要在對應 Python 環境補 `pandas`
+- smoke test 階段不再以 `pandas` 作為阻斷依賴
