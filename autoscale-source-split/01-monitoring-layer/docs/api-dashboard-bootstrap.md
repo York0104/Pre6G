@@ -15,7 +15,7 @@
 - `systemd/autoscale-api.env.example`
 - frontend handoff files
 
-目前 repo 內未包含完整的 `autoscale_api` 應用程式本體，因此這一層以「部署模板 + 對接說明」為主。
+目前 repo 內已包含 `autoscale_api` 與 `cluster-dashboard` 主線內容；這份文件主要整理如何在已重建的 monitoring layer 之上，接上 host-side API 與 frontend。
 
 ## Recommended Wiring
 
@@ -37,10 +37,10 @@
 
 建議做法：
 
-1. 於 AutoScale 主機部署 `autoscale_api` 程式本體
+1. 使用 repo 內的 `03-shared-api-dashboard/autoscale_api/` 作為 API 程式本體
 2. 將 [systemd/autoscale-api.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example) 複製為實際 env
 3. 將 [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example) 的端點同步到該 env
-4. 啟動 [systemd/autoscale-api.service](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service)
+4. 依 [autoscale_api/README.md](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md) 啟動 API，或套用 [systemd/autoscale-api.service](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service)
 
 ### 4. Dashboard / frontend
 
@@ -70,5 +70,7 @@ frontend 只需要：
 
 ## Current Constraint
 
-- `z590-aorus-xtreme` 目前因磁碟滿不建議當成 API / dashboard 驗證目標。
-- 若正式版 dashboard 要顯示 GPU 節點完整資訊，需待 `z590-aorus-xtreme` 或正式 GPU worker 恢復穩定後再驗證。
+- `Cluster Monitor` 與 `autoscale_api` 主線已在目前環境驗證可用。
+- `icclz1` 現在已是可用 GPU worker，且 `nvidia.com/gpu.shared: 4` 與 `02-experiment-layer` 主線已驗證成功。
+- `mirc516-20250605` 若要顯示完整 GPU metrics，仍需先修正主機 NVIDIA driver / userspace mismatch。
+- `z590-aorus-xtreme` 仍保留既有磁碟壓力風險，不建議當主要驗證節點。

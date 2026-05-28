@@ -23,7 +23,7 @@ Frontend
 ```
 
 如果前端需要所有節點的完整 raw JSON，請改看
-[`docs/full-metrics-handoff.md`](/home/icclz2/Pre6G/docs/full-metrics-handoff.md)。
+[`docs/full-metrics-handoff.md`](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/docs/full-metrics-handoff.md)。
 
 ## 2. 你會收到什麼
 

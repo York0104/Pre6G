@@ -153,7 +153,7 @@ curl \
 
 repo 已提供一個範例 wrapper：
 
-- [run_full_metrics_api_collector.sh](/home/icclz2/Pre6G/run_full_metrics_api_collector.sh)
+- [run_full_metrics_api_collector.sh](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/run_full_metrics_api_collector.sh)
 
 用途：
 
@@ -180,7 +180,7 @@ $HOME/node_metric_csv_logs/YYYYMMDD_HHMMSS/
 API_BASE_URL=http://<CONTROL_PLANE_IP>:8000 \
 API_TOKEN=replace-with-issued-token \
 INTERVAL_SECONDS=30 \
-bash /home/icclz2/Pre6G/run_full_metrics_api_collector.sh
+bash /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/run_full_metrics_api_collector.sh
 ```
 
 若不需要 token，可省略 `API_TOKEN`。

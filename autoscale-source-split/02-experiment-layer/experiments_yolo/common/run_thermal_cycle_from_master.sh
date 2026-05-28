@@ -3,7 +3,9 @@ set -euo pipefail
 
 RUN_ID="${1:-${RUN_ID:?missing run id}}"
 
-AUTOSCALE_DIR="${AUTOSCALE_DIR:-$HOME/AutoScale}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
+AUTOSCALE_DIR="${AUTOSCALE_DIR:-$REPO_ROOT/autoscale-source-split/02-experiment-layer}"
 OUT_DIR="${OUT_DIR:-$HOME/exp_runs/$RUN_ID}"
 
 WORKER_HOST="${WORKER_HOST:-140.113.179.6}"

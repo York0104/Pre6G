@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="/home/iccls2/AutoScale"
-BASE_DIR="${ROOT_DIR}/experiments/experiments_yolo"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="${SCRIPT_DIR}"
+ROOT_DIR="$(cd "${BASE_DIR}/../../../../.." && pwd)"
 
 CC_PASSWORD="${CC_PASSWORD:-}"
 LOOP_GAP_SECONDS="${LOOP_GAP_SECONDS:-0}"
@@ -18,7 +19,7 @@ require_env() {
   if [[ -z "${CC_PASSWORD}" ]]; then
     echo "missing CC_PASSWORD"
     echo "example:"
-    echo "  CC_PASSWORD='your_password' bash experiments/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle_loop.sh"
+    echo "  CC_PASSWORD='your_password' bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle_loop.sh"
     exit 1
   fi
 }
@@ -59,7 +60,7 @@ cooldown() {
 run_once() {
   CC_PASSWORD="${CC_PASSWORD}" \
   CYCLES=1 \
-  bash "${BASE_DIR}/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle.sh"
+  bash "${BASE_DIR}/run_single_pod_bgload_fan_cycle.sh"
 }
 
 run_foreground_task() {

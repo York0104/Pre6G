@@ -42,7 +42,6 @@
 - `monitoring-rebuild/55-netdata.yaml`
 - `monitoring-rebuild/60-netdata-child-stream-config.yaml`
 
-舊 `k8s-expose/` 目錄已移除，避免與目前 `k3s` 重建基底重複或造成誤導。
 
 ## `ap_gateway/`
 

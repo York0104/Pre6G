@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="/home/iccls2/AutoScale"
-BASE_DIR="${ROOT_DIR}/experiments/experiments_yolo"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="${SCRIPT_DIR}"
+ROOT_DIR="$(cd "${BASE_DIR}/../../.." && pwd)"
 NAMESPACE="${NAMESPACE:-intent-lab}"
 FOCUS_DEPLOY="${FOCUS_DEPLOY:-yolo26n-task3-focus}"
 BG_DEPLOY="${BG_DEPLOY:-yolo26n-task3-bg}"
