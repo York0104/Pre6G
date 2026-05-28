@@ -5,18 +5,18 @@
       "node_type": "rfsoc",
       "aggregator": "vm_agg_rfsoc.py",
       "env": {
-        "NETDATA_URL": "http://192.168.100.200:32163",
+        "NETDATA_URL": "http://140.113.179.9:32163",
         "NETDATA_HOST": "pynq",
         "VM_URL": "http://140.113.179.9:31888",
         "JOB": "rfsoc4x2-node-exporter",
-        "ACCESS": "lab-lan",
+        "ACCESS": "tailscale",
         "BOARD": "RFSoC4x2",
-        "INSTANCE": "192.168.100.217:9100",
+        "INSTANCE": "100.91.37.32:9100",
         "NODE_LABEL": "rfsoc4x2-pynq",
         "ROLE": "external-rfsoc",
         "LAB_IP": "192.168.100.217",
         "TAILSCALE_IP": "100.91.37.32",
-        "PL_STATUS_SSH_TARGET": "rfsoc4x2-pynq",
+        "PL_STATUS_SSH_TARGET": "xilinx@100.91.37.32",
         "PL_STATUS_SSH_KEY": "${HOME}/.ssh/id_ed25519_rfsoc"
       }
     },

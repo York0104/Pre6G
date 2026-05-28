@@ -21,6 +21,7 @@ Workspace: `/home/icclz2/Pre6G`
 - `mirc516-20250605`：已完成 GPU auto-discovery，但主機 NVIDIA driver/userspace mismatch，GPU metrics 尚未恢復
 - API / dashboard：`Cluster Monitor` 已驗證；experiment 頁面不列入本次重建範圍
 - `02-experiment-layer`：已在目前 k3s 環境恢復 `icclz1` shared-GPU YOLO 三實例主線，並完成短版 latency smoke test
+- `RFSoC external monitoring`：已改以 Tailscale `100.91.37.32:9100` 接入目前 `VictoriaMetrics`，`Netdata parent` 已看到 `pynq`，`vm_agg_rfsoc.py` 已可輸出 `collector_status = ok`
 
 ## Completed
 
@@ -128,6 +129,27 @@ Workspace: `/home/icclz2/Pre6G`
 - `autoscale_api` 可回應 `GET /`、`GET /api/v1/nodes`、`GET /api/v1/nodes/status`
 - `cluster-dashboard` 的 `Cluster Monitor` 可正常載入與顯示資料
 
+### RFSoC External Monitoring
+
+已驗證：
+
+- `rfsoc4x2-node-exporter` 已透過 Tailscale target `100.91.37.32:9100` 接入目前 `vmagent` / `VictoriaMetrics`
+- `up{job="rfsoc4x2-node-exporter",access="tailscale",board="RFSoC4x2"}` 查詢結果為 `1`
+- 目前 `Netdata parent` `http://140.113.179.9:32163` 的 `mirrored_hosts` 已包含 `pynq`
+- `http://140.113.179.9:32163/host/pynq/api/v1/data?...` 已可回 JSON
+- `vm_agg_rfsoc.py` 已在目前主機以以下環境完成 live 驗證：
+  - `NETDATA_URL=http://140.113.179.9:32163`
+  - `VM_URL=http://140.113.179.9:31888`
+  - `ACCESS=tailscale`
+  - `INSTANCE=100.91.37.32:9100`
+  - `PL_STATUS_SSH_TARGET=xilinx@100.91.37.32`
+- `vm_agg_rfsoc.py` 已成功輸出：
+  - `collector_status = ok`
+  - `health.up = true`
+  - `pl_status.*`
+  - `node_pressure_instant.*`
+  - `node_compute_features.*`
+
 ### 02 Experiment Layer
 
 已驗證：
@@ -183,3 +205,16 @@ Workspace: `/home/icclz2/Pre6G`
 - 決定是否為 `VictoriaMetrics` 補持久化
 - 修復 `mirc516-20250605` 主機 NVIDIA stack
 - 視需要再把 `02-experiment-layer` 的 thermal cycle / batch workflow 做完整驗收
+
+## AP Gateway Pending
+
+- `vm_agg_ap_gateway.py` / `ap_gateway.py` / `ap_snmp_gateway.py` 尚未在目前 `iccl-cluster-z2` 主機完成重建驗證。
+- 已確認 blocker 不是程式碼本身，而是目前 `iccl-cluster-z2` 無法連到 OpenWrt AP `192.168.1.1`：
+  - `ssh -i ~/.ssh/openwrt_ap_ed25519 root@192.168.1.1` timeout
+  - `snmpget -v2c -c public 192.168.1.1 ...` timeout
+  - `ap_gateway.py` 也持續回報 `ssh: connect to host 192.168.1.1 port 22: Connection timed out`
+- 這表示 AP collector 目前不能直接跑在 `iccl-cluster-z2`，需要改在可達 `192.168.1.1` 的主機上執行，或先補通 `iccl-cluster-z2 -> 192.168.1.1` 的網路路徑。
+- 後續處理方向：
+  - 優先方案：在可達 `192.168.1.1` 的主機上執行 `ap_gateway.py` / `ap_snmp_gateway.py`，並將 metrics push 到目前的 `VictoriaMetrics` `http://140.113.179.9:31888/api/v1/import/prometheus`。
+  - 次要方案：為 `iccl-cluster-z2` 補網路、route、VLAN 或 overlay，讓它能直接 SSH/SNMP 到 OpenWrt AP。
+

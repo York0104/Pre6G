@@ -227,6 +227,36 @@ NODE=REPLACE_NODE K8S_NODE=REPLACE_NODE NAMESPACE=intent-lab python3 vm_aggregat
 python3 vm_agg_rfsoc.py
 ```
 
+```bash
+NETDATA_URL=http://140.113.179.9:32163 \
+NETDATA_HOST=pynq \
+VM_URL=http://140.113.179.9:31888 \
+JOB=rfsoc4x2-node-exporter \
+ACCESS=tailscale \
+BOARD=RFSoC4x2 \
+INSTANCE=100.91.37.32:9100 \
+NODE_LABEL=rfsoc4x2-pynq \
+ROLE=external-rfsoc \
+LAB_IP=192.168.100.217 \
+TAILSCALE_IP=100.91.37.32 \
+PL_STATUS_SSH_TARGET='xilinx@100.91.37.32' \
+PL_STATUS_SSH_KEY=$HOME/.ssh/id_ed25519_rfsoc \
+python3 vm_agg_rfsoc.py
+```
+
+### Current Rebuild Steps
+
+1. 在 RFSoC (`pynq`) 上確認 `node_exporter` 正常，並可由 host 端連到 `100.91.37.32:9100`。
+2. 在目前 `vmagent` scrape config 加入 `rfsoc4x2-node-exporter` job，target 使用 `100.91.37.32:9100`，並帶 `access=tailscale`、`board=RFSoC4x2` 等 labels。
+3. 在 RFSoC 上確認 `netdata` child `stream.conf` 指向目前 parent：
+   - `destination = 140.113.179.9:32163`
+   - `api key` 請從 live parent `stream.conf` 或私下交付資料取得，不寫入 repo
+4. 在 host 端放好 `~/.ssh/id_ed25519_rfsoc`，並以 `xilinx@100.91.37.32` 驗證 SSH 可讀到 PL status。
+5. 確認 `VictoriaMetrics` 與 `Netdata parent` 都已有 RFSoC：
+   - `up{job="rfsoc4x2-node-exporter",access="tailscale"} = 1`
+   - `http://140.113.179.9:32163/host/pynq/...` 可回 JSON
+6. 再執行 `vm_agg_rfsoc.py`，預期 `collector_status = ok`。
+
 ## 3. `vm_agg_ap_gateway.py`
 
 ### Purpose

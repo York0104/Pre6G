@@ -9,21 +9,21 @@ import urllib.request
 from typing import Any, Dict, List, Optional
 
 
-NETDATA_URL = os.getenv("NETDATA_URL", "http://192.168.100.200:32163").rstrip("/")
+NETDATA_URL = os.getenv("NETDATA_URL", "http://140.113.179.9:32163").rstrip("/")
 NETDATA_HOST = os.getenv("NETDATA_HOST", "pynq").strip()
-VM_URL = os.getenv("VM_URL", "http://127.0.0.1:31888").rstrip("/")
+VM_URL = os.getenv("VM_URL", "http://140.113.179.9:31888").rstrip("/")
 QUERY_TIMEOUT = float(os.getenv("QUERY_TIMEOUT", "5"))
 
 JOB = os.getenv("JOB", "rfsoc4x2-node-exporter").strip()
-ACCESS = os.getenv("ACCESS", "lab-lan").strip()
+ACCESS = os.getenv("ACCESS", "tailscale").strip()
 BOARD = os.getenv("BOARD", "RFSoC4x2").strip()
-INSTANCE = os.getenv("INSTANCE", "192.168.100.217:9100").strip()
+INSTANCE = os.getenv("INSTANCE", "100.91.37.32:9100").strip()
 NODE_LABEL = os.getenv("NODE_LABEL", "rfsoc4x2-pynq").strip()
 ROLE = os.getenv("ROLE", "external-rfsoc").strip()
 LAB_IP = os.getenv("LAB_IP", "192.168.100.217").strip()
 TAILSCALE_IP = os.getenv("TAILSCALE_IP", "100.91.37.32").strip()
 OBSERVER = socket.gethostname()
-PL_STATUS_SSH_TARGET = os.getenv("PL_STATUS_SSH_TARGET", "rfsoc4x2-pynq").strip()
+PL_STATUS_SSH_TARGET = os.getenv("PL_STATUS_SSH_TARGET", "xilinx@100.91.37.32").strip()
 PL_STATUS_SSH_KEY = os.getenv("PL_STATUS_SSH_KEY", "/home/icclz2/.ssh/id_ed25519_rfsoc").strip()
 PL_STATUS_SSH_TIMEOUT = float(os.getenv("PL_STATUS_SSH_TIMEOUT", "3"))
 PL_STATUS_REMOTE_CMD = os.getenv(
