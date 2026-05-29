@@ -1,4 +1,6 @@
+import json
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.adapters.gpu_static_map_adapter import GPUStaticMapAdapter
@@ -14,6 +16,10 @@ from app.schemas.node import (
     NodeOSInfo,
 )
 from app.services.cache_service import SimpleTTLCache
+
+SOURCE_SPLIT_ROOT = Path(__file__).resolve().parents[4]
+MONITORING_LAYER = SOURCE_SPLIT_ROOT / "01-monitoring-layer"
+COLLECTOR_NODES_PATH = MONITORING_LAYER / "collector_nodes.json"
 
 
 def get_address(addresses: List[Dict[str, Any]], addr_type: str) -> str:
@@ -52,6 +58,13 @@ class NodeInventoryService:
         self.extra = InventoryExtraAdapter()
         self.gpu_map = GPUStaticMapAdapter()
         self.cache = cache or SimpleTTLCache()
+
+    def _load_external_nodes(self) -> List[Dict[str, Any]]:
+        if not COLLECTOR_NODES_PATH.exists():
+            return []
+        with open(COLLECTOR_NODES_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("extra_nodes", [])
 
     def build_node_inventory(self, raw_node: Dict[str, Any]) -> NodeInventory:
         metadata = raw_node.get("metadata", {})
@@ -120,6 +133,69 @@ class NodeInventoryService:
             query_enabled=True,
         )
 
+    def build_external_node_inventory(self, raw_node: Dict[str, Any]) -> NodeInventory:
+        env = raw_node.get("env", {})
+        node_name = raw_node.get("node_name", "")
+        node_type = raw_node.get("node_type", "external")
+        extra_data = self.extra.get_node_extra(node_name)
+        extra_cpu = extra_data.get("cpu", {})
+        extra_mem = extra_data.get("memory", {})
+        extra_os = extra_data.get("os", {})
+        extra_gpu = extra_data.get("gpu", {})
+
+        k8s_ip = (
+            env.get("TAILSCALE_IP")
+            or env.get("OPENWRT")
+            or env.get("LAB_IP")
+            or env.get("INSTANCE", "").split(":")[0]
+            or ""
+        )
+        role = env.get("ROLE") or ("ap-gateway" if node_type == "ap_gateway" else node_type)
+        gpu_models = extra_gpu.get("models") or []
+
+        return NodeInventory(
+            node_name=node_name,
+            role=role,
+            k8s_ip=k8s_ip,
+            os=NodeOSInfo(
+                image=extra_os.get("image", "external-node"),
+                kernel_version=extra_os.get("kernel_version", ""),
+                container_runtime=extra_os.get("container_runtime", "external"),
+            ),
+            cpu=NodeCPUInfo(
+                model_name=extra_cpu.get("model_name"),
+                vendor=extra_cpu.get("vendor"),
+                family=extra_cpu.get("family"),
+                model_id=extra_cpu.get("model_id"),
+                cores_total=int(extra_cpu.get("cores_total", 0)),
+                base_clock_ghz=extra_cpu.get("base_clock_ghz"),
+                max_clock_ghz=extra_cpu.get("max_clock_ghz"),
+                cache=CPUCacheInfo(
+                    l1d=extra_cpu.get("cache", {}).get("l1d"),
+                    l1i=extra_cpu.get("cache", {}).get("l1i"),
+                    l2=extra_cpu.get("cache", {}).get("l2"),
+                    l3=extra_cpu.get("cache", {}).get("l3"),
+                ),
+            ),
+            memory=NodeMemoryInfo(
+                total_memory=extra_mem.get("total_memory", "N/A"),
+                ddr_gen=extra_mem.get("ddr_gen"),
+                frequency_mt_s=extra_mem.get("frequency_mt_s"),
+                cas_latency=extra_mem.get("cas_latency"),
+            ),
+            gpu=NodeGPUInfo(
+                has_gpu=bool(extra_gpu.get("has_gpu", False)),
+                count=int(extra_gpu.get("count", 0)),
+                models=gpu_models,
+                family=extra_gpu.get("family"),
+                memory=extra_gpu.get("memory"),
+                compute_capability=extra_gpu.get("compute_capability"),
+                cuda_driver_version=extra_gpu.get("cuda_driver_version"),
+                cuda_cores=extra_gpu.get("cuda_cores"),
+            ),
+            query_enabled=True,
+        )
+
     def get_node_list(self) -> NodeListResponse:
         cache_key = "node_list_v1"
         cached = self.cache.get(cache_key, ttl_seconds=60)
@@ -129,6 +205,7 @@ class NodeInventoryService:
         print("Refreshing node_list cache from Kubernetes API")
         raw_nodes = self.k8s.list_nodes_raw()
         nodes = [self.build_node_inventory(node) for node in raw_nodes]
+        nodes.extend(self.build_external_node_inventory(node) for node in self._load_external_nodes())
 
         response = NodeListResponse(
             schema="pre6g.node_list.v1",

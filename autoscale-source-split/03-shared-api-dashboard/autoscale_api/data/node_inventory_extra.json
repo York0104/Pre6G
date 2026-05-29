@@ -34,5 +34,63 @@
       "frequency_mt_s": 3200,
       "cas_latency": null
     }
+  },
+  "rfsoc4x2-pynq": {
+    "os": {
+      "image": "PynqLinux 3.0",
+      "kernel_version": "Linux 6.6.10-xilinx-v2024.1",
+      "container_runtime": "external-node"
+    },
+    "cpu": {
+      "model_name": "RFSoC4x2 embedded ARM",
+      "vendor": "AMD Xilinx",
+      "cores_total": 4,
+      "cache": {
+        "l1d": null,
+        "l1i": null,
+        "l2": null,
+        "l3": null
+      }
+    },
+    "memory": {
+      "total_memory": "3929 MiB",
+      "ddr_gen": "DDR4",
+      "frequency_mt_s": null,
+      "cas_latency": null
+    },
+    "gpu": {
+      "has_gpu": false,
+      "count": 0,
+      "models": []
+    }
+  },
+  "openwrt_ap": {
+    "os": {
+      "image": "OpenWrt 25.12.4 / Raspberry Pi 4",
+      "kernel_version": "Linux 6.12.87",
+      "container_runtime": "external-node"
+    },
+    "cpu": {
+      "model_name": "Raspberry Pi 4 embedded ARM",
+      "vendor": "Broadcom",
+      "cores_total": 4,
+      "cache": {
+        "l1d": null,
+        "l1i": null,
+        "l2": null,
+        "l3": null
+      }
+    },
+    "memory": {
+      "total_memory": "3800 MiB",
+      "ddr_gen": "LPDDR4",
+      "frequency_mt_s": null,
+      "cas_latency": null
+    },
+    "gpu": {
+      "has_gpu": false,
+      "count": 0,
+      "models": []
+    }
   }
 }

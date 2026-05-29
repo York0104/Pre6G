@@ -15,13 +15,14 @@ from app.schemas.node import (
 from app.services.cache_service import SimpleTTLCache
 from app.services.node_inventory_service import NodeInventoryService
 
-# Let this source-split API import ../01-monitoring-layer/vm_aggregator.py.
+# Let this source-split API import ../01-monitoring-layer modules.
 SOURCE_SPLIT_ROOT = Path(__file__).resolve().parents[4]
 MONITORING_LAYER = SOURCE_SPLIT_ROOT / "01-monitoring-layer"
 if MONITORING_LAYER.exists() and str(MONITORING_LAYER) not in sys.path:
     sys.path.append(str(MONITORING_LAYER))
 
 import vm_aggregator  # noqa: E402
+from collect_node_metrics_csv import load_nodes, run_aggregator  # noqa: E402
 
 
 def bytes_to_mib(n: int) -> int:
@@ -37,11 +38,24 @@ class NodeStatusService:
         node_list = self.inventory_service.get_node_list()
         return {n.node_name: n.k8s_ip for n in node_list.nodes}
 
-    def _map_raw_state_to_node_status(self, raw: dict) -> NodeStatus:
+    def _collect_raw_state(self, node_name: str) -> dict:
+        for node in load_nodes():
+            if node.get("node_name") == node_name:
+                raw = run_aggregator(node)
+                if raw.get("collector_status") == "error":
+                    raise RuntimeError(raw.get("collector_error") or "collector_status=error")
+                return raw
+
+        raw = vm_aggregator.collect_state_for_node(node_name)
+        if raw.get("collector_status") == "error":
+            raise RuntimeError(raw.get("collector_error") or "collector_status=error")
+        return raw
+
+    def _map_state_v6_to_node_status(self, raw: dict) -> NodeStatus:
         meta = raw.get("meta", {})
         target = raw.get("target_node_semantic", {})
 
-        node_name = meta.get("target_host", "")
+        node_name = meta.get("target_node", "") or meta.get("target_host", "")
         k8s_ip_map = self._get_k8s_ip_map()
         k8s_ip = k8s_ip_map.get(node_name, "")
 
@@ -57,18 +71,23 @@ class NodeStatusService:
         if memory_usage_percent is None:
             memory_usage_percent = node_pressure.get("memory_usage_percent")
 
-        working_set_bytes = int(node_pressure_instant.get("node_memory_working_set_bytes") or 0)
+        working_set_bytes = int(
+            node_pressure_instant.get("node_memory_working_set_bytes")
+            or node_pressure_instant.get("node_memory_used_bytes")
+            or node_pressure_instant.get("mem_used_bytes")
+            or 0
+        )
 
         return NodeStatus(
             node_name=node_name,
             k8s_ip=k8s_ip,
             sources=NodeStatusSources(
-                node_metrics="vm+netdata",
-                gpu_metrics="dcgm_exporter+k8s",
+                node_metrics=str(target.get("node_compute_features", {}).get("source") or "vm+netdata"),
+                gpu_metrics=str(gpu_pressure.get("source") or "dcgm_exporter+k8s"),
             ),
             cpu=NodeStatusCPU(
                 usage_percent=float(cpu_usage_percent or 0.0),
-                used_cores=float(node_pressure_instant.get("node_cpu_cores") or 0.0),
+                used_cores=float(node_pressure_instant.get("node_cpu_cores") or target.get("node_compute_features", {}).get("cpu_compute", {}).get("cpu_used_cores") or 0.0),
             ),
             memory=NodeStatusMemory(
                 usage_percent=float(memory_usage_percent or 0.0),
@@ -76,15 +95,77 @@ class NodeStatusService:
                 working_set_mib=bytes_to_mib(working_set_bytes),
             ),
             disk=NodeStatusDisk(
-                root_usage_percent=float(node_pressure.get("disk_root_usage_percent") or 0.0),
+                root_usage_percent=float(node_pressure.get("disk_root_usage_percent") or node_pressure_instant.get("disk_root_usage_percent") or 0.0),
             ),
             gpu=NodeStatusGPU(
-                status=str(gpu_pressure.get("status") or "unknown"),
+                status=str(gpu_pressure.get("status") or "not_applicable"),
                 count=int(gpu_pressure.get("gpu_count") or 0),
                 fb_used_bytes=int(gpu_pressure.get("fb_used_total_bytes") or 0),
                 fb_used_mib=float(gpu_pressure.get("fb_used_total_mib") or 0.0),
             ),
         )
+
+    def _map_access_node_to_status(self, raw: dict) -> NodeStatus:
+        meta = raw.get("meta", {})
+        target = raw.get("access_node_semantic", {})
+        node_name = meta.get("target_node", "")
+        k8s_ip_map = self._get_k8s_ip_map()
+        k8s_ip = k8s_ip_map.get(node_name, meta.get("target_ip", ""))
+
+        node_pressure = target.get("node_pressure", {})
+        node_pressure_instant = target.get("node_pressure_instant", {})
+        device_resource = target.get("device_resource", {})
+
+        cpu_usage_percent = node_pressure_instant.get("cpu_usage_percent")
+        if cpu_usage_percent is None:
+            cpu_usage_percent = node_pressure.get("cpu_usage_percent")
+        if cpu_usage_percent is None:
+            cpu_usage_percent = device_resource.get("cpu_usage_percent")
+
+        memory_usage_percent = node_pressure_instant.get("memory_usage_percent")
+        if memory_usage_percent is None:
+            memory_usage_percent = node_pressure.get("memory_usage_percent")
+        if memory_usage_percent is None:
+            memory_usage_percent = device_resource.get("memory_usage_percent")
+
+        working_set_bytes = int(
+            node_pressure_instant.get("node_memory_used_bytes")
+            or node_pressure_instant.get("mem_used_bytes")
+            or device_resource.get("memory_used_bytes")
+            or 0
+        )
+
+        return NodeStatus(
+            node_name=node_name,
+            k8s_ip=k8s_ip,
+            sources=NodeStatusSources(
+                node_metrics=str(target.get("source") or "ap_gateway+snmp_gateway+victoriametrics"),
+                gpu_metrics="not_applicable",
+            ),
+            cpu=NodeStatusCPU(
+                usage_percent=float(cpu_usage_percent or 0.0),
+                used_cores=0.0,
+            ),
+            memory=NodeStatusMemory(
+                usage_percent=float(memory_usage_percent or 0.0),
+                working_set_bytes=working_set_bytes,
+                working_set_mib=bytes_to_mib(working_set_bytes),
+            ),
+            disk=NodeStatusDisk(
+                root_usage_percent=0.0,
+            ),
+            gpu=NodeStatusGPU(
+                status="not_applicable",
+                count=0,
+                fb_used_bytes=0,
+                fb_used_mib=0.0,
+            ),
+        )
+
+    def _map_raw_state_to_node_status(self, raw: dict) -> NodeStatus:
+        if raw.get("schema") == "intentcontinuum.access_node.v1" or "access_node_semantic" in raw:
+            return self._map_access_node_to_status(raw)
+        return self._map_state_v6_to_node_status(raw)
 
     def get_node_status(self, node_name: str) -> NodeStatusResponse:
         cache_key = f"node_status::{node_name}"
@@ -92,7 +173,7 @@ class NodeStatusService:
         if cached is not None:
             return cached
 
-        raw = vm_aggregator.collect_state_for_node(node_name)
+        raw = self._collect_raw_state(node_name)
         node = self._map_raw_state_to_node_status(raw)
 
         response = NodeStatusResponse(
@@ -114,7 +195,7 @@ class NodeStatusService:
 
         for inv in node_list.nodes:
             try:
-                raw = vm_aggregator.collect_state_for_node(inv.node_name)
+                raw = self._collect_raw_state(inv.node_name)
                 nodes.append(self._map_raw_state_to_node_status(raw))
             except Exception as e:
                 print(f"[node_status] failed to collect node={inv.node_name}: {e}", flush=True)

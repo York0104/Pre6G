@@ -118,8 +118,24 @@ def flatten_row(payload: Dict[str, Any], node: Dict[str, Any]) -> Tuple[List[str
 
 def load_nodes() -> List[Dict[str, Any]]:
     nodes: List[Dict[str, Any]] = []
-    with (ROOT / "nodes.json").open("r", encoding="utf-8") as fh:
-        payload = json.load(fh)
+    payload: Dict[str, Any]
+    nodes_json = ROOT / "nodes.json"
+
+    if nodes_json.exists():
+        with nodes_json.open("r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    else:
+        proc = subprocess.run(
+            ["kubectl", "get", "nodes", "-o", "json"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "kubectl get nodes failed")
+        payload = json.loads(proc.stdout)
+
     for item in payload.get("items", []):
         metadata = item.get("metadata", {})
         name = metadata.get("name")
