@@ -1,22 +1,52 @@
 # 03 Shared API / Dashboard
 
-本層是監控與實驗的共用介面層。
+本層是目前 `Pre6G` 監控重建完成後的共用介面層，提供：
 
-目前 `k3s` 重建已驗證的是 `Cluster Monitor` 主線；experiment-control 相關程式仍保留在此層，但不列入本次正式重建驗收。
+- `autoscale_api/`：FastAPI backend
+- `cluster-dashboard/`：React/Vite frontend
+
+目前正式驗證範圍是 `Cluster Monitor` 主線，且已包含：
+
+- 一般 `k3s` 節點
+- `RFSoC` external node：`rfsoc4x2-pynq`
+- `AP gateway` external node：`openwrt_ap`
+
+`Fan-Cycle Experiment` 與其他 experiment-control 相關 API 仍保留，但不列入本次正式重建驗收。
+
+## 目前資料流
+
+`cluster-dashboard` 目前透過 `autoscale_api` 的兩個節點 API 顯示主畫面：
+
+- `GET /api/v1/nodes`
+- `GET /api/v1/nodes/status`
+
+目前這兩個 endpoint 會同時整合：
+
+- Kubernetes node inventory
+- `01-monitoring-layer/collector_nodes.json` 中定義的 external nodes
+- `autoscale_api/data/node_inventory_extra.json` 中的補充 metadata
+
+因此前端重新整理後，應可直接看到：
+
+- `rfsoc4x2-pynq`
+- `openwrt_ap`
+
+不需要額外修改 React 卡片元件。
 
 ## 目錄與檔案說明
 
 | 路徑 | 說明 |
 | --- | --- |
-| `autoscale_api/` | FastAPI backend，提供 full metrics、node status、experiment control 等 API。 |
+| `autoscale_api/` | FastAPI backend，提供 node inventory/status、full metrics 與 experiment control API。 |
 | `cluster-dashboard/` | React/Vite frontend dashboard source。 |
 | `requirements.txt` | backend/collector 共用 Python dependencies。 |
+| `LOCAL_BOOTSTRAP_STATUS.md` | 本機啟動與目前重建狀態摘要。 |
 
 ## `autoscale_api/`
 
 | 路徑 | 說明 |
 | --- | --- |
-| `README.md` | API 啟動與使用說明。 |
+| `README.md` | API 啟動、重建與驗證說明。 |
 | `app/main.py` | FastAPI app entrypoint 與 router 掛載。 |
 | `app/security.py` | API token/security helper。 |
 | `app/routers/full_metrics.py` | full metrics API routes，偏監控用途。 |
@@ -24,8 +54,8 @@
 | `app/routers/experiments.py` | experiment control API routes。 |
 | `app/services/cache_service.py` | 簡易 TTL cache。 |
 | `app/services/full_metrics_service.py` | full metrics 組裝邏輯。 |
-| `app/services/node_inventory_service.py` | node inventory 讀取與整理。 |
-| `app/services/node_status_service.py` | 透過 monitoring layer aggregator 取得 node 狀態。 |
+| `app/services/node_inventory_service.py` | 整合 k8s nodes、external nodes 與 extra metadata。 |
+| `app/services/node_status_service.py` | 透過 monitoring layer aggregator 取得節點狀態，已支援 `k8s` / `RFSoC` / `AP gateway`。 |
 | `app/services/fan_cycle_experiment_service.py` | fan-cycle experiment orchestration service。 |
 | `app/services/yolo_demo_service.py` | YOLO demo/experiment service helper。 |
 | `app/adapters/k8s_adapter.py` | Kubernetes API adapter。 |
@@ -35,7 +65,7 @@
 | `app/schemas/full_metrics.py` | full metrics API schema。 |
 | `app/schemas/node.py` | node inventory/status API schema。 |
 | `data/gpu_cuda_cores_map.json` | GPU 型號與 CUDA cores 對照。 |
-| `data/node_inventory_extra.json` | 額外 node inventory metadata。 |
+| `data/node_inventory_extra.json` | 額外 node inventory metadata，已包含 `RFSoC` 與 `AP gateway`。 |
 | `deploy/inventory-collector.yaml` | inventory collector k8s manifest。 |
 | `scripts/fetch_inventory_from_ds.py` | 從 data source 取得 inventory。 |
 | `scripts/record_stress_metrics.py` | 定時記錄 stress/aggregator metrics。 |
@@ -45,7 +75,7 @@
 
 | 路徑 | 說明 |
 | --- | --- |
-| `README.md` | dashboard 啟動方式。 |
+| `README.md` | dashboard 啟動與驗證方式。 |
 | `.gitignore` | frontend git ignore 設定。 |
 | `package.json` / `package-lock.json` | frontend dependencies 與 lockfile。 |
 | `src/App.tsx` | dashboard 主要 UI。 |
@@ -61,6 +91,25 @@
 | `tailwind.config.js` / `postcss.config.js` | Tailwind/PostCSS 設定。 |
 | `eslint.config.js` | ESLint 設定。 |
 | `tsconfig*.json` | TypeScript 設定。 |
+
+## 目前重建步驟
+
+1. 先完成 `01-monitoring-layer` 主線，確認：
+   - `vm_aggregator.py`
+   - `vm_agg_rfsoc.py`
+   - `vm_agg_ap_gateway.py`
+   都可正常輸出資料。
+2. 啟動 API：
+   - 使用 `autoscale_api/run_local_api.sh`
+   - 或 `systemd` 的 `autoscale-api.service`
+3. 驗證 API：
+   - `GET /api/v1/nodes`
+   - `GET /api/v1/nodes/status`
+   需能看到 `rfsoc4x2-pynq` 與 `openwrt_ap`。
+4. 啟動 dashboard：
+   - 設定 `VITE_AUTOSCALE_API_BASE`
+   - 執行 `cluster-dashboard/run_local_dashboard.sh`
+5. 重新整理前端頁面，確認 external nodes 已出現在 `Cluster Monitor`。
 
 ## 注意事項
 

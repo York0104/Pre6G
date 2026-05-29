@@ -2,12 +2,14 @@
 
 ## Purpose
 
-`autoscale_api` 是 `Pre6G` 在 `k3s` 監控重建後的查詢入口，負責把：
+`autoscale_api` 是 `Pre6G` 在 `k3s` 監控重建後的統一查詢入口，負責把：
 
 - Kubernetes node metadata
 - VictoriaMetrics 指標
 - Netdata host-scoped 資料
 - DCGM GPU 指標
+- `RFSoC` external node aggregator 輸出
+- `AP gateway` external node aggregator 輸出
 
 整理成固定 JSON schema，供 `Cluster Monitor` dashboard 使用。
 
@@ -22,6 +24,38 @@
 - `GET /api/v1/full-metrics`
 - `GET /api/v1/full-metrics/{node_name}`
 
+## Current Validated Behavior
+
+### `/api/v1/nodes`
+
+目前會整合：
+
+- live Kubernetes nodes
+- `01-monitoring-layer/collector_nodes.json` 中的 external nodes
+- `data/node_inventory_extra.json` 補充 metadata
+
+因此目前已驗證能列出：
+
+- 一般 `k3s` nodes
+- `rfsoc4x2-pynq`
+- `openwrt_ap`
+
+### `/api/v1/nodes/status`
+
+目前會透過 `01-monitoring-layer/collect_node_metrics_csv.py` 載入 node 定義，再呼叫各節點 aggregator：
+
+- `vm_aggregator.py`
+- `vm_agg_rfsoc.py`
+- `vm_agg_ap_gateway.py`
+
+並統一回傳 dashboard 可直接顯示的 node status。
+
+`collect_node_metrics_csv.py` 目前已支援：
+
+- 若 `nodes.json` 不存在，會 fallback 到 `kubectl get nodes -o json`
+
+這樣在目前 repo 狀態下，不需要額外補 `nodes.json` 也能完成重建。
+
 ## Runtime Dependencies
 
 此 API 依賴以下端點：
@@ -30,11 +64,20 @@
 - `NETDATA_URL`
 - `NETDATA_CHILD_URL`
 - `NETDATA_PARENT_BASE_URL`
+- `KSM_URL`
 
 建議直接沿用：
 
 - [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example)
 - [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example)
+
+目前 host-side 驗證可用入口是：
+
+- `VM_URL=http://140.113.179.9:31888`
+- `NETDATA_URL=http://140.113.179.9:32163`
+- `NETDATA_CHILD_URL=http://140.113.179.9:32163`
+- `NETDATA_PARENT_BASE_URL=http://140.113.179.9:32163`
+- `KSM_URL=http://140.113.179.9:32080`
 
 ## Start Locally
 
@@ -60,6 +103,22 @@ cd autoscale-source-split/03-shared-api-dashboard/autoscale_api
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+### Current Local Runtime
+
+目前這台主機的 API 重建驗證是以 host-side 方式完成，常見操作為：
+
+```bash
+tmux new -s autoscale_api
+cd /home/icclz2/Pre6G
+bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh
+```
+
+若已在背景執行，可用：
+
+```bash
+tmux attach -t autoscale_api
+```
+
 ## Systemd
 
 使用模板：
@@ -78,10 +137,11 @@ cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autosca
 
 ```bash
 AUTOSCALE_API_TOKEN=replace-with-a-long-random-token
-VM_URL=http://<CONTROL_PLANE_IP>:31888
-NETDATA_PARENT_BASE_URL=http://<CONTROL_PLANE_IP>:32163
-NETDATA_URL=http://<CONTROL_PLANE_IP>:32163
-NETDATA_CHILD_URL=http://<CONTROL_PLANE_IP>:32163
+VM_URL=http://140.113.179.9:31888
+NETDATA_PARENT_BASE_URL=http://140.113.179.9:32163
+NETDATA_URL=http://140.113.179.9:32163
+NETDATA_CHILD_URL=http://140.113.179.9:32163
+KSM_URL=http://140.113.179.9:32080
 ```
 
 ## Health Check
@@ -92,6 +152,12 @@ curl http://127.0.0.1:8000/api/v1/nodes | jq
 curl http://127.0.0.1:8000/api/v1/nodes/status | jq
 ```
 
+建議至少確認：
+
+- `/api/v1/nodes` 內有 `rfsoc4x2-pynq`
+- `/api/v1/nodes` 內有 `openwrt_ap`
+- `/api/v1/nodes/status` 內兩者皆有 `source` 與 CPU / memory 類欄位
+
 ## Example Response Notes
 
 回傳內容會隨目前 cluster 狀態改變，因此 README 不再固定展示舊環境節點樣本。
@@ -101,9 +167,10 @@ curl http://127.0.0.1:8000/api/v1/nodes/status | jq
 
 截至目前，已驗證：
 
-- `Cluster Monitor` 會使用本 API 成功顯示節點狀態
-- `iccl-cluster-z2` 與 `icclz3` 可正常回傳 node status
-- GPU node 若 host NVIDIA stack 正常，會回帶 DCGM/GPU 指標
+- `Cluster Monitor` 會使用本 API 成功顯示一般 `k3s` nodes
+- `Cluster Monitor` 會顯示 `rfsoc4x2-pynq`
+- `Cluster Monitor` 會顯示 `openwrt_ap`
+- host-side `run_local_api.sh` 可在目前環境直接啟動 API
 
 未列入本次驗收：
 

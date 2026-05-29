@@ -15,12 +15,26 @@
 - `GET /api/v1/nodes`
 - `GET /api/v1/nodes/status`
 
+目前已驗證前端會透過這兩個 endpoint 顯示：
+
+- 一般 `k3s` nodes
+- `RFSoC` external node：`rfsoc4x2-pynq`
+- `AP gateway` external node：`openwrt_ap`
+
+這次 external nodes 進 dashboard 的方式是擴充 API 層，不是重寫 React 卡片元件；因此 API 更新完成後，前端重新整理頁面即可看到新節點。
+
 ## Environment
 
 前端 `.env`：
 
 ```env
 VITE_AUTOSCALE_API_BASE=http://<CONTROL_PLANE_IP>:8000
+```
+
+目前常用值：
+
+```env
+VITE_AUTOSCALE_API_BASE=http://140.113.179.9:8000
 ```
 
 ## Start
@@ -54,6 +68,18 @@ http://<CONTROL_PLANE_IP>:5174
 - healthy / degraded / offline counts
 - 每台 node card
 - selected node detail
+- `rfsoc4x2-pynq` 卡片
+- `openwrt_ap` 卡片
+
+若 `z590-aorus-xtreme` 顯示 error，這屬於該節點本身既有監控問題，不代表 dashboard 重建失敗。
+
+## Rebuild Steps
+
+1. 先確認 `autoscale_api` 已啟動。
+2. 驗證 `GET /api/v1/nodes` 與 `GET /api/v1/nodes/status` 已包含 `rfsoc4x2-pynq` 與 `openwrt_ap`。
+3. 設定 `VITE_AUTOSCALE_API_BASE` 指向目前 API。
+4. 啟動 `run_local_dashboard.sh`。
+5. 重新整理瀏覽器頁面，確認 external nodes 已出現於 `Cluster Monitor`。
 
 ## Not In Scope For This Rebuild
 

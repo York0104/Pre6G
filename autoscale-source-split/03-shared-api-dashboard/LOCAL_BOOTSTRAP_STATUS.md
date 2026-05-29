@@ -1,67 +1,39 @@
 # Local Bootstrap Status
 
-Date: 2026-05-25
+Date: 2026-05-29
 Host: `/home/icclz2/Pre6G`
 
 ## What Is Ready
 
-- Monitoring backend is available for `iccl-cluster-z2` and `icclz3`
-- Host-side monitoring endpoints are saved in:
+- Monitoring backend 已可供 `k3s` nodes、`RFSoC` 與 `AP gateway` 使用
+- Host-side monitoring endpoints 已整理在：
   - [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env)
-- Local API launcher is prepared:
+- Local API launcher 已驗證可用：
   - [autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh)
-- Local dashboard launcher is prepared:
+- Local dashboard launcher 已驗證可用：
   - [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh)
-- Dashboard API base example is prepared:
+- Dashboard API base example 已準備：
   - [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/.env.example](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/.env.example)
+- `autoscale_api` 已能把 external nodes 拉入 dashboard：
+  - `rfsoc4x2-pynq`
+  - `openwrt_ap`
 
-## Current Blockers
-
-### Python env `iccl`
-
-Requested target env name: `iccl`
-
-Current machine state:
-
-- `/usr/bin/python3` exists
-- `python3 -m venv iccl` fails because `ensurepip` is unavailable
-- `/usr/bin/python3` also has no `pip`
-- `sudo apt-get` cannot be completed in the current session because sudo password input is unavailable
-
-Impact:
-
-- `autoscale_api` cannot be started yet with a dedicated local env on this machine
-
-Needed fix on the host:
-
-1. Install Python venv tooling, e.g. `python3.12-venv`
-2. Create env `iccl`
-3. Install shared requirements from `autoscale-source-split/03-shared-api-dashboard/requirements.txt`
-
-### Dashboard runtime
-
-Current machine state:
-
-- `node` not installed
-- `npm` not installed
-
-Impact:
-
-- `cluster-dashboard` cannot be built or served yet on this machine
-
-Needed fix on the host:
-
-1. Install Node.js and npm
-2. Run `run_local_dashboard.sh`
-
-## Minimal Start Commands After Host Dependencies Exist
+## Current Local Runtime
 
 ### API
 
+目前主機上可直接以 host-side 方式啟動：
+
 ```bash
 cd /home/icclz2/Pre6G
-python3 -m venv iccl
-./iccl/bin/pip install -r autoscale-source-split/03-shared-api-dashboard/requirements.txt
+bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh
+```
+
+常見背景執行方式：
+
+```bash
+tmux new -s autoscale_api
+cd /home/icclz2/Pre6G
 bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh
 ```
 
@@ -69,12 +41,31 @@ bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.
 
 ```bash
 cd /home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard
-cp .env.example .env
 bash run_local_dashboard.sh
 ```
 
+## Current Validated Result
+
+- `GET /api/v1/nodes` 已可列出：
+  - 一般 `k3s` nodes
+  - `rfsoc4x2-pynq`
+  - `openwrt_ap`
+- `GET /api/v1/nodes/status` 已可回傳 external node status
+- `Cluster Monitor` 前端頁面重新整理後可直接看到 `RFSoC` 與 `AP gateway` 節點卡片
+
+## Minimal Rebuild Sequence
+
+1. 完成 `01-monitoring-layer` 重建與驗證。
+2. 確認 `vm_aggregator.py`、`vm_agg_rfsoc.py`、`vm_agg_ap_gateway.py` 都已可輸出資料。
+3. 啟動 `autoscale_api/run_local_api.sh`。
+4. 驗證：
+   - `curl http://127.0.0.1:8000/api/v1/nodes | jq`
+   - `curl http://127.0.0.1:8000/api/v1/nodes/status | jq`
+5. 啟動 `cluster-dashboard/run_local_dashboard.sh`。
+6. 瀏覽器重新整理，確認 `Cluster Monitor` 顯示 external nodes。
+
 ## Notes
 
-- `run_local_api.sh` will automatically load `monitoring-runtime.host.env` if it exists.
-- `run_local_dashboard.sh` intentionally stops early if `node` / `npm` are missing, so the failure mode is explicit.
-- `z590-aorus-xtreme` is still not recommended as a dashboard validation target until its disk issue is resolved.
+- `run_local_api.sh` 會自動載入 `monitoring-runtime.host.env`（若存在）。
+- `collect_node_metrics_csv.py` 目前已可在缺少 `nodes.json` 時 fallback 到 `kubectl get nodes -o json`。
+- `z590-aorus-xtreme` 仍不建議作為 dashboard 成功與否的唯一驗證目標，因為它有既有監控問題。
