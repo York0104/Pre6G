@@ -206,26 +206,28 @@ Workspace: `/home/icclz2/Pre6G`
 - 修復 `mirc516-20250605` 主機 NVIDIA stack
 - 視需要再把 `02-experiment-layer` 的 thermal cycle / batch workflow 做完整驗收
 
-## AP Gateway Pending
+## AP Gateway Rebuild Status
 
-- `vm_agg_ap_gateway.py` / `ap_gateway.py` / `ap_snmp_gateway.py` 尚未在目前 `iccl-cluster-z2` 主機完成重建驗證。
-- 目前狀態已從「完全不可達」進展為「host 端管理面可達，但 collector 仍缺最後兩個條件」：
-  - `iccl-cluster-z2` host 端已可直接連到 `192.168.1.1:80` 與 `192.168.1.1:22`
+- `iccl-cluster-z2` host 端已可直接連到 OpenWrt AP `192.168.1.1:22` / `:80`：
   - `curl -I http://192.168.1.1` 回 `HTTP/1.1 200 OK`
-  - `nc -vz 192.168.1.1 22` / `80` succeeded
-- 目前仍存在的 blocker：
-  - `ap_gateway.py` 需要的 SSH key 尚未被 OpenWrt 授權；使用 `~/.ssh/openwrt_ap_ed25519` 會回 `Permission denied`
-  - `ap_snmp_gateway.py` 需要的 SNMP 仍未正常回應；`snmpget -v2c -c public 192.168.1.1 ...` timeout
-  - 因此 `VictoriaMetrics` 目前仍查不到：
-    - `ap_wifi_station_count`
-    - `ap_node_cpu_usage_percent`
+  - `ssh -i ~/.ssh/openwrt_ap_ed25519 root@192.168.1.1 ...` 已可登入
+- `ap_gateway.py`（Wi-Fi collector）已打通並已在 host 上常駐：
+  - 目前以 `tmux` session `ap_gateway_collector` 執行
+  - log 路徑：`autoscale-source-split/01-monitoring-layer/runtime_logs/ap_gateway.log`
+  - `VictoriaMetrics` 已可查到 `ap_wifi_station_count{ap="openwrt_ap"}`
+- `vm_agg_ap_gateway.py` 已可在目前環境輸出 `collector_status = ok` 的部分結果：
+  - `wireless_access.station_count = 0`
+  - `stations = []`
+  - 但 `device_resource` / `interface_traffic` / `node_pressure` 仍大多為空殼，因為 SNMP metrics 尚未進來
+- 目前唯一剩餘的主 blocker 是 `ap_snmp_gateway.py`：
+  - `snmpget -v2c -c public 192.168.1.1 ...` 仍 timeout
+  - `VictoriaMetrics` 仍查不到 `ap_node_cpu_usage_percent`
 - 另外已驗到 cluster 內 Pod 對 `192.168.1.1` 的可達性與 host 端不同：
   - `UDP/161` 可達
   - `TCP/22`、`TCP/80` timeout
-  - 因此 AP collectors 仍建議先跑在 host 上，不建議先搬進 cluster Pod
+  - 因此 AP collectors 目前仍建議先跑在 host 上，不建議先搬進 cluster Pod
 - 後續處理方向：
-  - 先在 OpenWrt 上授權目前 `openwrt_ap_ed25519.pub`
-  - 再確認/啟用 SNMP（community、ACL、防火牆）
-  - 完成後在 `iccl-cluster-z2` host 上常駐執行 `ap_gateway.py` / `ap_snmp_gateway.py`
-  - 最後驗證 `vm_agg_ap_gateway.py`
+  - 在 OpenWrt 上確認/啟用 SNMP（community、ACL、防火牆）
+  - 讓 `ap_snmp_gateway.py` 正常 push `ap_node_*` 到 `VictoriaMetrics`
+  - 再重新驗證 `vm_agg_ap_gateway.py` 是否補齊 resource / interface 欄位
 

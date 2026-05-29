@@ -442,7 +442,7 @@ GPU 欄位：
 
 已觀察到：
 
-- `vm_agg_ap_gateway.py` 在舊環境中對齊欄位有值且合理；目前 `iccl-cluster-z2` 重建仍待 `ap_gateway.py` / `ap_snmp_gateway.py` collector 重新打通
+- `vm_agg_ap_gateway.py` 在舊環境中對齊欄位有值且合理；目前 `iccl-cluster-z2` 已打通 `ap_gateway.py`（Wi-Fi collector）並可輸出部分結果，剩餘待辦是 `ap_snmp_gateway.py` 對應的 SNMP metrics
 - `vm_agg_rfsoc.py` 對齊欄位有值且合理
 - `vm_aggregator.py` CPU idle fallback、CPU temperature、GPU fb used percent 已驗證
 
