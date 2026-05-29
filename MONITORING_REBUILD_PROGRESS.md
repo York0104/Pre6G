@@ -209,12 +209,23 @@ Workspace: `/home/icclz2/Pre6G`
 ## AP Gateway Pending
 
 - `vm_agg_ap_gateway.py` / `ap_gateway.py` / `ap_snmp_gateway.py` 尚未在目前 `iccl-cluster-z2` 主機完成重建驗證。
-- 已確認 blocker 不是程式碼本身，而是目前 `iccl-cluster-z2` 無法連到 OpenWrt AP `192.168.1.1`：
-  - `ssh -i ~/.ssh/openwrt_ap_ed25519 root@192.168.1.1` timeout
-  - `snmpget -v2c -c public 192.168.1.1 ...` timeout
-  - `ap_gateway.py` 也持續回報 `ssh: connect to host 192.168.1.1 port 22: Connection timed out`
-- 這表示 AP collector 目前不能直接跑在 `iccl-cluster-z2`，需要改在可達 `192.168.1.1` 的主機上執行，或先補通 `iccl-cluster-z2 -> 192.168.1.1` 的網路路徑。
+- 目前狀態已從「完全不可達」進展為「host 端管理面可達，但 collector 仍缺最後兩個條件」：
+  - `iccl-cluster-z2` host 端已可直接連到 `192.168.1.1:80` 與 `192.168.1.1:22`
+  - `curl -I http://192.168.1.1` 回 `HTTP/1.1 200 OK`
+  - `nc -vz 192.168.1.1 22` / `80` succeeded
+- 目前仍存在的 blocker：
+  - `ap_gateway.py` 需要的 SSH key 尚未被 OpenWrt 授權；使用 `~/.ssh/openwrt_ap_ed25519` 會回 `Permission denied`
+  - `ap_snmp_gateway.py` 需要的 SNMP 仍未正常回應；`snmpget -v2c -c public 192.168.1.1 ...` timeout
+  - 因此 `VictoriaMetrics` 目前仍查不到：
+    - `ap_wifi_station_count`
+    - `ap_node_cpu_usage_percent`
+- 另外已驗到 cluster 內 Pod 對 `192.168.1.1` 的可達性與 host 端不同：
+  - `UDP/161` 可達
+  - `TCP/22`、`TCP/80` timeout
+  - 因此 AP collectors 仍建議先跑在 host 上，不建議先搬進 cluster Pod
 - 後續處理方向：
-  - 優先方案：在可達 `192.168.1.1` 的主機上執行 `ap_gateway.py` / `ap_snmp_gateway.py`，並將 metrics push 到目前的 `VictoriaMetrics` `http://140.113.179.9:31888/api/v1/import/prometheus`。
-  - 次要方案：為 `iccl-cluster-z2` 補網路、route、VLAN 或 overlay，讓它能直接 SSH/SNMP 到 OpenWrt AP。
+  - 先在 OpenWrt 上授權目前 `openwrt_ap_ed25519.pub`
+  - 再確認/啟用 SNMP（community、ACL、防火牆）
+  - 完成後在 `iccl-cluster-z2` host 上常駐執行 `ap_gateway.py` / `ap_snmp_gateway.py`
+  - 最後驗證 `vm_agg_ap_gateway.py`
 

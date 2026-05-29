@@ -281,6 +281,30 @@ curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_wifi_station_coun
 curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_node_cpu_usage_percent' | jq '.data.result'
 ```
 
+## Current Rebuild Status (2026-05-29)
+
+目前 `iccl-cluster-z2` host 端已可直接到達 OpenWrt AP：
+
+```bash
+curl -I http://192.168.1.1
+nc -vz -w 3 192.168.1.1 22
+nc -vz -w 3 192.168.1.1 80
+```
+
+目前仍未完成的兩個條件：
+
+- `ap_gateway.py` 需要的 SSH key 尚未被授權到 OpenWrt，使用 `~/.ssh/openwrt_ap_ed25519` 仍會 `Permission denied`
+- `ap_snmp_gateway.py` 需要的 SNMP 還未正常回應，`snmpget -v2c -c public 192.168.1.1 ...` timeout
+
+因此目前 AP gateway 重建主線建議是：
+
+1. 在 OpenWrt 上先授權 `openwrt_ap_ed25519.pub`
+2. 在 OpenWrt 上確認 SNMP 已啟用且允許目前主機查詢
+3. 再在 `iccl-cluster-z2` host 上常駐執行 `ap_gateway.py` 與 `ap_snmp_gateway.py`
+4. 最後驗證 `vm_agg_ap_gateway.py` 是否可輸出 `collector_status = ok`
+
+補充：目前 cluster 內 Pod 對 `192.168.1.1` 僅驗到 `UDP/161` 可達，但 `TCP/22` / `TCP/80` timeout，因此不建議先把 AP collectors 改成 Pod 內執行。
+
 ## Current Output Design
 
 `vm_agg_ap_gateway.py` 輸出格式目前為：
@@ -469,7 +493,7 @@ curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_node_cpu_usage_pe
 
 ## Current Known Good State
 
-目前已驗證的狀態如下：
+以下內容代表這條 AP gateway 鏈路在舊環境中曾成功驗證過的 known-good 行為，不代表目前 `iccl-cluster-z2` 已重新打通：
 
 - `ap_gateway.py` 與 `ap_snmp_gateway.py` 都有在背景執行
 - VictoriaMetrics 可查到代表性 AP metrics：
@@ -477,7 +501,7 @@ curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_node_cpu_usage_pe
   - `ap_node_cpu_usage_percent{ap="openwrt_ap",target="192.168.1.1"}`
 - `vm_agg_ap_gateway.py` 可正常輸出 `collector_status: "ok"` 的 semantic JSON
 
-目前這台 AP 在已驗證時的輸出也合理：
+當時驗到的代表性輸出如下：
 
 - `station_count = 0`
 - `stations = []`
@@ -488,12 +512,18 @@ curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_node_cpu_usage_pe
 - `admin_status = 1`
 - `oper_status = 1`
 
-這表示：
+這表示舊環境中曾成立：
 
 - 無線 collector 正常
 - SNMP collector 正常
 - VictoriaMetrics import 與 query 路徑正常
 - `vm_agg_ap_gateway.py` 可以正常作為前端查詢器使用
+
+目前 `iccl-cluster-z2` 的重建狀態請以前面的 `Current Rebuild Status (2026-05-29)` 為準；現況仍卡在：
+
+- `openwrt_ap_ed25519` 尚未被 OpenWrt 授權
+- SNMP 尚未正常回應
+- 因此 VM 內仍查不到 `ap_wifi_station_count` / `ap_node_cpu_usage_percent`
 
 另外要注意，`station_count = 0` 與 `stations = []` 不一定代表壞掉；如果當下沒有 Wi-Fi client 連線，這就是合理結果。
 

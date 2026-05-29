@@ -459,7 +459,6 @@ for cycle_index in range(1, cycles + 1):
 summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
 report_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 print(json.dumps(summary, indent=2, ensure_ascii=False))
-PY
 REMOTE
 
 mkdir -p "$OUT_DIR/worker_logs"

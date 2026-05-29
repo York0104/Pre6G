@@ -437,12 +437,12 @@ GPU 欄位：
 
 - `vm_aggregator.py` live 執行驗證
 - `vm_agg_rfsoc.py` live 執行驗證
-- `vm_agg_ap_gateway.py` live 執行驗證
+- `vm_agg_ap_gateway.py` 舊環境 live 執行驗證
 - 三支語法檢查
 
 已觀察到：
 
-- `vm_agg_ap_gateway.py` 對齊欄位有值且合理
+- `vm_agg_ap_gateway.py` 在舊環境中對齊欄位有值且合理；目前 `iccl-cluster-z2` 重建仍待 `ap_gateway.py` / `ap_snmp_gateway.py` collector 重新打通
 - `vm_agg_rfsoc.py` 對齊欄位有值且合理
 - `vm_aggregator.py` CPU idle fallback、CPU temperature、GPU fb used percent 已驗證
 
