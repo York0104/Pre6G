@@ -21,8 +21,7 @@ fi
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
   echo "[ERROR] Python runtime not found: $PYTHON_BIN" >&2
-  echo "[ERROR] Current blocker: local env 'iccl' is not created yet on this machine." >&2
-  echo "[ERROR] Install python venv tooling or point PYTHON_BIN to an existing interpreter with fastapi/uvicorn installed." >&2
+  echo "[ERROR] Set PYTHON_BIN to a valid interpreter, or create the repo-local 'iccl' env before starting autoscale_api." >&2
   exit 1
 fi
 
