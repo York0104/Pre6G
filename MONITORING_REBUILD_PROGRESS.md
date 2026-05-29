@@ -211,23 +211,21 @@ Workspace: `/home/icclz2/Pre6G`
 - `iccl-cluster-z2` host 端已可直接連到 OpenWrt AP `192.168.1.1:22` / `:80`：
   - `curl -I http://192.168.1.1` 回 `HTTP/1.1 200 OK`
   - `ssh -i ~/.ssh/openwrt_ap_ed25519 root@192.168.1.1 ...` 已可登入
-- `ap_gateway.py`（Wi-Fi collector）已打通並已在 host 上常駐：
-  - 目前以 `tmux` session `ap_gateway_collector` 執行
-  - log 路徑：`autoscale-source-split/01-monitoring-layer/runtime_logs/ap_gateway.log`
-  - `VictoriaMetrics` 已可查到 `ap_wifi_station_count{ap="openwrt_ap"}`
-- `vm_agg_ap_gateway.py` 已可在目前環境輸出 `collector_status = ok` 的部分結果：
-  - `wireless_access.station_count = 0`
-  - `stations = []`
-  - 但 `device_resource` / `interface_traffic` / `node_pressure` 仍大多為空殼，因為 SNMP metrics 尚未進來
-- 目前唯一剩餘的主 blocker 是 `ap_snmp_gateway.py`：
-  - `snmpget -v2c -c public 192.168.1.1 ...` 仍 timeout
-  - `VictoriaMetrics` 仍查不到 `ap_node_cpu_usage_percent`
+- `ap_gateway.py`（Wi-Fi collector）與 `ap_snmp_gateway.py`（SNMP collector）都已打通並在 host 上常駐：
+  - `tmux` session：`ap_gateway_collector`
+  - `tmux` session：`ap_snmp_collector`
+  - logs：`autoscale-source-split/01-monitoring-layer/runtime_logs/ap_gateway.log`、`ap_snmp_gateway.log`
+- `VictoriaMetrics` 已可查到代表性 AP metrics：
+  - `ap_wifi_station_count{ap="openwrt_ap"}`
+  - `ap_node_cpu_usage_percent{ap="openwrt_ap"}`
+- `vm_agg_ap_gateway.py` 已在目前環境完整輸出 `collector_status = ok`：
+  - `wireless_access`、`stations` 已有值
+  - `device_resource`、`interface_traffic`、`node_pressure`、`node_compute_features` 已由 SNMP metrics 補齊
 - 另外已驗到 cluster 內 Pod 對 `192.168.1.1` 的可達性與 host 端不同：
   - `UDP/161` 可達
   - `TCP/22`、`TCP/80` timeout
   - 因此 AP collectors 目前仍建議先跑在 host 上，不建議先搬進 cluster Pod
-- 後續處理方向：
-  - 在 OpenWrt 上確認/啟用 SNMP（community、ACL、防火牆）
-  - 讓 `ap_snmp_gateway.py` 正常 push `ap_node_*` 到 `VictoriaMetrics`
-  - 再重新驗證 `vm_agg_ap_gateway.py` 是否補齊 resource / interface 欄位
+- 後續維護重點：
+  - 若 host 重開機，需重新拉起兩個 `tmux` collector session，或後續改成 `systemd service`
+  - 若 OpenWrt SNMP community / iface index 變動，需同步更新 `ap_snmp_gateway.py` 執行參數
 

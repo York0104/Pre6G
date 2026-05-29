@@ -283,26 +283,28 @@ curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_node_cpu_usage_pe
 
 ## Current Rebuild Status (2026-05-29)
 
-目前 `iccl-cluster-z2` host 端已可直接到達 OpenWrt AP，且 SSH key 已可用：
+目前 `iccl-cluster-z2` host 端已可直接到達 OpenWrt AP，且 SSH 與 SNMP 都已可用：
 
 ```bash
 curl -I http://192.168.1.1
 ssh -i ~/.ssh/openwrt_ap_ed25519 root@192.168.1.1 "ip addr show br-lan"
+snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
 ```
 
 目前重建進度如下：
 
 - `ap_gateway.py` 已打通，並可在 host 上常駐執行
-- `VictoriaMetrics` 已可查到 `ap_wifi_station_count{ap="openwrt_ap"}`
-- `vm_agg_ap_gateway.py` 已可輸出 `collector_status = ok` 的部分結果
-- `ap_snmp_gateway.py` 仍未打通，`snmpget -v2c -c public 192.168.1.1 ...` timeout
+- `ap_snmp_gateway.py` 已打通，並可在 host 上常駐執行
+- `VictoriaMetrics` 已可查到：
+  - `ap_wifi_station_count{ap="openwrt_ap"}`
+  - `ap_node_cpu_usage_percent{ap="openwrt_ap"}`
+- `vm_agg_ap_gateway.py` 已可完整輸出 `collector_status = ok`，且 `device_resource` / `interface_traffic` / `node_pressure` 欄位已有值
 
-因此目前 AP gateway 重建主線建議是：
+因此目前 AP gateway 重建主線已打通；後續建議是：
 
-1. 保持 `ap_gateway.py` 在 host 上常駐執行
-2. 在 OpenWrt 上確認 SNMP 已啟用且允許目前主機查詢
-3. 讓 `ap_snmp_gateway.py` 正常 push `ap_node_*` metrics 到 `VictoriaMetrics`
-4. 最後重新驗證 `vm_agg_ap_gateway.py` 是否補齊 `device_resource` / `interface_traffic` / `node_pressure` 欄位
+1. 保持兩支 collector 在 host 上常駐執行
+2. 若要跨重開機維持，將 `tmux` collector 改寫成 `systemd service`
+3. 若 OpenWrt 的 SNMP community 或介面 index 變更，需同步更新 collector 執行參數
 
 補充：目前 cluster 內 Pod 對 `192.168.1.1` 僅驗到 `UDP/161` 可達，但 `TCP/22` / `TCP/80` timeout，因此不建議先把 AP collectors 改成 Pod 內執行。
 
