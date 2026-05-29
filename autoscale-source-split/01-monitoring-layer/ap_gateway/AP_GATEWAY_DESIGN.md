@@ -2,7 +2,12 @@
 
 ## Overview
 
-這份文件是 AP gateway 監控鏈路的單一設計基準，整理 `~/AutoScale/ap_gateway` 與 `~/AutoScale/vm_agg_ap_gateway.py` 目前的設計，說明：
+這份文件是 AP gateway 監控鏈路的單一設計基準，整理目前 repo 內
+
+- `autoscale-source-split/01-monitoring-layer/ap_gateway/`
+- `autoscale-source-split/01-monitoring-layer/vm_agg_ap_gateway.py`
+
+的設計，說明：
 
 - 三支程式各自負責什麼
 - 三者之間的資料依賴關係
@@ -215,7 +220,7 @@
 ### 啟動無線原始資料收集
 
 ```bash
-cd ~/AutoScale/ap_gateway
+cd /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/ap_gateway
 VM_URL=http://<CONTROL_PLANE_IP>:31888/api/v1/import/prometheus \
 OPENWRT=192.168.1.1 \
 AP_NAME=openwrt_ap \
@@ -226,7 +231,7 @@ python3 ap_gateway.py
 ### 啟動硬體原始資料收集
 
 ```bash
-cd ~/AutoScale/ap_gateway
+cd /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/ap_gateway
 VM_URL=http://<CONTROL_PLANE_IP>:31888/api/v1/import/prometheus \
 OPENWRT=192.168.1.1 \
 AP_NAME=openwrt_ap \
@@ -239,7 +244,7 @@ python3 ap_snmp_gateway.py
 ### 查詢當下整合後 AP 狀態
 
 ```bash
-cd ~/AutoScale
+cd /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer
 VM_URL=http://<CONTROL_PLANE_IP>:31888 \
 AP_NAME=openwrt_ap \
 AP_IFACE=phy0-ap0 \
@@ -496,7 +501,7 @@ snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
 
 ## Current Known Good State
 
-以下內容代表這條 AP gateway 鏈路在舊環境中曾成功驗證過的 known-good 行為，不代表目前 `iccl-cluster-z2` 已重新打通：
+以下內容代表這條 AP gateway 鏈路在舊環境中曾成功驗證過的 known-good 行為；目前 `iccl-cluster-z2` 也已重新打通，但這一段仍應視為 historical reference：
 
 - `ap_gateway.py` 與 `ap_snmp_gateway.py` 都有在背景執行
 - VictoriaMetrics 可查到代表性 AP metrics：
@@ -522,11 +527,7 @@ snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
 - VictoriaMetrics import 與 query 路徑正常
 - `vm_agg_ap_gateway.py` 可以正常作為前端查詢器使用
 
-目前 `iccl-cluster-z2` 的重建狀態請以前面的 `Current Rebuild Status (2026-05-29)` 為準；現況仍卡在：
-
-- `openwrt_ap_ed25519` 尚未被 OpenWrt 授權
-- SNMP 尚未正常回應
-- 因此 VM 內仍查不到 `ap_wifi_station_count` / `ap_node_cpu_usage_percent`
+目前 `iccl-cluster-z2` 的重建狀態請以前面的 `Current Rebuild Status (2026-05-29)` 為準；目前已完成 host-side 重建驗證，且 `ap_wifi_station_count` / `ap_node_cpu_usage_percent` 均已可在 VM 中查到。
 
 另外要注意，`station_count = 0` 與 `stations = []` 不一定代表壞掉；如果當下沒有 Wi-Fi client 連線，這就是合理結果。
 
@@ -546,7 +547,7 @@ snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
 查詢單台 gateway 時，執行：
 
 ```bash
-cd ~/AutoScale
+cd /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer
 VM_URL=http://<CONTROL_PLANE_IP>:31888 \
 AP_NAME=openwrt_ap_gw1 \
 AP_IFACE=phy0-ap0 \

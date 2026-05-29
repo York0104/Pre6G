@@ -17,7 +17,7 @@ class NetdataClient:
     """
 
     def __init__(self, base_url: Optional[str] = None, timeout_s: int = 5):
-        self.base_url = base_url or os.getenv("NETDATA_URL", "http://netdata.netdata.svc:19999")
+        self.base_url = base_url or os.getenv("NETDATA_URL", "http://140.113.179.9:32163")
         self.timeout_s = timeout_s
         self._prev: Dict[str, Tuple[float, float]] = {}
 
