@@ -22,6 +22,7 @@ Workspace: `/home/icclz2/Pre6G`
 - API / dashboard：`Cluster Monitor` 已驗證；experiment 頁面不列入本次重建範圍
 - `02-experiment-layer`：已在目前 k3s 環境恢復 `icclz1` shared-GPU YOLO 三實例主線，並完成短版 latency smoke test
 - `RFSoC external monitoring`：已改以 Tailscale `100.91.37.32:9100` 接入目前 `VictoriaMetrics`，`Netdata parent` 已看到 `pynq`，`vm_agg_rfsoc.py` 已可輸出 `collector_status = ok`
+- `K3s host-side vm_aggregator`：預設入口已同步到目前環境，改為 `VM_URL=http://140.113.179.9:31888`、`NETDATA_URL=http://140.113.179.9:32163`、`KSM_URL=http://140.113.179.9:32080`，避免裸跑時誤打舊的 cluster DNS service。
 
 ## Completed
 

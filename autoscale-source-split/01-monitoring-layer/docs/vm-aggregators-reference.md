@@ -132,6 +132,15 @@ GPU:
 python3 vm_aggregator.py
 ```
 
+目前 host-side 預設值已對齊 `iccl-cluster-z2` 環境：
+
+- `VM_URL=http://140.113.179.9:31888`
+- `NETDATA_URL=http://140.113.179.9:32163`
+- `NETDATA_PARENT_BASE_URL=http://140.113.179.9:32163`
+- `KSM_URL=http://140.113.179.9:32080`
+
+若要跑 cluster 內版本，請改用對應的 incluster env/yaml 範本覆寫。
+
 ```bash
 NODE=REPLACE_NODE K8S_NODE=REPLACE_NODE NAMESPACE=intent-lab python3 vm_aggregator.py
 ```

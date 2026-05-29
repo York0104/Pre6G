@@ -11,7 +11,7 @@ from typing import Dict, Tuple, Optional, List, Any
 import socket
 import traceback
 
-VM_URL = os.getenv("VM_URL", "http://vm-victoria-metrics-single-server.monitoring.svc:8428")
+VM_URL = os.getenv("VM_URL", "http://140.113.179.9:31888")
 OBSERVER = socket.gethostname()
 
 NODE = (os.getenv("NODE") or OBSERVER).strip()
@@ -29,11 +29,11 @@ QCOUNT = 0
 NODE_EXPORTER_INSTANCE = os.getenv("NODE_EXPORTER_INSTANCE", "").strip()
 CADVISOR_SELECTOR = os.getenv("CADVISOR_SELECTOR", 'job="kubelet-cadvisor"')
 
-NETDATA_URL = os.getenv("NETDATA_URL", "http://netdata.netdata.svc:19999").rstrip("/")
+NETDATA_URL = os.getenv("NETDATA_URL", "http://140.113.179.9:32163").rstrip("/")
 NETDATA_CHILD_URL = os.getenv("NETDATA_CHILD_URL", NETDATA_URL).rstrip("/")
-NETDATA_PARENT_BASE_URL = os.getenv("NETDATA_PARENT_BASE_URL", "http://netdata.netdata.svc:19999").rstrip("/")
+NETDATA_PARENT_BASE_URL = os.getenv("NETDATA_PARENT_BASE_URL", "http://140.113.179.9:32163").rstrip("/")
 NETDATA_HOST = os.getenv("NETDATA_HOST", "").strip()
-KSM_URL = os.getenv("KSM_URL", "http://kube-state-metrics.monitoring.svc:8080").rstrip("/")
+KSM_URL = os.getenv("KSM_URL", "http://140.113.179.9:32080").rstrip("/")
 
 SYSTEM_PRODUCT_SUFFIX = "-system-product-name"
 
