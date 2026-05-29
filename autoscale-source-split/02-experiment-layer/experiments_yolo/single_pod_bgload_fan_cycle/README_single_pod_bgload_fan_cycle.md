@@ -57,6 +57,27 @@ cd /home/icclz2/Pre6G
 NODE_SSH=icclz1-gpu TARGET_MODE=pod TIMEOUT_SEC=20 REPEAT=1 CYCLES=1 NORMAL_HOLD_SECONDS=5 FAULT_HOLD_SECONDS=5 RECOVERY_STABLE_SECONDS=5 RECOVERY_MAX_SECONDS=20 WORKLOAD_HEADROOM_SECONDS=10 VM_AGG_INTERVAL=1.0 bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle.sh
 ```
 
+### Loop Mode
+
+適合把單次 `CYCLES=1` run 連續重跑，持續累積多個 `RUN_ID`。按 `Ctrl+C` 可停止下一輪。
+
+```bash
+cd /home/icclz2/Pre6G
+CC_PASSWORD='your_coolercontrol_password' \
+bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle_loop.sh
+```
+
+### Loop Smoke Test
+
+```bash
+cd /home/icclz2/Pre6G
+CC_PASSWORD='your_coolercontrol_password' \
+NORMAL_HOLD_SECONDS=5 FAULT_HOLD_SECONDS=5 \
+RECOVERY_STABLE_SECONDS=5 RECOVERY_MAX_SECONDS=20 \
+WORKLOAD_HEADROOM_SECONDS=10 LOOP_GAP_SECONDS=10 \
+bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle_loop.sh
+```
+
 ## Outputs
 
 每次 run 輸出到：

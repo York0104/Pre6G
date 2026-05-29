@@ -117,6 +117,25 @@ bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bglo
 
 `run_single_pod_bgload_fan_cycle_loop.sh` 則是把上述單次實驗用 `CYCLES=1` 的方式反覆重跑，適合批次累積多個 run。
 
+loop 啟動：
+
+```bash
+cd /home/icclz2/Pre6G
+CC_PASSWORD='your_coolercontrol_password' \
+bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle_loop.sh
+```
+
+短版 loop smoke test：
+
+```bash
+cd /home/icclz2/Pre6G
+CC_PASSWORD='your_coolercontrol_password' \
+NORMAL_HOLD_SECONDS=5 FAULT_HOLD_SECONDS=5 \
+RECOVERY_STABLE_SECONDS=5 RECOVERY_MAX_SECONDS=20 \
+WORKLOAD_HEADROOM_SECONDS=10 LOOP_GAP_SECONDS=10 \
+bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle_loop.sh
+```
+
 ### 4. `saturation_multi_pod/`
 
 場景：
