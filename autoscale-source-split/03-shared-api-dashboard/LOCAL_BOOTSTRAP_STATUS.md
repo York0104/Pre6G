@@ -7,14 +7,14 @@ Host: `/home/icclz2/Pre6G`
 
 - Monitoring backend 已可供 `k3s` nodes、`RFSoC` 與 `AP gateway` 使用
 - Host-side monitoring endpoints 已整理在：
-  - [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env)
+  - [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env](../01-monitoring-layer/monitoring-runtime.host.env)
 - Local API runtime 已驗證可用：
-  - [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service)
-  - [autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh)
+  - [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service](../01-monitoring-layer/systemd/autoscale-api.service)
+  - [autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh](autoscale_api/run_local_api.sh)
 - Local dashboard launcher 已驗證可用：
-  - [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh)
+  - [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh](cluster-dashboard/run_local_dashboard.sh)
 - Dashboard API base example 已準備：
-  - [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/.env.example](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/.env.example)
+  - [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/.env.example](cluster-dashboard/.env.example)
 - `autoscale_api` 已能把 external nodes 拉入 dashboard：
   - `rfsoc4x2-pynq`
   - `openwrt_ap`

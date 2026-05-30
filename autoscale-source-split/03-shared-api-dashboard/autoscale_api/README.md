@@ -68,8 +68,8 @@
 
 建議直接沿用：
 
-- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example)
-- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example)
+- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](../../01-monitoring-layer/systemd/autoscale-api.env.example)
+- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example](../../01-monitoring-layer/monitoring-runtime.host.env.example)
 
 目前 host-side 驗證可用入口是：
 
@@ -158,8 +158,8 @@ systemctl status autoscale-api.service --no-pager
 
 使用模板：
 
-- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service)
-- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example)
+- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service](../../01-monitoring-layer/systemd/autoscale-api.service)
+- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](../../01-monitoring-layer/systemd/autoscale-api.env.example)
 
 複製 env：
 

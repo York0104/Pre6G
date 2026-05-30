@@ -7,10 +7,10 @@ Scope: `Pre6G` 中目前可交付的 `monitor + Cluster Monitor dashboard` 重�
 
 目前可作為另一台 `k3s` 環境重建基底的主入口為：
 
-1. [MONITORING_REBUILD_SOP.md](/home/icclz2/Pre6G/MONITORING_REBUILD_SOP.md)
-2. [monitoring-rebuild/REBUILD_PARAMETERS.md](/home/icclz2/Pre6G/monitoring-rebuild/REBUILD_PARAMETERS.md)
-3. [MONITORING_REBUILD_K3S_MIGRATION_NOTES.md](/home/icclz2/Pre6G/MONITORING_REBUILD_K3S_MIGRATION_NOTES.md)
-4. [MONITORING_REBUILD_PROGRESS.md](/home/icclz2/Pre6G/MONITORING_REBUILD_PROGRESS.md)
+1. [MONITORING_REBUILD_SOP.md](MONITORING_REBUILD_SOP.md)
+2. [monitoring-rebuild/REBUILD_PARAMETERS.md](monitoring-rebuild/REBUILD_PARAMETERS.md)
+3. [MONITORING_REBUILD_K3S_MIGRATION_NOTES.md](MONITORING_REBUILD_K3S_MIGRATION_NOTES.md)
+4. [MONITORING_REBUILD_PROGRESS.md](MONITORING_REBUILD_PROGRESS.md)
 
 目前監控與 `Cluster Monitor` dashboard 主線已接近可交付；已知剩餘風險主要是節點主機狀態，而非重建檔案缺漏。
 
@@ -18,33 +18,33 @@ Scope: `Pre6G` 中目前可交付的 `monitor + Cluster Monitor dashboard` 重�
 
 ### Core manifests
 
-- [monitoring-rebuild/00-namespaces.yaml](/home/icclz2/Pre6G/monitoring-rebuild/00-namespaces.yaml)
-- [monitoring-rebuild/10-victoria-metrics.yaml](/home/icclz2/Pre6G/monitoring-rebuild/10-victoria-metrics.yaml)
-- [monitoring-rebuild/20-vmagent.yaml](/home/icclz2/Pre6G/monitoring-rebuild/20-vmagent.yaml)
-- [monitoring-rebuild/30-node-exporter.yaml](/home/icclz2/Pre6G/monitoring-rebuild/30-node-exporter.yaml)
-- [monitoring-rebuild/40-kube-state-metrics.yaml](/home/icclz2/Pre6G/monitoring-rebuild/40-kube-state-metrics.yaml)
-- [monitoring-rebuild/45-nvidia-device-plugin.yaml](/home/icclz2/Pre6G/monitoring-rebuild/45-nvidia-device-plugin.yaml)
-- [monitoring-rebuild/50-dcgm-exporter.yaml](/home/icclz2/Pre6G/monitoring-rebuild/50-dcgm-exporter.yaml)
-- [monitoring-rebuild/55-netdata.yaml](/home/icclz2/Pre6G/monitoring-rebuild/55-netdata.yaml)
-- [monitoring-rebuild/60-netdata-child-stream-config.yaml](/home/icclz2/Pre6G/monitoring-rebuild/60-netdata-child-stream-config.yaml)
-- [monitoring-rebuild/70-node-feature-discovery.yaml](/home/icclz2/Pre6G/monitoring-rebuild/70-node-feature-discovery.yaml)
-- [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](/home/icclz2/Pre6G/monitoring-rebuild/71-nfd-gpu-alias-rule.yaml)
+- [monitoring-rebuild/00-namespaces.yaml](monitoring-rebuild/00-namespaces.yaml)
+- [monitoring-rebuild/10-victoria-metrics.yaml](monitoring-rebuild/10-victoria-metrics.yaml)
+- [monitoring-rebuild/20-vmagent.yaml](monitoring-rebuild/20-vmagent.yaml)
+- [monitoring-rebuild/30-node-exporter.yaml](monitoring-rebuild/30-node-exporter.yaml)
+- [monitoring-rebuild/40-kube-state-metrics.yaml](monitoring-rebuild/40-kube-state-metrics.yaml)
+- [monitoring-rebuild/45-nvidia-device-plugin.yaml](monitoring-rebuild/45-nvidia-device-plugin.yaml)
+- [monitoring-rebuild/50-dcgm-exporter.yaml](monitoring-rebuild/50-dcgm-exporter.yaml)
+- [monitoring-rebuild/55-netdata.yaml](monitoring-rebuild/55-netdata.yaml)
+- [monitoring-rebuild/60-netdata-child-stream-config.yaml](monitoring-rebuild/60-netdata-child-stream-config.yaml)
+- [monitoring-rebuild/70-node-feature-discovery.yaml](monitoring-rebuild/70-node-feature-discovery.yaml)
+- [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](monitoring-rebuild/71-nfd-gpu-alias-rule.yaml)
 
 ### Runtime/query entrypoints
 
-- [autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh)
-- [autoscale-source-split/01-monitoring-layer/vm-aggregator-job.incluster.yaml](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/vm-aggregator-job.incluster.yaml)
-- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example)
-- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.incluster.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.incluster.env.example)
-- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example)
-- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service)
+- [autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh](autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh)
+- [autoscale-source-split/01-monitoring-layer/vm-aggregator-job.incluster.yaml](autoscale-source-split/01-monitoring-layer/vm-aggregator-job.incluster.yaml)
+- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example](autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example)
+- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.incluster.env.example](autoscale-source-split/01-monitoring-layer/monitoring-runtime.incluster.env.example)
+- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example)
+- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service](autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service)
 
 ### API/dashboard start points
 
-- [autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh)
-- [autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md)
-- [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh)
-- [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/README.md](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/README.md)
+- [autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh](autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh)
+- [autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md](autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md)
+- [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh](autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh)
+- [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/README.md](autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/README.md)
 
 ## Helpful But Not Stored As Manifests
 
@@ -64,9 +64,9 @@ Scope: `Pre6G` 中目前可交付的 `monitor + Cluster Monitor dashboard` 重�
 狀態：已更新到目前 `k3s` 主線。
 
 可直接用的文檔：
-- [autoscale-source-split/01-monitoring-layer/README.md](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/README.md)
-- [autoscale-source-split/01-monitoring-layer/docs/api-dashboard-bootstrap.md](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/docs/api-dashboard-bootstrap.md)
-- [autoscale-source-split/01-monitoring-layer/docs/vm-aggregators-reference.md](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/docs/vm-aggregators-reference.md)
+- [autoscale-source-split/01-monitoring-layer/README.md](autoscale-source-split/01-monitoring-layer/README.md)
+- [autoscale-source-split/01-monitoring-layer/docs/api-dashboard-bootstrap.md](autoscale-source-split/01-monitoring-layer/docs/api-dashboard-bootstrap.md)
+- [autoscale-source-split/01-monitoring-layer/docs/vm-aggregators-reference.md](autoscale-source-split/01-monitoring-layer/docs/vm-aggregators-reference.md)
 
 ### `02-experiment-layer`
 
@@ -81,9 +81,9 @@ Scope: `Pre6G` 中目前可交付的 `monitor + Cluster Monitor dashboard` 重�
 狀態：主線文檔已更新。
 
 可直接用的文檔：
-- [autoscale-source-split/03-shared-api-dashboard/README.md](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/README.md)
-- [autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md)
-- [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/README.md](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/README.md)
+- [autoscale-source-split/03-shared-api-dashboard/README.md](autoscale-source-split/03-shared-api-dashboard/README.md)
+- [autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md](autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md)
+- [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/README.md](autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/README.md)
 
 注意：
 - `Cluster Monitor` 已驗證

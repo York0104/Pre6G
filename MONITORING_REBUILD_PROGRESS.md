@@ -43,14 +43,14 @@ Workspace: `/home/icclz2/Pre6G`
 
 對應 manifests：
 
-- [monitoring-rebuild/00-namespaces.yaml](/home/icclz2/Pre6G/monitoring-rebuild/00-namespaces.yaml)
-- [monitoring-rebuild/10-victoria-metrics.yaml](/home/icclz2/Pre6G/monitoring-rebuild/10-victoria-metrics.yaml)
-- [monitoring-rebuild/20-vmagent.yaml](/home/icclz2/Pre6G/monitoring-rebuild/20-vmagent.yaml)
-- [monitoring-rebuild/30-node-exporter.yaml](/home/icclz2/Pre6G/monitoring-rebuild/30-node-exporter.yaml)
-- [monitoring-rebuild/40-kube-state-metrics.yaml](/home/icclz2/Pre6G/monitoring-rebuild/40-kube-state-metrics.yaml)
-- [monitoring-rebuild/45-nvidia-device-plugin.yaml](/home/icclz2/Pre6G/monitoring-rebuild/45-nvidia-device-plugin.yaml)
-- [monitoring-rebuild/55-netdata.yaml](/home/icclz2/Pre6G/monitoring-rebuild/55-netdata.yaml)
-- [monitoring-rebuild/60-netdata-child-stream-config.yaml](/home/icclz2/Pre6G/monitoring-rebuild/60-netdata-child-stream-config.yaml)
+- [monitoring-rebuild/00-namespaces.yaml](monitoring-rebuild/00-namespaces.yaml)
+- [monitoring-rebuild/10-victoria-metrics.yaml](monitoring-rebuild/10-victoria-metrics.yaml)
+- [monitoring-rebuild/20-vmagent.yaml](monitoring-rebuild/20-vmagent.yaml)
+- [monitoring-rebuild/30-node-exporter.yaml](monitoring-rebuild/30-node-exporter.yaml)
+- [monitoring-rebuild/40-kube-state-metrics.yaml](monitoring-rebuild/40-kube-state-metrics.yaml)
+- [monitoring-rebuild/45-nvidia-device-plugin.yaml](monitoring-rebuild/45-nvidia-device-plugin.yaml)
+- [monitoring-rebuild/55-netdata.yaml](monitoring-rebuild/55-netdata.yaml)
+- [monitoring-rebuild/60-netdata-child-stream-config.yaml](monitoring-rebuild/60-netdata-child-stream-config.yaml)
 
 ### 2. GPU monitoring and auto-discovery
 
@@ -63,9 +63,9 @@ Workspace: `/home/icclz2/Pre6G`
 
 對應 manifests：
 
-- [monitoring-rebuild/50-dcgm-exporter.yaml](/home/icclz2/Pre6G/monitoring-rebuild/50-dcgm-exporter.yaml)
-- [monitoring-rebuild/70-node-feature-discovery.yaml](/home/icclz2/Pre6G/monitoring-rebuild/70-node-feature-discovery.yaml)
-- [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](/home/icclz2/Pre6G/monitoring-rebuild/71-nfd-gpu-alias-rule.yaml)
+- [monitoring-rebuild/50-dcgm-exporter.yaml](monitoring-rebuild/50-dcgm-exporter.yaml)
+- [monitoring-rebuild/70-node-feature-discovery.yaml](monitoring-rebuild/70-node-feature-discovery.yaml)
+- [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](monitoring-rebuild/71-nfd-gpu-alias-rule.yaml)
 
 目前不再需要手動 `accelerator=nvidia` 當作主要機制。
 
@@ -79,8 +79,8 @@ Workspace: `/home/icclz2/Pre6G`
 
 相關入口：
 
-- [autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh)
-- [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh)
+- [autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh](autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh)
+- [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh](autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh)
 
 ## Current Runtime Snapshot
 

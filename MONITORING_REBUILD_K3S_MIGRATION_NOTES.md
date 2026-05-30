@@ -74,7 +74,7 @@ Scope: `Pre6G` 交付包在新 `k3s` 環境上的監控層移植測試
 正式收斂做法：
 
 - 部署 `Node Feature Discovery`
-- 用 [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](/home/icclz2/Pre6G/monitoring-rebuild/71-nfd-gpu-alias-rule.yaml) 將 upstream NFD label 映射為 bundle 既有的 `pci-10de.present=true`
+- 用 [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](monitoring-rebuild/71-nfd-gpu-alias-rule.yaml) 將 upstream NFD label 映射為 bundle 既有的 `pci-10de.present=true`
 
 結果：
 
@@ -91,7 +91,7 @@ Scope: `Pre6G` 交付包在新 `k3s` 環境上的監控層移植測試
 解法：
 
 - 不直接沿用舊 `helm-values-vmagent.current.yaml`
-- 改用新整理的 [monitoring-rebuild/20-vmagent.yaml](/home/icclz2/Pre6G/monitoring-rebuild/20-vmagent.yaml)
+- 改用新整理的 [monitoring-rebuild/20-vmagent.yaml](monitoring-rebuild/20-vmagent.yaml)
 
 ### 4. 單一 vmagent 跨網段直抓 worker 會失敗
 
@@ -162,7 +162,7 @@ log 會出現：
   - `Temporary failure in name resolution`
 - 將 child stream destination 從 service DNS 改為控制平面 NodePort：
   - `140.113.179.9:32163`
-- 將 working 設定保存為 [monitoring-rebuild/60-netdata-child-stream-config.yaml](/home/icclz2/Pre6G/monitoring-rebuild/60-netdata-child-stream-config.yaml)
+- 將 working 設定保存為 [monitoring-rebuild/60-netdata-child-stream-config.yaml](monitoring-rebuild/60-netdata-child-stream-config.yaml)
 - 重啟 `netdata-child` pods 讓新 stream 目的地生效
 - 驗證 `Netdata parent` 的 `mirrored_hosts` 已包含 `icclz3`
 - 驗證 `http://140.113.179.9:32163/host/icclz3/api/v1/charts` 回 `200`
@@ -234,11 +234,11 @@ log 會出現：
 
 對應新檔：
 
-- [monitoring-rebuild/00-namespaces.yaml](/home/icclz2/Pre6G/monitoring-rebuild/00-namespaces.yaml)
-- [monitoring-rebuild/10-victoria-metrics.yaml](/home/icclz2/Pre6G/monitoring-rebuild/10-victoria-metrics.yaml)
-- [monitoring-rebuild/20-vmagent.yaml](/home/icclz2/Pre6G/monitoring-rebuild/20-vmagent.yaml)
-- [monitoring-rebuild/30-node-exporter.yaml](/home/icclz2/Pre6G/monitoring-rebuild/30-node-exporter.yaml)
-- [monitoring-rebuild/40-kube-state-metrics.yaml](/home/icclz2/Pre6G/monitoring-rebuild/40-kube-state-metrics.yaml)
+- [monitoring-rebuild/00-namespaces.yaml](monitoring-rebuild/00-namespaces.yaml)
+- [monitoring-rebuild/10-victoria-metrics.yaml](monitoring-rebuild/10-victoria-metrics.yaml)
+- [monitoring-rebuild/20-vmagent.yaml](monitoring-rebuild/20-vmagent.yaml)
+- [monitoring-rebuild/30-node-exporter.yaml](monitoring-rebuild/30-node-exporter.yaml)
+- [monitoring-rebuild/40-kube-state-metrics.yaml](monitoring-rebuild/40-kube-state-metrics.yaml)
 
 ### GPU monitoring
 
@@ -248,19 +248,19 @@ log 會出現：
 
 對應新檔：
 
-- [monitoring-rebuild/50-dcgm-exporter.yaml](/home/icclz2/Pre6G/monitoring-rebuild/50-dcgm-exporter.yaml)
-- [monitoring-rebuild/60-netdata-child-stream-config.yaml](/home/icclz2/Pre6G/monitoring-rebuild/60-netdata-child-stream-config.yaml)
+- [monitoring-rebuild/50-dcgm-exporter.yaml](monitoring-rebuild/50-dcgm-exporter.yaml)
+- [monitoring-rebuild/60-netdata-child-stream-config.yaml](monitoring-rebuild/60-netdata-child-stream-config.yaml)
 
 ### Exposure and query entrypoints
 
 以下新檔已成為實際使用入口：
 
-- [autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh)
-- [autoscale-source-split/01-monitoring-layer/vm-aggregator-job.incluster.yaml](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/vm-aggregator-job.incluster.yaml)
+- [autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh](autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh)
+- [autoscale-source-split/01-monitoring-layer/vm-aggregator-job.incluster.yaml](autoscale-source-split/01-monitoring-layer/vm-aggregator-job.incluster.yaml)
 
 以下仍保留原檔直接沿用：
 
-- [monitoring-rebuild/60-netdata-child-stream-config.yaml](/home/icclz2/Pre6G/monitoring-rebuild/60-netdata-child-stream-config.yaml)
+- [monitoring-rebuild/60-netdata-child-stream-config.yaml](monitoring-rebuild/60-netdata-child-stream-config.yaml)
 
 以下已被新檔整合吸收：
 
@@ -283,7 +283,7 @@ log 會出現：
 
 另外，正式重建時建議直接先套用：
 
-- [monitoring-rebuild/60-netdata-child-stream-config.yaml](/home/icclz2/Pre6G/monitoring-rebuild/60-netdata-child-stream-config.yaml)
+- [monitoring-rebuild/60-netdata-child-stream-config.yaml](monitoring-rebuild/60-netdata-child-stream-config.yaml)
 
 以確保 `netdata-conf-child` 直接走已驗證可用的 NodePort 目的地。
 
@@ -317,7 +317,7 @@ The rebuilt cluster no longer needs a manual `accelerator=nvidia` label for new 
 Implemented approach:
 - `Node Feature Discovery` is deployed to discover PCI devices on each node.
 - Upstream NFD emits labels like `feature.node.kubernetes.io/pci-0300_10de.present=true` for NVIDIA display-class PCI devices.
-- To stay compatible with the delivery bundle, [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](/home/icclz2/Pre6G/monitoring-rebuild/71-nfd-gpu-alias-rule.yaml) maps that upstream label back to `feature.node.kubernetes.io/pci-10de.present=true`.
+- To stay compatible with the delivery bundle, [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](monitoring-rebuild/71-nfd-gpu-alias-rule.yaml) maps that upstream label back to `feature.node.kubernetes.io/pci-10de.present=true`.
 - `nvidia-device-plugin` and `dcgm-exporter` selectors should continue using `feature.node.kubernetes.io/pci-10de.present=true`.
 
 Observed on new node `mirc516-20250605`:

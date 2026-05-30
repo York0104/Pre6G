@@ -6,8 +6,8 @@
 
 本 repo 目前的正式交付主線是 `k3s` 重建版。
 
-- 先看 [MONITORING_REBUILD_SOP.md](/home/icclz2/Pre6G/MONITORING_REBUILD_SOP.md)
-- 再看 [monitoring-rebuild/REBUILD_PARAMETERS.md](/home/icclz2/Pre6G/monitoring-rebuild/REBUILD_PARAMETERS.md)
+- 先看 [MONITORING_REBUILD_SOP.md](MONITORING_REBUILD_SOP.md)
+- 再看 [monitoring-rebuild/REBUILD_PARAMETERS.md](monitoring-rebuild/REBUILD_PARAMETERS.md)
 - `02-experiment-layer` 目前仍是後續工作，不列入本次 `k3s` 主線交付驗收
 
 ## 內容

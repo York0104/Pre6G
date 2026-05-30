@@ -5,8 +5,8 @@
 涵蓋檔案：
 
 - `vm_aggregator.py`
-- [`vm_agg_rfsoc.py`](/home/iccls2/AutoScale/vm_agg_rfsoc.py)
-- [`vm_agg_ap_gateway.py`](/home/iccls2/AutoScale/vm_agg_ap_gateway.py)
+- [`vm_agg_rfsoc.py`](../../autoscale-source-split/01-monitoring-layer/vm_agg_rfsoc.py)
+- [`vm_agg_ap_gateway.py`](../../autoscale-source-split/01-monitoring-layer/vm_agg_ap_gateway.py)
 
 ## Summary
 

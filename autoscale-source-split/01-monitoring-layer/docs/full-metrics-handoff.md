@@ -153,7 +153,7 @@ curl \
 
 repo 已提供一個範例 wrapper：
 
-- [run_full_metrics_api_collector.sh](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/run_full_metrics_api_collector.sh)
+- [run_full_metrics_api_collector.sh](../run_full_metrics_api_collector.sh)
 
 用途：
 

@@ -24,7 +24,7 @@
 
 Use:
 
-- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example)
+- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example](../autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example)
 
 適用於：
 
@@ -36,7 +36,7 @@ Use:
 
 Use:
 
-- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.incluster.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.incluster.env.example)
+- [autoscale-source-split/01-monitoring-layer/monitoring-runtime.incluster.env.example](../autoscale-source-split/01-monitoring-layer/monitoring-runtime.incluster.env.example)
 
 適用於：
 
@@ -45,19 +45,19 @@ Use:
 
 ## Files To Recheck Before Formal Rebuild
 
-- [monitoring-rebuild/10-victoria-metrics.yaml](/home/icclz2/Pre6G/monitoring-rebuild/10-victoria-metrics.yaml)
+- [monitoring-rebuild/10-victoria-metrics.yaml](10-victoria-metrics.yaml)
   - VictoriaMetrics 單機版監控資料庫與 NodePort 暴露設定，重建時主要確認 storage、service type 與對外 port 是否符合新環境。
-- [monitoring-rebuild/20-vmagent.yaml](/home/icclz2/Pre6G/monitoring-rebuild/20-vmagent.yaml)
+- [monitoring-rebuild/20-vmagent.yaml](20-vmagent.yaml)
   - 中央 `vmagent` 與 node-local `vmagent` 設定，負責 scrape `kube-state-metrics`、`dcgm-exporter`、`node-exporter`、cadvisor proxy，並將資料 remote write 到 VictoriaMetrics。
-- [monitoring-rebuild/45-nvidia-device-plugin.yaml](/home/icclz2/Pre6G/monitoring-rebuild/45-nvidia-device-plugin.yaml)
+- [monitoring-rebuild/45-nvidia-device-plugin.yaml](45-nvidia-device-plugin.yaml)
   - NVIDIA device plugin 部署檔，讓 GPU node 註冊 `nvidia.com/gpu` 資源；需確認 selector 與 GPU discovery label 是否和新叢集一致。
-- [monitoring-rebuild/55-netdata.yaml](/home/icclz2/Pre6G/monitoring-rebuild/55-netdata.yaml)
+- [monitoring-rebuild/55-netdata.yaml](55-netdata.yaml)
   - Netdata parent / child / k8s-state 的完整 stack manifest，是目前 Netdata 重建主入口；先套這份，再疊 child stream override。
-- [monitoring-rebuild/60-netdata-child-stream-config.yaml](/home/icclz2/Pre6G/monitoring-rebuild/60-netdata-child-stream-config.yaml)
+- [monitoring-rebuild/60-netdata-child-stream-config.yaml](60-netdata-child-stream-config.yaml)
   - Netdata child stream 目的地覆寫，將每個節點的 child 指向已驗證可用的 Netdata parent NodePort；正式切換 control-plane IP 時必查。
-- [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](/home/icclz2/Pre6G/monitoring-rebuild/71-nfd-gpu-alias-rule.yaml)
+- [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](71-nfd-gpu-alias-rule.yaml)
   - 將 upstream NFD 的 PCI label 映射回 `feature.node.kubernetes.io/pci-10de.present=true`，供 `dcgm-exporter` 與 `nvidia-device-plugin` 用同一套 GPU node selector。
-- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example)
+- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](../autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example)
   - autoscale API 的 systemd 環境變數模板，定義 `VM_URL`、`NETDATA_URL`、inventory 路徑與查詢 namespace；host-side API 啟動前要先按新環境改值。
 
 ## Current Notes
