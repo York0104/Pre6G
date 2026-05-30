@@ -23,6 +23,8 @@ Workspace: `/home/icclz2/Pre6G`
 - `02-experiment-layer`：已在目前 k3s 環境恢復 `icclz1` shared-GPU YOLO 三實例主線，並完成短版 latency smoke test
 - `RFSoC external monitoring`：已改以 Tailscale `100.91.37.32:9100` 接入目前 `VictoriaMetrics`，`Netdata parent` 已看到 `pynq`，`vm_agg_rfsoc.py` 已可輸出 `collector_status = ok`
 - `K3s host-side vm_aggregator`：預設入口已同步到目前環境，改為 `VM_URL=http://140.113.179.9:31888`、`NETDATA_URL=http://140.113.179.9:32163`、`KSM_URL=http://140.113.179.9:32080`，避免裸跑時誤打舊的 cluster DNS service。
+- `systemd` host-side runtime：`ap-gateway.service`、`ap-snmp-gateway.service`、`autoscale-api.service` 已完成安裝與啟動驗證，正式重建路徑已從 `tmux` 改為 `systemd`。
+- `autoscale_api` token rotation：已完成實際 token 輪替，並補上文檔提醒 `autoscale-api.env` 不能只保留 `<control-plane-ip>` 範例值；否則 `full-metrics` 會出現 `RFSoC/AP 正常、所有 k8s nodes 同時失敗` 的假象。
 
 ## Completed
 

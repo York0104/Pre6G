@@ -39,6 +39,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ap-gateway.service ap-snmp-gateway.service autoscale-api.service
 ```
 
+接著務必編輯 `autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env`，把所有 `<control-plane-ip>` 代換成目前主機的真實端點；否則 `autoscale_api` 可能能啟動，但 `full-metrics` 會只在 k8s nodes 全部報錯。
+
 驗證：
 
 ```bash

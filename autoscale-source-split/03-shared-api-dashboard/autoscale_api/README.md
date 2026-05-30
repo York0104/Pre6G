@@ -93,6 +93,16 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now autoscale-api.service
 ```
 
+注意：上面這一步在 `cp ...autoscale-api.env.example -> autoscale-api.env` 之後，還必須把 `autoscale-api.env` 裡的 `<control-plane-ip>` 全部改成目前主機的真實端點，例如：
+
+- `VM_URL=http://140.113.179.9:31888`
+- `NETDATA_PARENT_BASE_URL=http://140.113.179.9:32163`
+- `NETDATA_URL=http://140.113.179.9:32163`
+- `NETDATA_CHILD_URL=http://140.113.179.9:32163`
+- `KSM_URL=http://140.113.179.9:32080`
+
+如果只複製 example 而沒有替換 `<control-plane-ip>`，`autoscale_api` 本身仍可能啟動，但 `/api/v1/full-metrics` 會常見成：RFSoC / AP 正常、所有 k8s nodes 同時失敗。
+
 狀態與 log：
 
 ```bash
@@ -157,6 +167,8 @@ systemctl status autoscale-api.service --no-pager
 cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
    /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
 ```
+
+接著務必把 `autoscale-api.env` 內所有 `<control-plane-ip>` 替換成真實值，不可直接保留範例內容。
 
 再填入：
 
