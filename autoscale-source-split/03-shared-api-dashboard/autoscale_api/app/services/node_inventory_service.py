@@ -1,4 +1,5 @@
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -20,6 +21,11 @@ from app.services.cache_service import SimpleTTLCache
 SOURCE_SPLIT_ROOT = Path(__file__).resolve().parents[4]
 MONITORING_LAYER = SOURCE_SPLIT_ROOT / "01-monitoring-layer"
 COLLECTOR_NODES_PATH = MONITORING_LAYER / "collector_nodes.json"
+
+if MONITORING_LAYER.exists() and str(MONITORING_LAYER) not in sys.path:
+    sys.path.append(str(MONITORING_LAYER))
+
+import vm_aggregator  # noqa: E402
 
 
 def get_address(addresses: List[Dict[str, Any]], addr_type: str) -> str:
@@ -59,6 +65,30 @@ class NodeInventoryService:
         self.gpu_map = GPUStaticMapAdapter()
         self.cache = cache or SimpleTTLCache()
 
+    def _infer_gpu_models_from_aggregator(self, node_name: str) -> List[str]:
+        cache_key = f"node_gpu_models::{node_name}"
+        cached = self.cache.get(cache_key, ttl_seconds=30)
+        if cached is not None:
+            return cached
+
+        try:
+            raw = vm_aggregator.collect_state_for_node(node_name)
+            target = raw.get("target_node_semantic", {})
+            gpu_pressure = target.get("gpu_pressure", {})
+            gpu_entries = gpu_pressure.get("gpus") or gpu_pressure.get("gpu_list") or []
+            models = []
+            for gpu in gpu_entries:
+                if not isinstance(gpu, dict):
+                    continue
+                model = (gpu.get("model_name") or "").strip()
+                if model and model not in models:
+                    models.append(model)
+            self.cache.set(cache_key, models)
+            return models
+        except Exception:
+            self.cache.set(cache_key, [])
+            return []
+
     def _load_external_nodes(self) -> List[Dict[str, Any]]:
         if not COLLECTOR_NODES_PATH.exists():
             return []
@@ -83,9 +113,19 @@ class NodeInventoryService:
         extra_cpu = extra_data.get("cpu", {})
         extra_mem = extra_data.get("memory", {})
 
-        gpu_count = int(capacity.get("nvidia.com/gpu", "0"))
+        physical_gpu_count = int(capacity.get("nvidia.com/gpu", "0"))
+        shared_gpu_count = int(capacity.get("nvidia.com/gpu.shared", "0"))
+        gpu_count = physical_gpu_count or shared_gpu_count
+
         gpu_model = labels.get("nvidia.com/gpu.product")
         gpu_models = [gpu_model] if gpu_model else []
+        if not gpu_models and gpu_count > 0:
+            gpu_models = self._infer_gpu_models_from_aggregator(node_name)
+        if not gpu_models and gpu_count > 0 and labels.get("feature.node.kubernetes.io/pci-10de.present") == "true":
+            gpu_models = ["NVIDIA GPU"]
+            gpu_model = "NVIDIA GPU"
+        elif gpu_models and not gpu_model:
+            gpu_model = gpu_models[0]
 
         gpu_memory_mb = labels.get("nvidia.com/gpu.memory")
         gpu_memory_str = f"{gpu_memory_mb} MiB" if gpu_memory_mb else None
@@ -124,11 +164,11 @@ class NodeInventoryService:
                 has_gpu=gpu_count > 0,
                 count=gpu_count,
                 models=gpu_models,
-                family=labels.get("nvidia.com/gpu.family"),
+                family=labels.get("nvidia.com/gpu.family") or ("NVIDIA" if gpu_models else None),
                 memory=gpu_memory_str,
                 compute_capability=build_compute_capability(labels),
                 cuda_driver_version=labels.get("nvidia.com/cuda.driver-version.full"),
-                cuda_cores=self.gpu_map.get_cuda_cores(gpu_model),
+                cuda_cores=self.gpu_map.get_cuda_cores(gpu_model) if gpu_model and gpu_model != "NVIDIA GPU" else None,
             ),
             query_enabled=True,
         )

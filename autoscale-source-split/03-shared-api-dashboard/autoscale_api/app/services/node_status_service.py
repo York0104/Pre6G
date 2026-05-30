@@ -101,7 +101,11 @@ class NodeStatusService:
                 status=str(gpu_pressure.get("status") or "not_applicable"),
                 count=int(gpu_pressure.get("gpu_count") or 0),
                 fb_used_bytes=int(gpu_pressure.get("fb_used_total_bytes") or 0),
-                fb_used_mib=float(gpu_pressure.get("fb_used_total_mib") or 0.0),
+                fb_used_mib=float(
+                    gpu_pressure.get("fb_used_total_mib")
+                    or bytes_to_mib(int(gpu_pressure.get("fb_used_total_bytes") or 0))
+                    or 0.0
+                ),
             ),
         )
 
@@ -152,7 +156,7 @@ class NodeStatusService:
                 working_set_mib=bytes_to_mib(working_set_bytes),
             ),
             disk=NodeStatusDisk(
-                root_usage_percent=0.0,
+                root_usage_percent=None,
             ),
             gpu=NodeStatusGPU(
                 status="not_applicable",

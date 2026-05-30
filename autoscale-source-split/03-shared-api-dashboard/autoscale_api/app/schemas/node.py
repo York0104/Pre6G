@@ -80,7 +80,7 @@ class NodeStatusMemory(BaseModel):
 
 
 class NodeStatusDisk(BaseModel):
-    root_usage_percent: float
+    root_usage_percent: Optional[float] = None
 
 
 class NodeStatusGPU(BaseModel):
