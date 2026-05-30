@@ -81,7 +81,26 @@
 
 ## Start Locally
 
-### Preferred
+### Preferred For Rebuild
+
+正式重建建議直接使用 `systemd`：
+
+```bash
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now autoscale-api.service
+```
+
+狀態與 log：
+
+```bash
+systemctl status autoscale-api.service --no-pager
+journalctl -u autoscale-api.service -n 50 --no-pager
+```
+
+### Manual Fallback
 
 ```bash
 cd /home/icclz2/Pre6G
@@ -105,19 +124,14 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### Current Local Runtime
 
-目前這台主機的 API 重建驗證是以 host-side 方式完成，常見操作為：
+目前建議的 host-side 常駐方式為：
 
 ```bash
-tmux new -s autoscale_api
-cd /home/icclz2/Pre6G
-bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh
+sudo systemctl enable --now autoscale-api.service
+systemctl status autoscale-api.service --no-pager
 ```
 
-若已在背景執行，可用：
-
-```bash
-tmux attach -t autoscale_api
-```
+若只是在手動除錯或快速 smoke test，才使用 `run_local_api.sh`。
 
 ## Systemd
 

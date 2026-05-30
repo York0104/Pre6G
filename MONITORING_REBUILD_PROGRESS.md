@@ -71,7 +71,7 @@ Workspace: `/home/icclz2/Pre6G`
 
 已整理並驗證：
 
-- `autoscale_api` 可由本地腳本啟動
+- `autoscale_api` 已整理成 `systemd` 正式重建路徑，並保留本地腳本作為手動 fallback
 - `cluster-dashboard` 可由本地腳本啟動
 - `Cluster Monitor` 頁面可正常顯示節點資料
 
@@ -212,10 +212,11 @@ Workspace: `/home/icclz2/Pre6G`
 - `iccl-cluster-z2` host 端已可直接連到 OpenWrt AP `192.168.1.1:22` / `:80`：
   - `curl -I http://192.168.1.1` 回 `HTTP/1.1 200 OK`
   - `ssh -i ~/.ssh/openwrt_ap_ed25519 root@192.168.1.1 ...` 已可登入
-- `ap_gateway.py`（Wi-Fi collector）與 `ap_snmp_gateway.py`（SNMP collector）都已打通並在 host 上常駐：
-  - `tmux` session：`ap_gateway_collector`
-  - `tmux` session：`ap_snmp_collector`
-  - logs：`autoscale-source-split/01-monitoring-layer/runtime_logs/ap_gateway.log`、`ap_snmp_gateway.log`
+- `ap_gateway.py`（Wi-Fi collector）與 `ap_snmp_gateway.py`（SNMP collector）都已打通，且正式重建路徑已整理為 host-side `systemd service`：
+  - `ap-gateway.service`
+  - `ap-snmp-gateway.service`
+  - env 範本：`autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env.example`、`ap-snmp-gateway.env.example`
+  - 既有 `runtime_logs/ap_gateway.log`、`ap_snmp_gateway.log` 可保留作為手動執行紀錄參考
 - `VictoriaMetrics` 已可查到代表性 AP metrics：
   - `ap_wifi_station_count{ap="openwrt_ap"}`
   - `ap_node_cpu_usage_percent{ap="openwrt_ap"}`
@@ -227,6 +228,7 @@ Workspace: `/home/icclz2/Pre6G`
   - `TCP/22`、`TCP/80` timeout
   - 因此 AP collectors 目前仍建議先跑在 host 上，不建議先搬進 cluster Pod
 - 後續維護重點：
-  - 若 host 重開機，需重新拉起兩個 `tmux` collector session，或後續改成 `systemd service`
-  - 若 OpenWrt SNMP community / iface index 變動，需同步更新 `ap_snmp_gateway.py` 執行參數
+  - 以 `systemctl status ap-gateway.service`、`systemctl status ap-snmp-gateway.service`、`journalctl -u ...` 作為主要維運入口
+  - 若 OpenWrt SNMP community / iface index 變動，需同步更新 `ap-snmp-gateway.env` 或 collector 執行參數
+  - `tmux` 只保留作為臨時除錯方式，不再作為正式重建路徑
 

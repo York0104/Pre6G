@@ -8,7 +8,8 @@ Host: `/home/icclz2/Pre6G`
 - Monitoring backend 已可供 `k3s` nodes、`RFSoC` 與 `AP gateway` 使用
 - Host-side monitoring endpoints 已整理在：
   - [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env)
-- Local API launcher 已驗證可用：
+- Local API runtime 已驗證可用：
+  - [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service)
   - [autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh)
 - Local dashboard launcher 已驗證可用：
   - [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh)
@@ -22,17 +23,19 @@ Host: `/home/icclz2/Pre6G`
 
 ### API
 
-目前主機上可直接以 host-side 方式啟動：
+目前正式重建建議直接使用 `systemd`：
 
 ```bash
-cd /home/icclz2/Pre6G
-bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now autoscale-api.service
 ```
 
-常見背景執行方式：
+手動除錯時才使用：
 
 ```bash
-tmux new -s autoscale_api
 cd /home/icclz2/Pre6G
 bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh
 ```
@@ -57,7 +60,7 @@ bash run_local_dashboard.sh
 
 1. 完成 `01-monitoring-layer` 重建與驗證。
 2. 確認 `vm_aggregator.py`、`vm_agg_rfsoc.py`、`vm_agg_ap_gateway.py` 都已可輸出資料。
-3. 啟動 `autoscale_api/run_local_api.sh`。
+3. 啟動 `autoscale-api.service`。
 4. 驗證：
    - `curl http://127.0.0.1:8000/api/v1/nodes | jq`
    - `curl http://127.0.0.1:8000/api/v1/nodes/status | jq`

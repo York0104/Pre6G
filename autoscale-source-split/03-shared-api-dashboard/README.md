@@ -100,8 +100,8 @@
    - `vm_agg_ap_gateway.py`
    都可正常輸出資料。
 2. 啟動 API：
-   - 使用 `autoscale_api/run_local_api.sh`
-   - 或 `systemd` 的 `autoscale-api.service`
+   - 正式重建優先使用 `systemd` 的 `autoscale-api.service`
+   - `autoscale_api/run_local_api.sh` 僅保留作為手動 fallback
 3. 驗證 API：
    - `GET /api/v1/nodes`
    - `GET /api/v1/nodes/status`

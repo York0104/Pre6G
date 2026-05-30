@@ -179,7 +179,8 @@
 因此它們適合：
 
 - 在背景持續執行
-- 之後包成 systemd service 或 Kubernetes Pod
+- 以 host-side `systemd service` 正式常駐
+- `Kubernetes Pod` 僅保留作為未來特殊部署選項
 
 ### `vm_agg_ap_gateway.py`
 
@@ -214,6 +215,39 @@
 - 對 `vm_agg_ap_gateway.py` 而言，`VM_URL` 是 query base URL
 
 先前 AP metrics 查不到的根因，就是 producer 雖然仍在背景執行，但預設 import endpoint 還指向舊的 `127.0.0.1:8428`。這會導致採集成功、匯入失敗，最後 aggregator 查不到資料。現在已統一改成 NodePort 架構。
+
+## Recommended Service Layout
+
+目前正式重建路徑建議直接使用 repo 內的 `systemd` 範本：
+
+- `/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.service`
+- `/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env.example`
+- `/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.service`
+- `/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.env.example`
+
+最小安裝步驟：
+
+```bash
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.env
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.service /etc/systemd/system/
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ap-gateway.service ap-snmp-gateway.service
+```
+
+狀態檢查：
+
+```bash
+systemctl status ap-gateway.service --no-pager
+systemctl status ap-snmp-gateway.service --no-pager
+journalctl -u ap-gateway.service -n 50 --no-pager
+journalctl -u ap-snmp-gateway.service -n 50 --no-pager
+```
+
+`tmux` 僅保留作為手動除錯方式，不再是建議的正式常駐方案。
 
 ## Typical Commands
 
@@ -307,9 +341,9 @@ snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
 
 因此目前 AP gateway 重建主線已打通；後續建議是：
 
-1. 保持兩支 collector 在 host 上常駐執行
-2. 若要跨重開機維持，將 `tmux` collector 改寫成 `systemd service`
-3. 若 OpenWrt 的 SNMP community 或介面 index 變更，需同步更新 collector 執行參數
+1. 將兩支 collector 以 host-side `systemd service` 常駐
+2. 用 `systemctl status` / `journalctl` 取代 `tmux` 作為主要維運方式
+3. 若 OpenWrt 的 SNMP community 或介面 index 變更，需同步更新 collector env 或執行參數
 
 補充：目前 cluster 內 Pod 對 `192.168.1.1` 僅驗到 `UDP/161` 可達，但 `TCP/22` / `TCP/80` timeout，因此不建議先把 AP collectors 改成 Pod 內執行。
 

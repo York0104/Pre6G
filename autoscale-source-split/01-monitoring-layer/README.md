@@ -28,6 +28,10 @@
 | `vm-aggregator-job.incluster.yaml` | 在 cluster 內執行 aggregator 的 Job 參考。 |
 | `systemd/autoscale-api.service` | AutoScale API systemd service template。 |
 | `systemd/autoscale-api.env.example` | AutoScale API 環境變數範例；真實 env 不在此層。 |
+| `systemd/ap-gateway.service` | AP Wi-Fi collector systemd service template。 |
+| `systemd/ap-gateway.env.example` | AP Wi-Fi collector env 範例。 |
+| `systemd/ap-snmp-gateway.service` | AP SNMP collector systemd service template。 |
+| `systemd/ap-snmp-gateway.env.example` | AP SNMP collector env 範例。 |
 | `docs/frontend-api-handoff.md` | 前端與 API 對接欄位說明。 |
 | `docs/full-metrics-handoff.md` | full metrics API/collector 交接說明。 |
 | `docs/api-dashboard-bootstrap.md` | AutoScale API 與 dashboard 接線/驗證說明。 |
@@ -57,6 +61,10 @@
 | --- | --- |
 | `autoscale-api.service` | AutoScale API systemd service template。 |
 | `autoscale-api.env.example` | AutoScale API env 範例，不含真實 secret。 |
+| `ap-gateway.service` | AP Wi-Fi collector systemd service template。 |
+| `ap-gateway.env.example` | AP Wi-Fi collector env 範例。 |
+| `ap-snmp-gateway.service` | AP SNMP collector systemd service template。 |
+| `ap-snmp-gateway.env.example` | AP SNMP collector env 範例。 |
 
 ## 注意事項
 
@@ -89,3 +97,14 @@
 - `RFSoC node_exporter`: `100.91.37.32:9100`
 - `RFSoC Netdata host`: `pynq`
 - `RFSoC SSH`: `xilinx@100.91.37.32`
+
+
+## 目前建議常駐方式
+
+目前 host-side 正式重建路徑以 `systemd` 為主：
+
+- `autoscale-api.service`
+- `ap-gateway.service`
+- `ap-snmp-gateway.service`
+
+`tmux` 僅保留作為暫時除錯或手動 smoke test 方式，不再是建議的正式重建流程。

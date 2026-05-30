@@ -40,7 +40,7 @@
 1. 使用 repo 內的 `03-shared-api-dashboard/autoscale_api/` 作為 API 程式本體
 2. 將 [systemd/autoscale-api.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example) 複製為實際 env
 3. 將 [autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example) 的端點同步到該 env
-4. 依 [autoscale_api/README.md](/home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md) 啟動 API，或套用 [systemd/autoscale-api.service](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service)
+4. 優先套用 [systemd/autoscale-api.service](/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service) 啟動 API；`run_local_api.sh` 僅保留作為手動 fallback
 
 ### 4. Dashboard / frontend
 

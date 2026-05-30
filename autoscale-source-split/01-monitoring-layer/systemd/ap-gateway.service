@@ -1,0 +1,18 @@
+[Unit]
+Description=Pre6G AP Wi-Fi Collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=icclz2
+Group=icclz2
+WorkingDirectory=/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/ap_gateway
+Environment="HOME=/home/icclz2"
+EnvironmentFile=-/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env
+ExecStart=/bin/bash -lc '/home/icclz2/Pre6G/iccl/bin/python ap_gateway.py'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
