@@ -217,6 +217,10 @@ Workspace: `/home/icclz2/Pre6G`
   - `ap-snmp-gateway.service`
   - env 範本：`autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env.example`、`ap-snmp-gateway.env.example`
   - 既有 `runtime_logs/ap_gateway.log`、`ap_snmp_gateway.log` 可保留作為手動執行紀錄參考
+- `autoscale_api`、`ap-gateway.service`、`ap-snmp-gateway.service` 的 `systemd` 安裝、啟動與驗證指令，已整理進：
+  - `autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md`
+  - `autoscale-source-split/03-shared-api-dashboard/LOCAL_BOOTSTRAP_STATUS.md`
+  - `autoscale-source-split/01-monitoring-layer/ap_gateway/AP_GATEWAY_DESIGN.md`
 - `VictoriaMetrics` 已可查到代表性 AP metrics：
   - `ap_wifi_station_count{ap="openwrt_ap"}`
   - `ap_node_cpu_usage_percent{ap="openwrt_ap"}`

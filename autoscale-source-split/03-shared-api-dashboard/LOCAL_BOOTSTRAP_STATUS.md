@@ -26,11 +26,28 @@ Host: `/home/icclz2/Pre6G`
 目前正式重建建議直接使用 `systemd`：
 
 ```bash
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.env
 cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
    /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.service /etc/systemd/system/
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.service /etc/systemd/system/
 sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now autoscale-api.service
+sudo systemctl enable --now ap-gateway.service ap-snmp-gateway.service autoscale-api.service
+```
+
+驗證：
+
+```bash
+systemctl status ap-gateway.service --no-pager
+systemctl status ap-snmp-gateway.service --no-pager
+systemctl status autoscale-api.service --no-pager
+journalctl -u ap-gateway.service -n 50 --no-pager
+journalctl -u ap-snmp-gateway.service -n 50 --no-pager
+journalctl -u autoscale-api.service -n 50 --no-pager
 ```
 
 手動除錯時才使用：

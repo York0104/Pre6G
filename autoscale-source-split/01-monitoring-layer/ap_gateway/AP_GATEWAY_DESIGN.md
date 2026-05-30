@@ -247,6 +247,28 @@ journalctl -u ap-gateway.service -n 50 --no-pager
 journalctl -u ap-snmp-gateway.service -n 50 --no-pager
 ```
 
+本次在 `iccl-cluster-z2` 實際驗證通過的安裝與啟動指令如下：
+
+```bash
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.env
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.service /etc/systemd/system/
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ap-gateway.service ap-snmp-gateway.service
+```
+
+本次實際驗證指令：
+
+```bash
+systemctl status ap-gateway.service --no-pager
+systemctl status ap-snmp-gateway.service --no-pager
+journalctl -u ap-gateway.service -n 50 --no-pager
+journalctl -u ap-snmp-gateway.service -n 50 --no-pager
+```
+
 `tmux` 僅保留作為手動除錯方式，不再是建議的正式常駐方案。
 
 ## Typical Commands

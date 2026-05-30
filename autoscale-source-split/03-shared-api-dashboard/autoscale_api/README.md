@@ -100,6 +100,17 @@ systemctl status autoscale-api.service --no-pager
 journalctl -u autoscale-api.service -n 50 --no-pager
 ```
 
+本次在 `iccl-cluster-z2` 實際驗證通過的安裝與啟動指令如下：
+
+```bash
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now autoscale-api.service
+```
+
+
 ### Manual Fallback
 
 ```bash
