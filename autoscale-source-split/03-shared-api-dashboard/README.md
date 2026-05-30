@@ -108,6 +108,7 @@
    需能看到 `rfsoc4x2-pynq` 與 `openwrt_ap`。
 4. 啟動 dashboard：
    - 設定 `VITE_AUTOSCALE_API_BASE`
+   - 若 API 已啟用 auth，也同步設定 `VITE_AUTOSCALE_API_TOKEN`
    - 執行 `cluster-dashboard/run_local_dashboard.sh`
 5. 重新整理前端頁面，確認 external nodes 已出現在 `Cluster Monitor`。
 

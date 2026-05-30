@@ -184,9 +184,11 @@ KSM_URL=http://140.113.179.9:32080
 ## Health Check
 
 ```bash
-curl http://127.0.0.1:8000/
-curl http://127.0.0.1:8000/api/v1/nodes | jq
-curl http://127.0.0.1:8000/api/v1/nodes/status | jq
+export AUTOSCALE_API_BASE=http://127.0.0.1:8000
+export AUTOSCALE_API_TOKEN=$(grep '^AUTOSCALE_API_TOKEN=' /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env | cut -d= -f2-)
+curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" "$AUTOSCALE_API_BASE/"
+curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" "$AUTOSCALE_API_BASE/api/v1/nodes" | jq
+curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" "$AUTOSCALE_API_BASE/api/v1/nodes/status" | jq
 ```
 
 建議至少確認：

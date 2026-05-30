@@ -81,9 +81,11 @@ bash run_local_dashboard.sh
 2. 確認 `vm_aggregator.py`、`vm_agg_rfsoc.py`、`vm_agg_ap_gateway.py` 都已可輸出資料。
 3. 啟動 `autoscale-api.service`。
 4. 驗證：
-   - `curl http://127.0.0.1:8000/api/v1/nodes | jq`
-   - `curl http://127.0.0.1:8000/api/v1/nodes/status | jq`
-5. 啟動 `cluster-dashboard/run_local_dashboard.sh`。
+   - `export AUTOSCALE_API_TOKEN=$(grep '^AUTOSCALE_API_TOKEN=' /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env | cut -d= -f2-)`
+   - `curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" http://127.0.0.1:8000/api/v1/nodes | jq`
+   - `curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" http://127.0.0.1:8000/api/v1/nodes/status | jq`
+5. 設定 dashboard `.env` 中的 `VITE_AUTOSCALE_API_BASE`；若 API 已開 auth，也同步填入 `VITE_AUTOSCALE_API_TOKEN`。
+6. 啟動 `cluster-dashboard/run_local_dashboard.sh`。
 6. 瀏覽器重新整理，確認 `Cluster Monitor` 顯示 external nodes。
 
 ## Notes

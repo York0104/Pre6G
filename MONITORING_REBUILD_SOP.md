@@ -239,12 +239,28 @@ bash autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh icclz3
 
 ## Step 11: Start API And Dashboard
 
-先啟 API：
+正式重建優先使用 `systemd` 啟動 API：
 
 ```bash
-cd /home/icclz2/Pre6G
-bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now autoscale-api.service
 ```
+
+接著務必編輯 `autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env`：
+
+- 把所有 `<CONTROL_PLANE_IP>` / `<control-plane-ip>` placeholder 換成真實 host-side 端點
+- 填入有效的 `AUTOSCALE_API_TOKEN`
+
+目前已驗證可用的 host-side 端點為：
+
+- `VM_URL=http://140.113.179.9:31888`
+- `NETDATA_PARENT_BASE_URL=http://140.113.179.9:32163`
+- `NETDATA_URL=http://140.113.179.9:32163`
+- `NETDATA_CHILD_URL=http://140.113.179.9:32163`
+- `KSM_URL=http://140.113.179.9:32080`
 
 再啟 dashboard：
 
@@ -256,8 +272,10 @@ bash run_local_dashboard.sh
 驗證：
 
 ```bash
-curl http://127.0.0.1:8000/
-curl http://127.0.0.1:8000/api/v1/nodes/status
+export AUTOSCALE_API_BASE=http://127.0.0.1:8000
+export AUTOSCALE_API_TOKEN=$(grep '^AUTOSCALE_API_TOKEN=' /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env | cut -d= -f2-)
+curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" "$AUTOSCALE_API_BASE/"
+curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" "$AUTOSCALE_API_BASE/api/v1/nodes/status" | jq
 curl -I http://127.0.0.1:5174/
 ```
 

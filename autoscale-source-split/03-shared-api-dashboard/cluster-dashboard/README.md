@@ -29,13 +29,17 @@
 
 ```env
 VITE_AUTOSCALE_API_BASE=http://<CONTROL_PLANE_IP>:8000
+VITE_AUTOSCALE_API_TOKEN=replace-with-issued-token
 ```
 
 目前常用值：
 
 ```env
 VITE_AUTOSCALE_API_BASE=http://140.113.179.9:8000
+VITE_AUTOSCALE_API_TOKEN=<current-issued-token>
 ```
+
+若 `autoscale_api` 啟用了 token 驗證，前端必須同步設定 `VITE_AUTOSCALE_API_TOKEN`，否則 `GET /api/v1/nodes` 與 `GET /api/v1/nodes/status` 會直接回 `401 Unauthorized`。
 
 ## Start
 
@@ -75,9 +79,9 @@ http://<CONTROL_PLANE_IP>:5174
 
 ## Rebuild Steps
 
-1. 先確認 `autoscale_api` 已啟動。
+1. 先確認 `autoscale-api.service` 已啟動，或至少 `autoscale_api` 可正常回應。
 2. 驗證 `GET /api/v1/nodes` 與 `GET /api/v1/nodes/status` 已包含 `rfsoc4x2-pynq` 與 `openwrt_ap`。
-3. 設定 `VITE_AUTOSCALE_API_BASE` 指向目前 API。
+3. 設定 `VITE_AUTOSCALE_API_BASE` 指向目前 API，並同步填入 `VITE_AUTOSCALE_API_TOKEN`。
 4. 啟動 `run_local_dashboard.sh`。
 5. 重新整理瀏覽器頁面，確認 external nodes 已出現於 `Cluster Monitor`。
 

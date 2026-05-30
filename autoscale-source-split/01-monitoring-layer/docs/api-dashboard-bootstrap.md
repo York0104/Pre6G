@@ -46,8 +46,8 @@
 
 frontend 只需要：
 
-- `API_BASE_URL`
-- optional API token
+- `VITE_AUTOSCALE_API_BASE`
+- `VITE_AUTOSCALE_API_TOKEN`（若 API 已開 auth）
 
 可直接依：
 
@@ -58,10 +58,14 @@ frontend 只需要：
 
 ### API-side
 
-- `curl "$API_BASE_URL/"`
-- `curl "$API_BASE_URL/api/v1/nodes"`
-- `curl "$API_BASE_URL/api/v1/nodes/status"`
-- `curl "$API_BASE_URL/api/v1/nodes/icclz3/status"`
+```bash
+export AUTOSCALE_API_BASE=http://140.113.179.9:8000
+export AUTOSCALE_API_TOKEN=$(grep '^AUTOSCALE_API_TOKEN=' /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env | cut -d= -f2-)
+curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" "$AUTOSCALE_API_BASE/"
+curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" "$AUTOSCALE_API_BASE/api/v1/nodes"
+curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" "$AUTOSCALE_API_BASE/api/v1/nodes/status"
+curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" "$AUTOSCALE_API_BASE/api/v1/nodes/icclz3/status"
+```
 
 ### Monitoring-side
 
