@@ -49,3 +49,48 @@ async def token_auth_middleware(request: Request, call_next):
         )
 
     return await call_next(request)
+
+
+PLACEHOLDER_TOKENS = {
+    "replace-with-a-long-random-token",
+    "replace-with-issued-token",
+}
+
+REQUIRED_ENDPOINT_ENV_VARS = (
+    "VM_URL",
+    "NETDATA_URL",
+    "NETDATA_CHILD_URL",
+    "NETDATA_PARENT_BASE_URL",
+    "KSM_URL",
+)
+
+
+def _is_placeholder_value(value: str) -> bool:
+    normalized = (value or "").strip()
+    if not normalized:
+        return False
+    if normalized in PLACEHOLDER_TOKENS:
+        return True
+    return "<control-plane-ip>" in normalized.lower() or "<control_plane_ip>" in normalized.lower()
+
+
+def validate_runtime_configuration() -> None:
+    token = get_configured_api_token()
+    if _is_placeholder_value(token):
+        raise RuntimeError(
+            "AUTOSCALE_API_TOKEN is still a placeholder. "
+            "Replace it in autoscale-api.env before starting autoscale_api."
+        )
+
+    bad_keys = []
+    for key in REQUIRED_ENDPOINT_ENV_VARS:
+        value = os.getenv(key, "").strip()
+        if _is_placeholder_value(value):
+            bad_keys.append(key)
+
+    if bad_keys:
+        joined = ", ".join(bad_keys)
+        raise RuntimeError(
+            f"autoscale_api runtime env still contains placeholder values for: {joined}. "
+            "Replace <control-plane-ip> with the real host-side endpoints before starting the service."
+        )

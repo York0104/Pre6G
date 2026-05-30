@@ -41,6 +41,8 @@ VITE_AUTOSCALE_API_TOKEN=<current-issued-token>
 
 若 `autoscale_api` 啟用了 token 驗證，前端必須同步設定 `VITE_AUTOSCALE_API_TOKEN`，否則 `GET /api/v1/nodes` 與 `GET /api/v1/nodes/status` 會直接回 `401 Unauthorized`。
 
+啟動前提示：若 `.env` 缺少 token 或仍保留 `replace-with-issued-token`，前端頁面會顯示 auth notice，且在 API 回 `401` 時給出明確錯誤訊息。
+
 ## Start
 
 ### Preferred

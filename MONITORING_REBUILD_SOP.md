@@ -253,6 +253,7 @@ sudo systemctl enable --now autoscale-api.service
 
 - 把所有 `<CONTROL_PLANE_IP>` / `<control-plane-ip>` placeholder 換成真實 host-side 端點
 - 填入有效的 `AUTOSCALE_API_TOKEN`
+- 若保留 placeholder 值，`autoscale_api` 會 fail-fast 拒絕啟動
 
 目前已驗證可用的 host-side 端點為：
 

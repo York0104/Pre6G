@@ -112,6 +112,9 @@ journalctl -u autoscale-api.service -n 50 --no-pager
 
 本次在 `iccl-cluster-z2` 實際驗證通過的安裝與啟動指令如下：
 
+Fail-fast validation：若 `AUTOSCALE_API_TOKEN` 仍是 `replace-with-a-long-random-token`，或 `VM_URL` / `NETDATA_*` / `KSM_URL` 還保留 `<control-plane-ip>` placeholder，`autoscale_api` 會在 startup 直接拒絕啟動，避免服務帶著錯誤 env 假成功。
+
+
 ```bash
 cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
    /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env

@@ -12,6 +12,11 @@ import {
 const API_BASE =
   import.meta.env.VITE_AUTOSCALE_API_BASE || "http://127.0.0.1:8000";
 const API_TOKEN = import.meta.env.VITE_AUTOSCALE_API_TOKEN?.trim() || "";
+const API_TOKEN_PLACEHOLDER = "replace-with-issued-token";
+
+function isDashboardTokenMissing(): boolean {
+  return !API_TOKEN || API_TOKEN === API_TOKEN_PLACEHOLDER;
+}
 
 type NodeInventory = {
   node_name: string;
@@ -254,6 +259,14 @@ async function fetchJson<T>(path: string): Promise<T> {
       : undefined,
   });
   if (!res.ok) {
+    if (res.status === 401 && isDashboardTokenMissing()) {
+      console.warn(
+        "autoscale_api returned 401 while VITE_AUTOSCALE_API_TOKEN is missing or still uses the example value.",
+      );
+      throw new Error(
+        "401 Unauthorized: set VITE_AUTOSCALE_API_TOKEN in cluster-dashboard/.env to the issued AutoScale API token.",
+      );
+    }
     throw new Error(`${res.status} ${res.statusText}`);
   }
   return res.json();
@@ -1048,6 +1061,14 @@ export default function App() {
         : undefined,
     });
     if (!res.ok) {
+      if (res.status === 401 && isDashboardTokenMissing()) {
+        console.warn(
+          "autoscale_api returned 401 while VITE_AUTOSCALE_API_TOKEN is missing or still uses the example value.",
+        );
+        throw new Error(
+          "401 Unauthorized: set VITE_AUTOSCALE_API_TOKEN in cluster-dashboard/.env to the issued AutoScale API token.",
+        );
+      }
       throw new Error(`${res.status} ${res.statusText}`);
     }
     return res.json();
@@ -1241,6 +1262,16 @@ export default function App() {
               Fan-Cycle Experiment
             </button>
           </div>
+
+          {isDashboardTokenMissing() && (
+            <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-950/40 p-3 text-sm text-amber-200">
+              Dashboard auth notice: if autoscale_api has token auth enabled, set
+              <span className="mx-1 font-mono">VITE_AUTOSCALE_API_TOKEN</span>
+              in
+              <span className="mx-1 font-mono">cluster-dashboard/.env</span>
+              before starting the frontend.
+            </div>
+          )}
 
           {error && (
             <div className="mt-4 rounded-lg border border-red-500/40 bg-red-950/40 p-3 text-sm text-red-200">

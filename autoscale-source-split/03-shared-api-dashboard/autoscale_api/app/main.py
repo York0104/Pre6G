@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers.full_metrics import router as full_metrics_router
 from app.routers.experiments import router as experiments_router
 from app.routers.nodes import router as nodes_router
-from app.security import token_auth_middleware
+from app.security import token_auth_middleware, validate_runtime_configuration
 
 app = FastAPI(title="Pre6G AutoScale API", version="0.1.0")
 
@@ -32,3 +32,8 @@ app.include_router(experiments_router)
 @app.get("/")
 def root():
     return {"message": "Pre6G AutoScale API is running"}
+
+
+@app.on_event("startup")
+def validate_config_on_startup():
+    validate_runtime_configuration()
