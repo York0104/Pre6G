@@ -38,14 +38,15 @@
 ### 1. YOLO image 必須先匯入 k3s
 
 ```bash
-cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/yolo26_k8s
+cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/yolo26_workload
 bash build_and_import_image_to_k3s.sh
 ```
 
-此步會建立並匯入：
+此步目前正式支援並建議使用：
 
 - `local/yolo26n:0.1`
-- `local/yolo26n:0.5`
+
+歷史上曾出現 `0.5`，但這不再是目前建議的驗證或重建標準。
 
 若 workload 會排到 GPU worker，請確認該 worker 的 k3s/containerd 也有相同 image。
 

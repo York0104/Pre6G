@@ -1,0 +1,15 @@
+mirrors:
+  harbor.iccl.local:
+    endpoint:
+      - "https://harbor.iccl.local"
+
+configs:
+  harbor.iccl.local:
+    auth:
+      username: "<HARBOR_ROBOT_ACCOUNT>"
+      password: "<HARBOR_ROBOT_TOKEN>"
+    tls:
+      ca_file: /etc/rancher/k3s/harbor-ca.crt
+
+# If the lab PoC temporarily uses a non-TLS Harbor endpoint, replace the
+# endpoint above with "http://harbor.iccl.local". Keep the explicit scheme.

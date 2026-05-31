@@ -51,13 +51,18 @@ RESOURCE_PLOTTER="${BASE_DIR}/common/plot_resource_overview.py"
 VM_AGG_COLLECTOR="${BASE_DIR}/../thermal_analysis/collect_vm_aggregator_csv.py"
 VM_AGG_TRAINING="${BASE_DIR}/common/extract_vmagg_training_features.py"
 VM_AGGREGATOR="${MONITORING_DIR}/vm_aggregator.py"
-IMG="${EXPERIMENT_LAYER_DIR}/yolo26_k8s/test_images/sanity_input.png"
+IMG="${EXPERIMENT_LAYER_DIR}/yolo26_workload/test_images/sanity_input.png"
 VM_AGG_INTERVAL="${VM_AGG_INTERVAL:-1.0}"
 
 RESULT_ROOT="${BASE_DIR}/results/single_pod_bgload_fan_cycle"
 RUN_ID="singlepod_bgcycle_repeat${REPEAT}_cy${CYCLES}_$(date +%Y%m%d_%H%M%S)"
 RUN_DIR="${RESULT_ROOT}/${RUN_ID}"
 THERMAL_DIR="${RUN_DIR}/thermal_cycle"
+MEASUREMENT_CSV="${RUN_DIR}/measurement_raw.csv"
+MEASUREMENT_LOG="${RUN_DIR}/measurement.log"
+VM_AGG_CSV="${RUN_DIR}/vm_aggregator_timeseries.csv"
+VM_AGG_LOG="${RUN_DIR}/vm_aggregator_timeseries.log"
+THERMAL_RUNNER_LOG="${RUN_DIR}/thermal_runner.log"
 mkdir -p "${RESULT_ROOT}" "${RUN_DIR}" "${THERMAL_DIR}"
 
 echo "[INFO] RUN_DIR=${RUN_DIR}"
@@ -175,9 +180,10 @@ echo "START_EPOCH=${START_EPOCH}" | tee "${RUN_DIR}/time_window.txt"
 echo "START_ISO=${START_ISO}" | tee -a "${RUN_DIR}/time_window.txt"
 
 echo "[INFO] Start vm_aggregator collector..."
+touch "${VM_AGG_LOG}"
 python3 "${VM_AGG_COLLECTOR}" \
   --aggregator "${VM_AGGREGATOR}" \
-  --out "${RUN_DIR}/vm_aggregator_timeseries.csv" \
+  --out "${VM_AGG_CSV}" \
   --seconds "${CLIENT_MAX_DURATION}" \
   --interval "${VM_AGG_INTERVAL}" \
   --node "${NODE_NAME}" \
@@ -187,10 +193,11 @@ python3 "${VM_AGG_COLLECTOR}" \
   --netdata-child-url "${NETDATA_CHILD_URL}" \
   --netdata-parent-base-url "${NETDATA_PARENT_BASE_URL}" \
   --mode fast \
-  > "${RUN_DIR}/vm_aggregator_timeseries.log" 2>&1 &
+  > "${VM_AGG_LOG}" 2>&1 &
 VM_AGG_PID=$!
 
 echo "[INFO] Start serial client"
+touch "${MEASUREMENT_LOG}"
 python3 "${CLIENT}" \
   --role measurement \
   --url "${TARGET_URL}" \
@@ -202,6 +209,7 @@ python3 "${CLIENT}" \
 CLIENT_PID=$!
 
 echo "[INFO] Start background-load thermal cycle runner"
+touch "${THERMAL_RUNNER_LOG}"
 OUT_DIR="${THERMAL_DIR}" \
 CYCLES="${CYCLES}" \
 NORMAL_HOLD_SECONDS="${NORMAL_HOLD_SECONDS}" \
@@ -219,12 +227,13 @@ BG_DUTY="${BG_DUTY}" \
 BG_PERIOD_MS="${BG_PERIOD_MS}" \
 WORKLOAD_HEADROOM_SECONDS="${WORKLOAD_HEADROOM_SECONDS}" \
 CC_PASSWORD="${CC_PASSWORD}" \
-bash "${THERMAL_RUNNER}" "${RUN_ID}" 2>&1 | tee "${RUN_DIR}/thermal_runner.log" &
+bash "${THERMAL_RUNNER}" "${RUN_ID}" 2>&1 | tee "${THERMAL_RUNNER_LOG}" &
 THERMAL_PID=$!
 
 wait "${THERMAL_PID}"
 kill -TERM "${CLIENT_PID}" 2>/dev/null || true
-wait "${CLIENT_PID}" || true
+CLIENT_RC=0
+wait "${CLIENT_PID}" || CLIENT_RC=$?
 
 END_EPOCH="$(date +%s)"
 END_ISO="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -241,8 +250,35 @@ kubectl -n "${NAMESPACE}" get events --sort-by=.lastTimestamp | tail -n 50 | tee
 
 echo "[INFO] Extract vm_aggregator training-ready features..."
 python3 "${VM_AGG_TRAINING}" \
-  --input "${RUN_DIR}/vm_aggregator_timeseries.csv" \
+  --input "${VM_AGG_CSV}" \
   > "${RUN_DIR}/vm_aggregator_training_features.log" 2>&1 || true
+
+if [ ! -f "${MEASUREMENT_CSV}" ]; then
+  {
+    echo "[WARN] measurement_raw.csv was not produced."
+    echo "expected_path=${MEASUREMENT_CSV}"
+    echo "client_exit_code=${CLIENT_RC}"
+    echo "measurement_log=${MEASUREMENT_LOG}"
+    echo "thermal_runner_log=${THERMAL_RUNNER_LOG}"
+    echo "vm_aggregator_log=${VM_AGG_LOG}"
+    echo ""
+    echo "[HINT] Check measurement.log first. The serial client may have failed before writing any rows."
+  } | tee "${RUN_DIR}/summary.txt"
+  cp "${RUN_DIR}/summary.txt" "${RUN_DIR}/measurement_missing.txt"
+
+  if [ -f "${MEASUREMENT_LOG}" ]; then
+    {
+      echo ""
+      echo "--- measurement.log (tail -n 80) ---"
+      tail -n 80 "${MEASUREMENT_LOG}" || true
+    } >> "${RUN_DIR}/summary.txt"
+  fi
+
+  echo "[WARN] Missing ${MEASUREMENT_CSV}; skipping summary and plots that require client measurements."
+  echo "[INFO] Done with warnings"
+  echo "[INFO] Result directory: ${RUN_DIR}"
+  exit 0
+fi
 
 python3 - "${RUN_DIR}" <<'PY' | tee "${RUN_DIR}/summary.txt"
 import csv

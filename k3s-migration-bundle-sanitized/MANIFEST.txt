@@ -42,6 +42,15 @@ rfsoc/README.md
 rfsoc/collector_nodes.json
 rfsoc/vm-aggregators-reference.md
 rfsoc/vm_agg_rfsoc.py
+registry/IMPLEMENTATION_PROGRESS.md
+registry/README.md
+registry/REBUILD_STEPS.md
+registry/VERIFY_REGISTRY_PULL.md
+registry/harbor-project-policy.md
+registry/harbor-registries.yaml.example
+registry/image-build.namespace.yaml
+registry/imagepullsecret.example.yaml
+registry/kaniko-yolo26-build-job.yaml
 secrets-reference.README.md
 separation-audit/AUTOSCALE_FILE_GROUPS.md
 separation-audit/HOME_YAML_AUDIT.md
@@ -105,7 +114,9 @@ thermal-yolo/thermal_analysis/yolo26_latency_client_stable.py
 thermal-yolo/yolo26_workload/Dockerfile
 thermal-yolo/yolo26_workload/app.py
 thermal-yolo/yolo26_workload/deployment.yaml
+thermal-yolo/yolo26_workload/deployment.registry.yaml
 thermal-yolo/yolo26_workload/requirements.txt
 thermal-yolo/yolo26_workload/service.yaml
 thermal-yolo/yolo26_workload/test_images/sanity_input.png
 thermal-yolo/yolo26_workload/yolo26_3inst_icclz1.yaml
+thermal-yolo/yolo26_workload/yolo26_3inst_icclz1.registry.yaml

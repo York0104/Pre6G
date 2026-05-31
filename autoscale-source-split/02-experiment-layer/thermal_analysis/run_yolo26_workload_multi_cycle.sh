@@ -3,7 +3,9 @@ set -euo pipefail
 
 BATCH_ID="${1:-batch_$(date +%Y%m%d_%H%M%S)}"
 
-AUTOSCALE_DIR="${AUTOSCALE_DIR:-$HOME/AutoScale}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+AUTOSCALE_DIR="${AUTOSCALE_DIR:-$REPO_ROOT/autoscale-source-split/02-experiment-layer}"
 BASE_OUT_DIR="${BASE_OUT_DIR:-$HOME/exp_runs/$BATCH_ID}"
 
 CYCLES="${CYCLES:-6}"
@@ -11,7 +13,7 @@ TARGET="${TARGET:-90}"
 BAND="${BAND:-3}"
 COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-600}"
 
-SUMMARY_PY="${AUTOSCALE_DIR}/experiments/thermal_analysis/summarize_multi_cycle.py"
+SUMMARY_PY="${AUTOSCALE_DIR}/thermal_analysis/summarize_multi_cycle.py"
 
 mkdir -p "$BASE_OUT_DIR"
 
@@ -135,7 +137,7 @@ for i in $(seq 1 "$CYCLES"); do
 
   set +e
   RUN_DIR="$RUN_DIR" TARGET="$TARGET" BAND="$BAND" \
-    bash "$AUTOSCALE_DIR/experiments/thermal_analysis/run_yolo26_k8s_experiment.sh" "$RUN_ID"
+    bash "$AUTOSCALE_DIR/thermal_analysis/run_yolo26_workload_experiment.sh" "$RUN_ID"
   RC=$?
   set -e
 

@@ -29,7 +29,7 @@
 ### 匯入 YOLO image
 
 ```bash
-cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/yolo26_k8s
+cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/yolo26_workload
 bash build_and_import_image_to_k3s.sh
 ```
 

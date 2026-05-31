@@ -14,7 +14,7 @@
 
 | 路徑 | 說明 |
 | --- | --- |
-| `k3s-migration-bundle-sanitized/` | GitHub-safe 的 k3s migration/reference bundle，包含 Kubernetes、Helm、monitoring、GPU、RFSoC、AP、thermal YOLO 參考。 |
+| `k3s-migration-bundle-sanitized/` | GitHub-safe 的 k3s migration/reference bundle，包含 Kubernetes、Helm、monitoring、GPU、RFSoC、AP、thermal YOLO 與 registry rebuild 參考。 |
 | `autoscale-source-split/` | 從 `/home/icclz2/Pre6G` 整理出的 source-level 分層，包含監控層、實驗層、API/dashboard 共用層。 |
 | `current-lab-handoff-private/` | 私密 current-lab connection handoff，包含 kubeconfig、SSH keys、AutoScale API env 等。 |
 | `MANIFEST.txt` | 總檔案清單。 |
@@ -43,5 +43,6 @@ MANIFEST.txt
 
 | 項目 | 原因 |
 | --- | --- |
-| `local/yolo26n:0.5` image tar | 此主機找不到 image tar；新 worker 需自行 build/import 或改用 registry image。 |
+| Harbor 實際 credentials / CA / built image | repo 已新增 `k3s-migration-bundle-sanitized/registry/` 樣板與 registry manifests，但正式 Harbor token、CA 與已建好的 image 仍屬 private runtime 資料。 |
+| `local/yolo26n:0.1` image tar | 此主機找不到 image tar；若不走 Harbor 路徑，新 worker 仍需自行 build/import。 |
 | worker-side `gpu-tempctl-lab` | 專案位於 worker node，不在此主機；請參考 `k3s-migration-bundle-sanitized/external-worker/`。 |

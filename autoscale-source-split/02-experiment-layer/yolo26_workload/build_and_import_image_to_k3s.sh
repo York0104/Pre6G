@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE_TAGS_STR="${IMAGE_TAGS:-0.1 0.5}"
+IMAGE_TAGS_STR="${IMAGE_TAGS:-0.1}"
 CTR_IMPORT_CMD="${CTR_IMPORT_CMD:-sudo k3s ctr images import}"
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -26,6 +26,6 @@ for tag in ${IMAGE_TAGS_STR}; do
   ${CTR_IMPORT_CMD} "${tmp_tar}"
   cleanup
   trap - EXIT
-done
+ done
 
 echo "[OK] YOLO26 images imported into k3s."

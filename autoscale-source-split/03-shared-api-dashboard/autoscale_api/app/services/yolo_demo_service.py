@@ -21,7 +21,7 @@ EVENTS_PATH = RUNTIME_ROOT / "events.jsonl"
 REQUEST_CLIENT = (
     AUTOSCALE_ROOT / "experiments" / "experiments_yolo" / "common" / "request_client_serial.py"
 )
-SANITY_IMAGE = AUTOSCALE_ROOT / "experiments" / "yolo26_k8s" / "test_images" / "sanity_input.png"
+SANITY_IMAGE = AUTOSCALE_ROOT / "experiments" / "yolo26_workload" / "test_images" / "sanity_input.png"
 
 NAMESPACE = "intent-lab"
 FOCUS_DEPLOY = "yolo26n-task3-focus"

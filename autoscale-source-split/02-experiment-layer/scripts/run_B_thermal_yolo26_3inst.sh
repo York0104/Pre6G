@@ -131,7 +131,7 @@ done | tee "${RUN_DIR}/logs/pre_healthz.txt"
 if [ -n "${TEST_IMAGE:-}" ]; then
   IMAGE_PATH="${TEST_IMAGE}"
 else
-  IMAGE_PATH="${EXPERIMENT_LAYER_DIR}/yolo26_k8s/test_images/sanity_input.png"
+  IMAGE_PATH="${EXPERIMENT_LAYER_DIR}/yolo26_workload/test_images/sanity_input.png"
 fi
 
 if [ ! -f "${IMAGE_PATH}" ]; then

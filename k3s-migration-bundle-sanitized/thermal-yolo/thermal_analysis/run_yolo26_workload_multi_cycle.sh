@@ -135,7 +135,7 @@ for i in $(seq 1 "$CYCLES"); do
 
   set +e
   RUN_DIR="$RUN_DIR" TARGET="$TARGET" BAND="$BAND" \
-    bash "$AUTOSCALE_DIR/experiments/thermal_analysis/run_yolo26_k8s_experiment.sh" "$RUN_ID"
+    bash "$AUTOSCALE_DIR/experiments/thermal_analysis/run_yolo26_workload_experiment.sh" "$RUN_ID"
   RC=$?
   set -e
 

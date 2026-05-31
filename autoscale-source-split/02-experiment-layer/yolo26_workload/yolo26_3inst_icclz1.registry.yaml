@@ -21,13 +21,15 @@ spec:
         role: focus
     spec:
       runtimeClassName: nvidia
+      imagePullSecrets:
+        - name: harbor-pull-secret
       nodeSelector:
-        kubernetes.io/hostname: icclz1
+        kubernetes.io/hostname: REPLACE_GPU_NODE
       terminationGracePeriodSeconds: 5
       containers:
         - name: yolo26
-          image: local/yolo26n:0.1
-          imagePullPolicy: Never
+          image: harbor.iccl.local/pre6g/yolo26n:0.1
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 18080
@@ -87,13 +89,15 @@ spec:
         role: bg-1
     spec:
       runtimeClassName: nvidia
+      imagePullSecrets:
+        - name: harbor-pull-secret
       nodeSelector:
-        kubernetes.io/hostname: icclz1
+        kubernetes.io/hostname: REPLACE_GPU_NODE
       terminationGracePeriodSeconds: 5
       containers:
         - name: yolo26
-          image: local/yolo26n:0.1
-          imagePullPolicy: Never
+          image: harbor.iccl.local/pre6g/yolo26n:0.1
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 18080
@@ -153,13 +157,15 @@ spec:
         role: bg-2
     spec:
       runtimeClassName: nvidia
+      imagePullSecrets:
+        - name: harbor-pull-secret
       nodeSelector:
-        kubernetes.io/hostname: icclz1
+        kubernetes.io/hostname: REPLACE_GPU_NODE
       terminationGracePeriodSeconds: 5
       containers:
         - name: yolo26
-          image: local/yolo26n:0.1
-          imagePullPolicy: Never
+          image: harbor.iccl.local/pre6g/yolo26n:0.1
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 18080

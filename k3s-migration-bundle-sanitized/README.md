@@ -11,8 +11,9 @@
 5. 使用 `gpu/` 安裝 DCGM exporter 與自訂 metrics ConfigMap。
 6. 使用 `netdata-ap/` 安裝 Netdata、AP SNMP/gateway 相關設定。
 7. 使用 `rfsoc/` 與 vmagent RFSoC scrape config 恢復 RFSoC monitoring。
-8. build/import YOLO image，套用 `thermal-yolo/` workload。
-9. 驗證 PromQL targets、DCGM metrics、Netdata/cAdvisor metrics、AP metrics、RFSoC node-exporter metrics。
+8. 依 `registry/REBUILD_STEPS.md` 配置 Harbor registry，決定使用 Harbor pull 或保留 manual build/import YOLO image。
+9. 套用 `thermal-yolo/` workload。
+10. 驗證 PromQL targets、DCGM metrics、Netdata/cAdvisor metrics、AP metrics、RFSoC node-exporter metrics，以及 YOLO `/healthz`。
 
 ## 目錄說明
 
@@ -23,6 +24,7 @@
 | `nvidia-device-plugin/` | NVIDIA Device Plugin values、GPU time-slicing/sharing config 與 smoke test manifests。 |
 | `netdata-ap/` | Netdata values、NodePort、AP gateway scripts、OpenWrt AP SNMP export。 |
 | `rfsoc/` | RFSoC aggregator/config 參考與 RFSoC VM aggregator 文件。 |
+| `registry/` | Harbor registry、Kaniko build、k3s `registries.yaml`、implementation progress 與 rebuild SOP。 |
 | `thermal-yolo/` | thermal analysis scripts、YOLO k8s app/manifests、目前 `intent-lab` workload export。 |
 | `cluster-access/` | Calico/CNI、NodePort、in-cluster aggregator Job、node/version live export。 |
 | `separation-audit/` | 監控/實驗分離、AutoScale 檔案分組、舊版/無用候選與 home YAML audit。 |
@@ -34,11 +36,19 @@
 
 | 項目 | 目前值 / 說明 |
 | --- | --- |
-| YOLO image | `local/yolo26n:0.5`，且 workload 使用 `imagePullPolicy: Never`；新 worker 必須有 image 或改 manifest。 |
+| YOLO image | 目前正式支援與重建流程統一使用 `local/yolo26n:0.1`；repo 另已新增 Harbor registry 版 manifests 與 `registry/` 樣板。`intent-lab` 的歷史 live export 仍可見 `0.5`，請視為舊快照。 |
 | RFSoC targets | Lab LAN `192.168.100.217:9100`；Tailscale `100.91.37.32:9100`。 |
 | AP SNMP | target `192.168.1.1`，community `public`，interval `10s`。 |
 | GPU sharing | current live ConfigMap 為 `replicas: 100`；舊註解/備份可能仍提到 `4`。 |
 | AutoScale source | 實際分層 source 在 `../autoscale-source-split/`。 |
+
+## Registry Rebuild Entry
+
+若你要在新 cluster 直接走 Harbor pull：
+
+1. 先看 `registry/IMPLEMENTATION_PROGRESS.md`
+2. 再看 `registry/REBUILD_STEPS.md`
+3. 若 pull 失敗，查 `registry/VERIFY_REGISTRY_PULL.md`
 
 ## 私密資料
 

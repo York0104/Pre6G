@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kaniko-build-yolo26n
+  namespace: image-build
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: kaniko
+          image: gcr.io/kaniko-project/executor:v1.23.2-debug
+          args:
+            # Replace the repository ref with a fixed commit SHA for reproducible builds.
+            - "--context=git://github.com/York0104/Pre6G.git#refs/heads/k3s-rebuild"
+            - "--context-sub-path=autoscale-source-split/02-experiment-layer/yolo26_workload"
+            - "--dockerfile=Dockerfile"
+            - "--destination=harbor.iccl.local/pre6g/yolo26n:0.1"
+            - "--cache=true"
+            - "--cache-repo=harbor.iccl.local/pre6g/cache"
+            - "--image-name-with-digest-file=/workspace/image-name-with-digest.txt"
+          volumeMounts:
+            - name: docker-config
+              mountPath: /kaniko/.docker
+      volumes:
+        - name: docker-config
+          secret:
+            secretName: harbor-push-secret
+            items:
+              - key: .dockerconfigjson
+                path: config.json

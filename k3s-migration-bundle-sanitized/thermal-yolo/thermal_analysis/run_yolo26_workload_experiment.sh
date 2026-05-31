@@ -10,35 +10,30 @@ set -euo pipefail
 #
 # Assumptions:
 # - K8s YOLO26 service is already deployed and healthy
-# - current repo exists on master
-# - iccl venv exists at /home/icclz2/Pre6G/iccl (or VENV_ACTIVATE override)
+# - ~/AutoScale exists on master
+# - iccl venv exists at ~/AutoScale/iccl
 # - run_cycle_from_master.sh, yolo26_latency_client.py,
 #   trim_latency_to_aligned.py, merge_latency.py,
 #   summarize_service_latency.py already exist
 #
 # Example:
 #   export CC_PASSWORD='your_cc_password'
-#   bash experiments/thermal_analysis/run_yolo26_k8s_experiment.sh \
-#     cycle90_yolo26n_k8s_02
+#   bash experiments/thermal_analysis/run_yolo26_workload_experiment.sh \
+#     cycle90_yolo26n_workload_02
 
-RUN_ID="${1:-cycle90_yolo26n_k8s_$(date +%Y%m%d_%H%M%S)}"
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPERIMENT_LAYER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SPLIT_ROOT="$(cd "${EXPERIMENT_LAYER_DIR}/.." && pwd)"
-PRE6G_ROOT="$(cd "${SPLIT_ROOT}/.." && pwd)"
+RUN_ID="${1:-cycle90_yolo26n_workload_$(date +%Y%m%d_%H%M%S)}"
 
 CC_PASSWORD="${CC_PASSWORD:-nctuiiot}"
 
-AUTOSCALE_DIR="${AUTOSCALE_DIR:-$EXPERIMENT_LAYER_DIR}"
-VENV_ACTIVATE="${VENV_ACTIVATE:-$PRE6G_ROOT/iccl/bin/activate}"
+AUTOSCALE_DIR="${AUTOSCALE_DIR:-$HOME/AutoScale}"
+VENV_ACTIVATE="${VENV_ACTIVATE:-$AUTOSCALE_DIR/iccl/bin/activate}"
 RUN_DIR="${RUN_DIR:-$HOME/exp_runs/$RUN_ID}"
 
 TARGET="${TARGET:-90}"
 BAND="${BAND:-3}"
-SERVICE_URL="${SERVICE_URL:-http://140.113.179.6:30026/infer}"
+SERVICE_URL="${SERVICE_URL:-http://100.105.48.97:30026/infer}"
 HEALTH_URL="${HEALTH_URL:-${SERVICE_URL%/infer}/healthz}"
-IMAGE_PATH="${IMAGE_PATH:-$EXPERIMENT_LAYER_DIR/yolo26_k8s/test_images/sanity_input.png}"
+IMAGE_PATH="${IMAGE_PATH:-$AUTOSCALE_DIR/data/0016E5_08027.png}"
 LATENCY_INTERVAL="${LATENCY_INTERVAL:-1.0}"
 LATENCY_SECONDS="${LATENCY_SECONDS:-4200}"
 
@@ -48,7 +43,7 @@ if [[ -z "${CC_PASSWORD:-}" ]]; then
 fi
 
 if [[ ! -d "$AUTOSCALE_DIR" ]]; then
-  echo "找不到 experiment-layer 目錄: $AUTOSCALE_DIR"
+  echo "找不到 AutoScale 目錄: $AUTOSCALE_DIR"
   exit 1
 fi
 
@@ -67,13 +62,13 @@ cd "$AUTOSCALE_DIR"
 source "$VENV_ACTIVATE"
 
 for f in \
-  thermal_analysis/run_cycle_from_master.sh \
-  thermal_analysis/yolo26_latency_client.py \
-  thermal_analysis/trim_latency_to_aligned.py \
-  thermal_analysis/merge_latency.py \
-  thermal_analysis/summarize_service_latency.py \
-  thermal_analysis/plot_latency_results.py \
-  thermal_analysis/plot_thermal_smclock_latency.py; do
+  experiments/thermal_analysis/run_cycle_from_master.sh \
+  experiments/thermal_analysis/yolo26_latency_client.py \
+  experiments/thermal_analysis/trim_latency_to_aligned.py \
+  experiments/thermal_analysis/merge_latency.py \
+  experiments/thermal_analysis/summarize_service_latency.py \
+  experiments/thermal_analysis/plot_latency_results.py \
+  experiments/thermal_analysis/plot_thermal_smclock_latency.py; do
   if [[ ! -f "$f" ]]; then
     echo "缺少必要檔案: $AUTOSCALE_DIR/$f"
     exit 1
@@ -94,7 +89,7 @@ echo "==> 檢查 YOLO26 service healthz"
 curl -fsS "$HEALTH_URL" ; echo
 
 echo "==> 背景啟動 latency client"
-python "$AUTOSCALE_DIR/thermal_analysis/yolo26_latency_client.py" \
+python "$AUTOSCALE_DIR/experiments/thermal_analysis/yolo26_latency_client.py" \
   --url "$SERVICE_URL" \
   --image "$IMAGE_PATH" \
   --out "$RUN_DIR/latency.csv" \
@@ -113,7 +108,7 @@ trap cleanup EXIT
 
 echo "==> 執行 thermal cycle"
 OUT_DIR="$RUN_DIR" TARGET="$TARGET" BAND="$BAND" \
-  bash "$AUTOSCALE_DIR/thermal_analysis/run_cycle_from_master.sh" "$RUN_ID"
+  bash "$AUTOSCALE_DIR/experiments/thermal_analysis/run_cycle_from_master.sh" "$RUN_ID"
 
 echo "==> 停止 latency client"
 cleanup
@@ -129,7 +124,7 @@ if [[ ! -f "$RUN_DIR/aligned_metrics.csv" ]]; then
 fi
 
 echo "==> trim latency 到 aligned 範圍"
-python "$AUTOSCALE_DIR/thermal_analysis/trim_latency_to_aligned.py" \
+python "$AUTOSCALE_DIR/experiments/thermal_analysis/trim_latency_to_aligned.py" \
   --run-dir "$RUN_DIR" \
   | tee "$RUN_DIR/trim_latency.log"
 
@@ -137,22 +132,22 @@ cp "$RUN_DIR/latency.csv" "$RUN_DIR/latency_full_original.csv"
 cp "$RUN_DIR/latency_trimmed.csv" "$RUN_DIR/latency.csv"
 
 echo "==> merge latency + thermal/system"
-python "$AUTOSCALE_DIR/thermal_analysis/merge_latency.py" \
+python "$AUTOSCALE_DIR/experiments/thermal_analysis/merge_latency.py" \
   --run-dir "$RUN_DIR" \
   | tee "$RUN_DIR/merge_latency.log"
 
 echo "==> summarize service latency"
-python "$AUTOSCALE_DIR/thermal_analysis/summarize_service_latency.py" \
+python "$AUTOSCALE_DIR/experiments/thermal_analysis/summarize_service_latency.py" \
   --csv "$RUN_DIR/aligned_service_metrics.csv" \
   | tee "$RUN_DIR/service_latency_summary.csv"
 
 echo "==> visualize latency results"
-python "$AUTOSCALE_DIR/thermal_analysis/plot_latency_results.py" \
+python "$AUTOSCALE_DIR/experiments/thermal_analysis/plot_latency_results.py" \
   --csv "$RUN_DIR/aligned_service_metrics.csv" \
   --outdir "$RUN_DIR/latency_plots"
 
 echo "==> visualize thermal + fan + sm clock + latency"
-python "$AUTOSCALE_DIR/thermal_analysis/plot_thermal_smclock_latency.py" \
+python "$AUTOSCALE_DIR/experiments/thermal_analysis/plot_thermal_smclock_latency.py" \
   "$RUN_DIR" \
   --output "$RUN_DIR/thermal_smclock_latency.png" \
   --title "YOLO26 Thermal / Fan / SM Clock / Latency - ${RUN_ID}" \

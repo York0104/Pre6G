@@ -36,7 +36,7 @@ Worker node 需要：
 - worker repo 預設 `/home/icclz1/gpu-tempctl-lab`
 - `nvidia-smi`
 - 熱控腳本可由 master 透過 ssh 啟動
-- YOLO pod 使用的 image：`local/yolo26n:0.1`
+- YOLO pod 使用的 image：預設為 `local/yolo26n:0.1`；若採 Harbor 路徑，請改用 `yolo26_workload/yolo26_3inst_icclz1.registry.yaml`
 
 Kubernetes / monitoring 需要：
 
@@ -118,7 +118,7 @@ Kubernetes / monitoring 需要：
 
 Deployment：
 
-- `experiments/yolo26_k8s/yolo26_3inst_icclz1.yaml`
+- `thermal-yolo/yolo26_workload/yolo26_3inst_icclz1.yaml`
   - 三個 YOLO deployment 固定在 `icclz1`。
   - 使用 `nvidia.com/gpu.shared: "1"`。
   - 三個服務共用 GPU，透過不同 hostPort 暴露。
@@ -272,11 +272,17 @@ source iccl/bin/activate
 ### 2. 套用三個 YOLO deployment
 
 ```bash
-kubectl apply -f experiments/yolo26_k8s/yolo26_3inst_icclz1.yaml
+kubectl apply -f thermal-yolo/yolo26_workload/yolo26_3inst_icclz1.yaml
 
 kubectl -n intent-lab rollout status deploy/yolo26n-focus
 kubectl -n intent-lab rollout status deploy/yolo26n-bg-1
 kubectl -n intent-lab rollout status deploy/yolo26n-bg-2
+```
+
+若要改走 Harbor registry image：
+
+```bash
+kubectl apply -f thermal-yolo/yolo26_workload/yolo26_3inst_icclz1.registry.yaml
 ```
 
 ### 3. 檢查服務

@@ -29,12 +29,11 @@
 
 ### 1. YOLO image 與三實例 shared-GPU service
 
-已完成：
+目前正式支援並建議使用的 image tag：
 
 - `local/yolo26n:0.1`
-- `local/yolo26n:0.5`
 
-兩個 image 的 build / import，且已匯入 `iccl-cluster-z2` 與 `icclz1` 的 k3s containerd。
+`intent-lab` 的歷史匯出快照仍可見 `0.5`，但目前 repo 的正式重建與驗證流程一律以 `0.1` 為準。
 
 目前 `intent-lab` 中已可正常提供三個 service：
 
@@ -95,14 +94,13 @@
 若在新環境重建，先執行：
 
 ```bash
-cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/yolo26_k8s
+cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/yolo26_workload
 bash build_and_import_image_to_k3s.sh
 ```
 
 主要 image tag：
 
 - `local/yolo26n:0.1`
-- `local/yolo26n:0.5`
 
 注意：若 workload 會排到 GPU worker，該 worker 的 k3s/containerd 也必須有相同 image。
 
@@ -149,7 +147,7 @@ bash build_and_import_image_to_k3s.sh
 | `experiments_yolo/` | 目前主要 YOLO 實驗 workflow，包含 saturation、single pod、fault fan、bgload fan cycle。 |
 | `scripts/` | 較早期或通用的 YOLO26 thermal/rate sweep 腳本。 |
 | `thermal_analysis/` | thermal YOLO 資料收集、合併、繪圖與 batch runner。 |
-| `yolo26_k8s/` | YOLO26 inference service Dockerfile、app、k8s manifests、image build/import helper。 |
+| `yolo26_workload/` | YOLO26 inference service Dockerfile、app、k8s manifests、image build/import helper。 |
 
 ## Analyzer / pandas 備註
 

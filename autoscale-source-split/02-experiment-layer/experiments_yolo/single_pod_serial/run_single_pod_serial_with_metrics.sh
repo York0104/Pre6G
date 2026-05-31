@@ -33,7 +33,7 @@ RESOURCE_PLOTTER="${BASE_DIR}/common/plot_resource_overview.py"
 VM_AGG_COLLECTOR="${BASE_DIR}/../thermal_analysis/collect_vm_aggregator_csv.py"
 VM_AGG_TRAINING="${BASE_DIR}/common/extract_vmagg_training_features.py"
 VM_AGGREGATOR="${MONITORING_DIR}/vm_aggregator.py"
-IMG="${EXPERIMENT_LAYER_DIR}/yolo26_k8s/test_images/sanity_input.png"
+IMG="${EXPERIMENT_LAYER_DIR}/yolo26_workload/test_images/sanity_input.png"
 VM_AGG_INTERVAL="${VM_AGG_INTERVAL:-1.0}"
 
 RESULT_ROOT="${BASE_DIR}/results/single_pod_serial"

@@ -168,14 +168,15 @@ kubectl describe node icclz1 | grep -E 'nvidia.com/gpu|nvidia.com/gpu.shared'
 ### 1. 先 build / import YOLO image
 
 ```bash
-cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/yolo26_k8s
+cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/yolo26_workload
 bash build_and_import_image_to_k3s.sh
 ```
 
-主要 image tag：
+目前正式支援的 image tag：
 
 - `local/yolo26n:0.1`
-- `local/yolo26n:0.5`
+
+歷史上曾出現 `0.5`，但這不再是目前建議的驗證或重建標準。
 
 注意：若 pod 會排到 GPU worker，該 worker 的 k3s/containerd 也必須有相同 image。
 

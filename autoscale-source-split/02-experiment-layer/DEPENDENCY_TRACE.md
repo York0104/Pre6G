@@ -56,15 +56,15 @@ YOLO service workload 目前依賴下列本地 image tag：
 
 ```text
 local/yolo26n:0.1
-local/yolo26n:0.5
+local/yolo26n:0.1
 ```
 
 目前 repo 內已提供可重建 image 的來源：
 
 ```text
-02-experiment-layer/yolo26_k8s/Dockerfile
-02-experiment-layer/yolo26_k8s/app.py
-02-experiment-layer/yolo26_k8s/build_and_import_image_to_k3s.sh
+02-experiment-layer/yolo26_workload/Dockerfile
+02-experiment-layer/yolo26_workload/app.py
+02-experiment-layer/yolo26_workload/build_and_import_image_to_k3s.sh
 ```
 
 在新 k3s 環境中，不需要回頭找舊 image tar；直接 build / import 即可。但若 pod 會排到特定 GPU worker，該 worker 的 k3s/containerd 也必須有同一份 image。

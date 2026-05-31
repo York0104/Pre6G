@@ -27,7 +27,7 @@ spec:
         kubernetes.io/hostname: icclz1
       containers:
         - name: yolo26
-          image: local/yolo26n:0.5
+          image: local/yolo26n:0.1
           imagePullPolicy: Never
           ports:
             - containerPort: 18080
@@ -91,7 +91,7 @@ spec:
         kubernetes.io/hostname: icclz1
       containers:
         - name: yolo26
-          image: local/yolo26n:0.5
+          image: local/yolo26n:0.1
           imagePullPolicy: Never
           ports:
             - containerPort: 18080

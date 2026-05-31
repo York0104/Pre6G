@@ -50,7 +50,7 @@ for d in yolo26n-focus yolo26n-bg-1 yolo26n-bg-2; do
 done
 echo
 
-IMAGE_PATH="${TEST_IMAGE:-${EXPERIMENT_LAYER_DIR}/yolo26_k8s/test_images/sanity_input.png}"
+IMAGE_PATH="${TEST_IMAGE:-${EXPERIMENT_LAYER_DIR}/yolo26_workload/test_images/sanity_input.png}"
 
 if [ ! -f "$IMAGE_PATH" ]; then
   echo "[ERR] 找不到測試圖片: $IMAGE_PATH"

@@ -19,7 +19,7 @@ COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-15}"
 # Comma-separated request rates. The script converts each rate to interval=1/rps.
 RATES_RPS="${RATES_RPS:-1,2,3,4,5,6,8,10,12,15,20}"
 
-IMAGE_PATH="${TEST_IMAGE:-${EXPERIMENT_LAYER_DIR}/yolo26_k8s/test_images/sanity_input.png}"
+IMAGE_PATH="${TEST_IMAGE:-${EXPERIMENT_LAYER_DIR}/yolo26_workload/test_images/sanity_input.png}"
 CLIENT="${CLIENT:-${EXPERIMENT_LAYER_DIR}/thermal_analysis/yolo26_latency_client_stable.py}"
 
 mkdir -p "${OUTDIR}/raw" "${OUTDIR}/logs" "${OUTDIR}/k8s" "${OUTDIR}/summary"
