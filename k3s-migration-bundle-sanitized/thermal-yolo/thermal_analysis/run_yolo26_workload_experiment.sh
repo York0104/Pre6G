@@ -23,7 +23,7 @@ set -euo pipefail
 
 RUN_ID="${1:-cycle90_yolo26n_workload_$(date +%Y%m%d_%H%M%S)}"
 
-CC_PASSWORD="${CC_PASSWORD:-nctuiiot}"
+CC_PASSWORD="${CC_PASSWORD:-}"
 
 AUTOSCALE_DIR="${AUTOSCALE_DIR:-$HOME/AutoScale}"
 VENV_ACTIVATE="${VENV_ACTIVATE:-$AUTOSCALE_DIR/iccl/bin/activate}"
