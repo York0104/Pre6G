@@ -24,9 +24,9 @@
 範例：
 
 ```text
-harbor.iccl.local/pre6g/yolo26n:0.1
-harbor.iccl.local/pre6g/yolo26n:thermal-task3-20260531
-harbor.iccl.local/pre6g/yolo26n:a1b2c3d
+harbor.iccl.local:8088/pre6g/yolo26n:0.1
+harbor.iccl.local:8088/pre6g/yolo26n:thermal-task3-20260531
+harbor.iccl.local:8088/pre6g/yolo26n:a1b2c3d
 ```
 
 ## Digest Recording
@@ -34,7 +34,7 @@ harbor.iccl.local/pre6g/yolo26n:a1b2c3d
 正式驗證與交付請一律額外保存 digest：
 
 ```text
-harbor.iccl.local/pre6g/yolo26n@sha256:<digest>
+harbor.iccl.local:8088/pre6g/yolo26n@sha256:<digest>
 ```
 
 ## Access Policy

@@ -207,34 +207,89 @@ python3 "${VM_AGG_TRAINING}" \
 
 echo "[INFO] Quick summary..."
 python3 - "${RUN_DIR}" <<'PY' | tee "${RUN_DIR}/summary.txt"
+import csv
+import math
+import statistics
 import sys
+from collections import Counter
 from pathlib import Path
-import pandas as pd
+
+
+def to_float(value):
+    if value in (None, ""):
+        return None
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(num):
+        return None
+    return num
+
+
+def percentile(values, pct):
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    values = sorted(values)
+    pos = (len(values) - 1) * pct
+    lower = math.floor(pos)
+    upper = math.ceil(pos)
+    if lower == upper:
+        return values[int(pos)]
+    weight = pos - lower
+    return values[lower] * (1 - weight) + values[upper] * weight
+
+
+def print_stats(label, values):
+    if not values:
+        return
+    print(f"\n{label}:")
+    print(f"count: {len(values)}")
+    print(f"mean: {statistics.fmean(values):.6f}")
+    print(f"min: {min(values):.6f}")
+    print(f"p50: {percentile(values, 0.50):.6f}")
+    print(f"p90: {percentile(values, 0.90):.6f}")
+    print(f"p95: {percentile(values, 0.95):.6f}")
+    print(f"p99: {percentile(values, 0.99):.6f}")
+    print(f"max: {max(values):.6f}")
+
 
 run_dir = Path(sys.argv[1])
 path = run_dir / "measurement_raw.csv"
-df = pd.read_csv(path)
-clean = df[df["error_type"].fillna("") == "normal_success"].copy()
+with path.open(newline="") as fh:
+    rows = list(csv.DictReader(fh))
 
-print("rows:", len(df))
-print("success rate:", df["success"].mean() if len(df) else None)
+clean = [row for row in rows if (row.get("error_type") or "") == "normal_success"]
+success_values = []
+for row in rows:
+    value = row.get("success", "")
+    if str(value).strip().lower() in {"1", "1.0", "true"}:
+        success_values.append(1.0)
+    elif str(value).strip().lower() in {"0", "0.0", "false"}:
+        success_values.append(0.0)
+
+print("rows:", len(rows))
+print("success rate:", (sum(success_values) / len(success_values)) if success_values else None)
 print("\nerror types:")
-print(df["error_type"].value_counts(dropna=False))
+for key, count in Counter((row.get("error_type") or "") for row in rows).items():
+    label = key if key else "<empty>"
+    print(f"{label}: {count}")
 
 for col in ["e2e_latency_ms", "server_latency_ms", "server_total_latency_ms"]:
-    if col in clean.columns:
-        clean[col] = pd.to_numeric(clean[col], errors="coerce")
-        print(f"\nclean {col}:")
-        print(clean[col].describe(percentiles=[0.5, 0.9, 0.95, 0.99]))
+    values = [to_float(row.get(col)) for row in clean]
+    values = [v for v in values if v is not None]
+    print_stats(f"clean {col}", values)
 
 print("\npods:")
-print(df["server_pod_name"].value_counts(dropna=False))
+for key, count in Counter((row.get("server_pod_name") or "") for row in rows).items():
+    label = key if key else "<empty>"
+    print(f"{label}: {count}")
 
-if "inter_request_gap_ms" in df.columns:
-    s = pd.to_numeric(df["inter_request_gap_ms"], errors="coerce").dropna()
-    if len(s):
-        print("\ninter_request_gap_ms:")
-        print(s.describe(percentiles=[0.5, 0.9, 0.95, 0.99]))
+gap_values = [to_float(row.get("inter_request_gap_ms")) for row in rows]
+gap_values = [v for v in gap_values if v is not None]
+print_stats("inter_request_gap_ms", gap_values)
 
 vm_path = run_dir / "vm_aggregator_timeseries.csv"
 if vm_path.exists():
@@ -245,7 +300,7 @@ if train_path.exists():
 PY
 
 echo "[INFO] Serial analysis..."
-python3 "${SERIAL_ANALYZER}" "${RUN_DIR}" | tee -a "${RUN_DIR}/serial_analysis.txt"
+python3 "${SERIAL_ANALYZER}" "${RUN_DIR}" | tee -a "${RUN_DIR}/serial_analysis.txt" || true
 
 echo "[INFO] Plot full timeline..."
 python3 "${TIMELINE_PLOTTER}" "${RUN_DIR}" > "${RUN_DIR}/plot_full_timeline.log" 2>&1 || true

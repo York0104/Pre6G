@@ -31,6 +31,16 @@
 
 測試輸出已於驗證後刪除。
 
+2026-06-02 已在目前主機重新完成同等短版 smoke test：
+
+- `rows=310`
+- `success_rate=100%`
+- `client_mean_ms=55.685`
+- `client_p95_ms=64.100`
+- `server_mean_ms=31.025`
+
+測試輸出應在驗證後刪除。
+
 ## Execution Model
 
 每個 cycle 包含：
@@ -39,7 +49,8 @@
 2. `fault_hold`
 3. `recovery_wait`
 
-在目前短版 smoke test 中，這三段都已實際執行過，並成功將 worker 端 `thermal_cycle` 日誌帶回 master。
+歷史上 `2026-05-28` 的短版驗證曾完成這三段並帶回 worker 端 `thermal_cycle` 日誌。
+本輪 `2026-06-02` 也已重新完成這一步。
 
 ## How To Run
 

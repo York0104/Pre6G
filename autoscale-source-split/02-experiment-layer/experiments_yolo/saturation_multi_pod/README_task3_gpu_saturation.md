@@ -24,6 +24,17 @@
   - `yolo26n-bg-1`
   - `yolo26n-bg-2`
 
+2026-06-02 已於目前主機重新完成短版 service-load smoke test：
+
+- `rows=3118`
+- `success_rate=100%`
+- `client_mean_ms=76.477`
+- `client_p95_ms=121.749`
+- `server_mean_ms=25.342`
+- `server_p95_ms=38.564`
+- 驗證後已恢復原本三實例 hostPort stack
+- 測試輸出已於驗證後刪除
+
 ## 前置條件
 
 ### 匯入 YOLO image

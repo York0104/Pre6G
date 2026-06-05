@@ -1,6 +1,6 @@
 # Registry Implementation Progress
 
-最後更新：2026-05-31
+最後更新：2026-06-04
 
 ## 目標
 
@@ -19,9 +19,11 @@
 | YOLO canonical path 收斂 | 完成 | 已統一以 `yolo26_workload/` 為正式路徑，並刪除舊 `yolo26_k8s/` 目錄副本。 |
 | YOLO 舊命名腳本收斂 | 完成 | 已將 `run_yolo26_k8s_*` 重新命名為 `run_yolo26_workload_*`，並完成 repo 內依賴掃描與引用更新。 |
 | 主 README / bundle README 串接 | 完成 | 已補上 registry 路徑與 rebuild 指引入口。 |
-| Harbor 專案、robot account、CA | 待實作 | 需在實際 lab / 交付環境建立。 |
-| 實際 build + push | 待驗證 | 尚未在 cluster 內執行 Kaniko job。 |
-| 實際 pull + deploy | 待驗證 | 尚未在目標 k3s node 以 Harbor image 完整驗證。 |
+| Harbor 專案、robot account、CA | 完成 | `pre6g` project、push/pull robot accounts、自簽 Harbor CA 已建立。 |
+| 實際 build + push | 完成 | `harbor.iccl.local:8088/pre6g/yolo26n:0.1` 已成功 build/tag/push。 |
+| 實際 pull + deploy | 完成 | `icclz1` 已成功使用 Harbor image，registry 版三實例已 `Running`。 |
+| Harbor HTTPS 8088 cutover | 完成 | 已確認本環境需以 `HTTPS:8088 + CA` 收斂，HTTP 路徑不再列為正式做法。 |
+| `crictl pull` 自動 auth | 部分完成 | `k3s ctr --user ... pull` 已成功，`crictl pull` 仍有 `no basic auth credentials` 殘餘問題。 |
 
 ## 已知風險與待決策
 
@@ -29,14 +31,14 @@
 2. Kaniko 適合 PoC，但不建議被視為長期唯一方案。
 3. 三實例 manifest 仍依賴 `hostPort` 與 `nodeSelector`，未來若做 scheduler 重構，還需再拆一次。
 4. Dockerfile 在 build 階段會下載 YOLO model，正式交付時最好補上內部 artifact 管理或 checksum 驗證。
+5. `icclz1` 上 `crictl pull` 的自動 Harbor auth 行為仍需後續追查；目前已以 `k3s ctr images pull --user ...` 作為有效 fallback。
 
 ## 建議下一步
 
-1. 在 Harbor 建立 `pre6g` project 與 pull/push robot account。
-2. 先建立 `harbor.iccl.local/pre6g/yolo26n:0.1`。
-3. 依 `REBUILD_STEPS.md` 在每個 k3s node 配置 `registries.yaml`。
-4. 先手動 build/push 一版 image 驗證整條 pull path。
-5. pull path 穩定後，再套用 `kaniko-yolo26-build-job.yaml` 驗證 cluster-side build。
+1. 將 Harbor `push` / `pull` token rotate，因本輪除錯過程中曾短暫暴露在終端貼文中。
+2. 若要完全收斂 runtime pull 體驗，繼續追 `crictl pull` 的自動 auth 問題。
+3. 若要正式交付，將 `harbor-ca.crt`、`registries.yaml` 與 node-side trust 安裝整理成可重複使用的主機 bootstrap 腳本。
+4. pull path 已可用後，再視需要驗證 `kaniko-yolo26-build-job.yaml`。
 
 ## 驗證結果紀錄欄位
 

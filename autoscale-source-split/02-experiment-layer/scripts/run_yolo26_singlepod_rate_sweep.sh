@@ -3,6 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPERIMENT_LAYER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SPLIT_ROOT="$(cd "${EXPERIMENT_LAYER_DIR}/.." && pwd)"
+PRE6G_ROOT="$(cd "${SPLIT_ROOT}/.." && pwd)"
+PYTHON_BIN="${PYTHON_BIN:-${PRE6G_ROOT}/iccl/bin/python}"
 
 RUN_ID="${1:-single_yolo26_rate_sweep_$(date +%Y%m%d_%H%M%S)}"
 OUTDIR="${OUTDIR:-${HOME}/exp_runs/${RUN_ID}}"
@@ -68,7 +71,7 @@ curl -sS -o /dev/null \
   | tee "${OUTDIR}/logs/pre_healthz.txt"
 
 echo "[INFO] Warmup ${WARMUP_SECONDS}s at 1 rps"
-python "${CLIENT}" \
+"${PYTHON_BIN}" "${CLIENT}" \
   --url "http://${WORKER_IP}:${PORT}/infer" \
   --image "${IMAGE_PATH}" \
   --seconds "${WARMUP_SECONDS}" \
@@ -109,7 +112,7 @@ for rate in "${RATE_LIST[@]}"; do
 
   if [ "${RATE_WARMUP_SECONDS}" != "0" ]; then
     echo "[INFO] Pre-rate warmup ${RATE_WARMUP_SECONDS}s at 1 rps for rate=${rate}"
-    python "${CLIENT}" \
+    "${PYTHON_BIN}" "${CLIENT}" \
       --url "http://${WORKER_IP}:${PORT}/infer" \
       --image "${IMAGE_PATH}" \
       --seconds "${RATE_WARMUP_SECONDS}" \
@@ -120,7 +123,7 @@ for rate in "${RATE_LIST[@]}"; do
 
   echo
   echo "[INFO] Test rate=${rate} rps interval=${interval}s duration=${DURATION}s"
-  python "${CLIENT}" \
+  "${PYTHON_BIN}" "${CLIENT}" \
     --url "http://${WORKER_IP}:${PORT}/infer" \
     --image "${IMAGE_PATH}" \
     --seconds "${DURATION}" \
@@ -128,7 +131,7 @@ for rate in "${RATE_LIST[@]}"; do
     --csv "${csv}" \
     > "${log}" 2>&1
 
-  RATE="${rate}" INTERVAL="${interval}" DURATION="${DURATION}" CSV="${csv}" SUMMARY_CSV="${SUMMARY_CSV}" python3 - <<'PY'
+  RATE="${rate}" INTERVAL="${interval}" DURATION="${DURATION}" CSV="${csv}" SUMMARY_CSV="${SUMMARY_CSV}" "${PYTHON_BIN}" - <<'PY'
 import csv
 import math
 import os

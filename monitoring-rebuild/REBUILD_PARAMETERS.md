@@ -67,3 +67,6 @@ Use:
 - `55-netdata.yaml` 是目前 live `k3s` 環境抽出的完整 Netdata stack；`60-netdata-child-stream-config.yaml` 必須在它之後再套一次，確保 child stream 目的地是已驗證可用的 NodePort。
 - host-side `vm_aggregator` 與 autoscale API 建議共用同一組 host env，避免兩邊端點不一致。
 - in-cluster `vm_aggregator` 建議優先走 service DNS，不依賴 NodePort。
+- 本輪 `icclz2` 重建時，`10-victoria-metrics.yaml`、`20-vmagent.yaml`、`40-kube-state-metrics.yaml` 內原先綁定舊 central node `iccl-cluster-z2` 的 selector 已改成 `icclz2`；正式切換到新主機時，除了 IP / port，也要一起檢查 node selector。
+- `20-vmagent.yaml` 目前已包含 `rfsoc4x2-node-exporter` 的 static scrape job，target 為 `100.91.37.32:9100`；若 RFSoC 改走其他可達路徑，需同步修改該段 labels 與 target。
+- external nodes 目前能被 API / dashboard 納入 inventory，不代表現場 telemetry 一定已恢復；若缺少 `~/.ssh/id_ed25519_rfsoc`、`~/.ssh/openwrt_ap_ed25519` 或 producer service，dashboard 會顯示 `OFFLINE`。

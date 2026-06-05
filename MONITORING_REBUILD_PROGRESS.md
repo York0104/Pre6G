@@ -1,36 +1,67 @@
 # Monitoring Rebuild Progress
 
-Date: 2026-05-28
+Date: 2026-06-03
 Workspace: `/home/icclz2/Pre6G`
+Host: `icclz2`
+Control plane IP: `140.113.179.9`
 
 ## Summary
 
-目前 `Pre6G` 的 `k3s` 監控主線已可作為重建基底：
+目前這台主機上的正式重建主線已完成到：
 
-- `monitoring-rebuild/` 已包含核心監控、GPU auto-discovery 與目前環境可用的 Netdata 重建入口
-- `vm_aggregator` 可用
-- `autoscale_api` 可啟動
-- `cluster-dashboard` 的 `Cluster Monitor` 可顯示資料
+- `k3s` control-plane 已建立並可正常提供 Kubernetes API
+- `monitoring-rebuild/` 核心監控 stack 已部署完成
+- GPU auto-discovery / device plugin / `dcgm-exporter` 已恢復
+- `autoscale_api` 可在 host-side Python venv 啟動
+- `cluster-dashboard` 可在本機以 Node 22 啟動與 build
+- `autoscale_api` 與 dashboard 已可由 user-level systemd 常駐啟動
+- dashboard 已可顯示一般 `k3s` nodes 與 external nodes
 
-目前交付狀態可視為：
+目前仍未完成的是 external node 的真實 telemetry 恢復：
 
-- `iccl-cluster-z2`：基本監控正常
-- `icclz1`：新加入成功，已自動辨識為 `GTX 1080 Ti` GPU worker，監控正常
-- `icclz3`：基本監控正常
-- `z590-aorus-xtreme`：GPU node 曾驗證可用，但仍受磁碟壓力影響，不列為穩定重建驗收節點
-- `mirc516-20250605`：已完成 GPU auto-discovery，但主機 NVIDIA driver/userspace mismatch，GPU metrics 尚未恢復
-- API / dashboard：`Cluster Monitor` 已驗證；experiment 頁面不列入本次重建範圍
-- `02-experiment-layer`：已在目前 k3s 環境恢復 `icclz1` shared-GPU YOLO 三實例主線，並完成短版 latency smoke test
-- `RFSoC external monitoring`：已改以 Tailscale `100.91.37.32:9100` 接入目前 `VictoriaMetrics`，`Netdata parent` 已看到 `pynq`，`vm_agg_rfsoc.py` 已可輸出 `collector_status = ok`
-- `K3s host-side vm_aggregator`：預設入口已同步到目前環境，改為 `VM_URL=http://140.113.179.9:31888`、`NETDATA_URL=http://140.113.179.9:32163`、`KSM_URL=http://140.113.179.9:32080`，避免裸跑時誤打舊的 cluster DNS service。
-- `systemd` host-side runtime：`ap-gateway.service`、`ap-snmp-gateway.service`、`autoscale-api.service` 已完成安裝與啟動驗證，正式重建路徑已從 `tmux` 改為 `systemd`。
-- `autoscale_api` token rotation：已完成實際 token 輪替，並補上文檔提醒 `autoscale-api.env` 不能只保留 `<control-plane-ip>` 範例值；否則 `full-metrics` 會出現 `RFSoC/AP 正常、所有 k8s nodes 同時失敗` 的假象。
+- `rfsoc4x2-pynq`：inventory 與 aggregator 已接回，但資料源仍失聯
+- `openwrt_ap`：inventory 與 aggregator 已接回，但 AP collectors / credentials 尚未恢復
+
+因此目前可視為：
+
+- `01-monitoring-layer` 主線：已完成，可用
+- `03-shared-api-dashboard` 的 `Cluster Monitor`：已完成，可用
+- API / dashboard user-level service：已完成，可用
+- `02-experiment-layer`：已重新驗證到第一段主線
+  - `intent-lab` namespace 已建立
+  - `nvidia.com/gpu.shared: 4` 已恢復
+  - `local/yolo26n:0.1` 已匯入 `icclz1`
+  - 三實例 hostPort stack 已 `Running`
+  - `2026-06-02` 短版 baseline smoke test 已重新完成
+  - `2026-06-02` 短版 `single_pod_serial` 與 `task3` smoke test 已重新完成
+  - `2026-06-02` 短版 `fault_fan` 與 `bgload_fan_cycle` smoke test 已重新完成
+  - `2026-06-03` `VictoriaMetrics` 已改為 PVC 持久化
+  - `2026-06-03` formal thermal / rate-sweep 長時 workflow 已完成縮短版驗證
+  - `2026-06-04` Harbor registry workflow 已重建完成到可實際使用：
+    - Harbor 已切換為 `HTTPS:8088`
+    - `harbor.iccl.local:8088/pre6g/yolo26n:0.1` 已成功 build/tag/push
+    - `icclz1` 已成功使用 Harbor image
+    - registry 版三實例 `yolo26n-focus/bg-1/bg-2` 已再次回到 `Running`
 
 ## Completed
 
-### 1. Core monitoring stack
+### 1. K3s control-plane
 
-已整理為可重建基底：
+已在目前主機完成：
+
+- `k3s server`
+- `write-kubeconfig-mode=0644`
+- `node-ip=140.113.179.9`
+- `node-external-ip=140.113.179.9`
+- `advertise-address=140.113.179.9`
+- `tls-san=140.113.179.9`
+- `flannel-iface=enp4s0`
+- `disable traefik`
+- `secrets-encryption=true`
+
+### 2. Core monitoring stack
+
+已部署並驗證：
 
 - `VictoriaMetrics`
 - `vmagent` cluster collector
@@ -48,59 +79,147 @@ Workspace: `/home/icclz2/Pre6G`
 - [monitoring-rebuild/20-vmagent.yaml](monitoring-rebuild/20-vmagent.yaml)
 - [monitoring-rebuild/30-node-exporter.yaml](monitoring-rebuild/30-node-exporter.yaml)
 - [monitoring-rebuild/40-kube-state-metrics.yaml](monitoring-rebuild/40-kube-state-metrics.yaml)
-- [monitoring-rebuild/45-nvidia-device-plugin.yaml](monitoring-rebuild/45-nvidia-device-plugin.yaml)
 - [monitoring-rebuild/55-netdata.yaml](monitoring-rebuild/55-netdata.yaml)
 - [monitoring-rebuild/60-netdata-child-stream-config.yaml](monitoring-rebuild/60-netdata-child-stream-config.yaml)
 
-### 2. GPU monitoring and auto-discovery
+本輪已同步修正：
 
-已完成：
+- `10-victoria-metrics.yaml`
+- `20-vmagent.yaml`
+- `40-kube-state-metrics.yaml`
+
+把舊的 central-node selector `iccl-cluster-z2` 改成目前 control-plane `icclz2`。
+
+### 3. GPU monitoring and auto-discovery
+
+已部署並驗證：
 
 - `Node Feature Discovery`
 - GPU alias rule
-- `nvidia-device-plugin` 依 GPU label 自動排程
-- `dcgm-exporter` 依 GPU label 自動排程
+- `nvidia-device-plugin`
+- `dcgm-exporter`
 
 對應 manifests：
 
+- [monitoring-rebuild/45-nvidia-device-plugin.yaml](monitoring-rebuild/45-nvidia-device-plugin.yaml)
 - [monitoring-rebuild/50-dcgm-exporter.yaml](monitoring-rebuild/50-dcgm-exporter.yaml)
 - [monitoring-rebuild/70-node-feature-discovery.yaml](monitoring-rebuild/70-node-feature-discovery.yaml)
 - [monitoring-rebuild/71-nfd-gpu-alias-rule.yaml](monitoring-rebuild/71-nfd-gpu-alias-rule.yaml)
 
-目前不再需要手動 `accelerator=nvidia` 當作主要機制。
+目前 `icclz1` 已被標成 GPU node，且 GPU metrics 可透過 `dcgm-exporter` 查到。
 
-### 3. API / Dashboard
+### 4. API / Dashboard runtime
 
-已整理並驗證：
+已建立 host-side runtime：
 
-- `autoscale_api` 已整理成 `systemd` 正式重建路徑，並保留本地腳本作為手動 fallback
-- `cluster-dashboard` 可由本地腳本啟動
-- `Cluster Monitor` 頁面可正常顯示節點資料
+- Python venv：`/home/icclz2/Pre6G/iccl`
+- API env：`autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env`
+- host monitoring env：`autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env`
+- dashboard env：`autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/.env`
 
-相關入口：
+已驗證：
 
-- [autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh](autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh)
-- [autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh](autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/run_local_dashboard.sh)
+- `autoscale_api` 可啟動
+- `GET /api/v1/nodes` 可回資料
+- `GET /api/v1/nodes/status` 可回資料
+- dashboard `npm run build` 成功
+- dashboard 可顯示 `k3s` nodes、`rfsoc4x2-pynq`、`openwrt_ap`
+- user-level systemd service 已建立並啟用：
+  - `pre6g-autoscale-api.service`
+  - `pre6g-cluster-dashboard.service`
+- `http://127.0.0.1:8000/` 可回應
+- `http://127.0.0.1:4174/` 可回應
+
+### 5. External node integration status
+
+已完成：
+
+- `collector_nodes.json` 內的 external nodes 可被 inventory 納入 API
+- `vm_agg_rfsoc.py` 已改成支援 partial / fallback，不再因單一路徑失敗就整體報錯
+- `20-vmagent.yaml` 已補回 `rfsoc4x2-node-exporter` scrape job
+- dashboard 對 external nodes 已改成：
+  - 缺 telemetry 顯示 `N/A`
+  - 外部節點失聯顯示 `OFFLINE`
+
+### 6. Experiment layer partial rebuild
+
+本輪已完成 `02-experiment-layer` 的第一段主線驗證：
+
+- `intent-lab` namespace 已建立
+- `icclz1` 再次出現 `nvidia.com/gpu.shared: 4`
+- `yolo26n-focus` / `yolo26n-bg-1` / `yolo26n-bg-2` 已成功 rollout
+- `http://140.113.179.6:18081/healthz`
+- `http://140.113.179.6:18082/healthz`
+- `http://140.113.179.6:18083/healthz`
+  皆回 `200`
+- `scripts/run_A_normal_baseline_yolo.sh` 的短版 smoke test 已於 `2026-06-02` 重新完成：
+  - focus `600/600` success，client mean `61.283 ms`，server mean `29.158 ms`
+  - bg-1 `300/300` success，client mean `90.206 ms`，server mean `45.408 ms`
+  - bg-2 `300/300` success，client mean `90.240 ms`，server mean `45.301 ms`
+  - `health_fail_total=0`
+  - `warmup_fail_total=0`
+  - `clean_normal_candidate=True`
+- 本次 baseline 測試輸出已於驗證後刪除，只保留結論
+- `single_pod_serial` 短版 smoke test 已於 `2026-06-02` 重新完成：
+  - `rows=1423`
+  - `success_rate=100%`
+  - `client_mean_ms=41.836`
+  - `client_p95_ms=46.670`
+  - `server_mean_ms=16.570`
+- `task3` 短版 service-load smoke test 已於 `2026-06-02` 重新完成：
+  - `rows=3118`
+  - `success_rate=100%`
+  - `client_mean_ms=76.477`
+  - `client_p95_ms=121.749`
+  - `server_mean_ms=25.342`
+  - `server_p95_ms=38.564`
+- `single_pod_serial_fault_fan` 短版 smoke test 已於 `2026-06-02` 重新完成：
+  - `rows=235`
+  - `success_rate=100%`
+  - `client_mean_ms=42.322`
+  - `client_p95_ms=49.052`
+  - `server_mean_ms=16.746`
+- `single_pod_bgload_fan_cycle` 短版 smoke test 已於 `2026-06-02` 重新完成：
+  - `rows=310`
+  - `success_rate=100%`
+  - `client_mean_ms=55.685`
+  - `client_p95_ms=64.100`
+  - `server_mean_ms=31.025`
+- worker SSH 已補回：
+  - `ssh icclz1-gpu "echo ok"` 可成功
+- 本次 `experiments_yolo/results/` 短版測試輸出應於驗證後刪除，只保留結論
+- repo-local `iccl` venv 已補齊分析套件：
+  - `pandas`
+  - `matplotlib`
+  - `numpy`
+  - `scikit-learn`
+  - `joblib`
+  - `xgboost`
+- Harbor registry workflow 已完成實測：
+  - Harbor `pre6g` project 與 push/pull robot account 已建立
+  - Harbor host 端 Docker 已配置 insecure registry 僅供 `build/tag/push`
+  - Harbor 已從 `HTTP:8088` 收斂為 `HTTPS:8088 + 自簽 CA`
+  - `icclz2` 與 `icclz1` 皆已安裝 Harbor CA 並寫入 k3s registry 設定
+  - `icclz1` 上 `sudo k3s ctr images pull --user ... harbor.iccl.local:8088/pre6g/yolo26n:0.1` 已成功
+  - 配合 `imagePullPolicy: IfNotPresent`，刪除舊 pod 後，registry 版三實例已全部回到 `Running`
 
 ## Current Runtime Snapshot
 
-截至 2026-05-28 確認：
+截至 2026-06-03 確認：
 
-- `kubectl get nodes -o wide` 可見 5 台節點：
-  - `iccl-cluster-z2`
-  - `icclz1`
-  - `icclz3`
-  - `mirc516-20250605`
-  - `z590-aorus-xtreme`
-- 所有節點皆 `Ready`
-- `Cluster Monitor` 可顯示 5 台節點的 inventory / status
-- `icclz1` 已自動套用：
-  - `node-exporter`
-  - `vmagent-node-local`
-  - `netdata-child`
-  - `nfd-worker`
-  - `nvidia-device-plugin`
-  - `dcgm-exporter`
+- `kubectl get nodes -o wide` 可見至少：
+  - `icclz2` control-plane
+  - `icclz1` worker
+- `monitoring` namespace 內：
+  - `vm-victoria-metrics-single-server` 已就緒
+  - central `vmagent` 已就緒
+  - `vmagent-node-local` 已就緒
+  - `node-exporter` 已就緒
+  - `kube-state-metrics` 已就緒
+- `gpu-monitoring` namespace 內：
+  - `dcgm-exporter` 已在 GPU node 運作
+- `netdata` namespace 內：
+  - parent / child / k8s-state 已部署
 
 ## Validation Results
 
@@ -108,133 +227,121 @@ Workspace: `/home/icclz2/Pre6G`
 
 已驗證：
 
-- `kubectl get pods -A` 可觀察 monitoring stack
-- `VictoriaMetrics` 可查到 `up`、`node_cpu_seconds_total`、`node_uname_info`
-- GPU 正常節點時可查到 `DCGM_FI_DEV_GPU_TEMP`
-- `kubectl get node icclz1 -o jsonpath='{.status.capacity.nvidia\.com/gpu}'` → `1`
-- `kubectl get node icclz1 -o jsonpath='{.status.allocatable.nvidia\.com/gpu}'` → `1`
-- `run_vm_aggregator_once.sh iccl-cluster-z2` → `collector_status = ok`
+- `VictoriaMetrics` 可查到 `up`
+- `VictoriaMetrics` 可查到 `node_uname_info`
+- GPU node 正常時可查到 `DCGM_FI_DEV_GPU_TEMP`
+- `run_vm_aggregator_once.sh icclz2` → `collector_status = ok`
 - `run_vm_aggregator_once.sh icclz1` → `collector_status = ok`
-- `run_vm_aggregator_once.sh icclz3` → `collector_status = ok`
-- `VictoriaMetrics` 已可查到：
-  - `up{job="node-exporter",instance="140.113.179.6:9100"} = 1`
-  - `up{job="kubelet-cadvisor",kubernetes_node="icclz1"} = 1`
-  - `DCGM_FI_DEV_GPU_TEMP{kubernetes_node="icclz1"}`
-- `vm_aggregator` 已成功讀到 `icclz1` GPU：
-  - `NVIDIA GeForce GTX 1080 Ti`
-  - driver `535.309.01`
-  - `capacity_gpus = 1` / `allocatable_gpus = 1`
 
 ### Dashboard / API
 
 已驗證：
 
-- `autoscale_api` 可回應 `GET /`、`GET /api/v1/nodes`、`GET /api/v1/nodes/status`
-- `cluster-dashboard` 的 `Cluster Monitor` 可正常載入與顯示資料
+- `autoscale_api` 可回應 `GET /`
+- `autoscale_api` 可回應 `GET /api/v1/nodes`
+- `autoscale_api` 可回應 `GET /api/v1/nodes/status`
+- `cluster-dashboard` build 成功
+- external nodes 無 telemetry 時不再顯示 `0.0%`
+- external nodes 無 telemetry / collector 異常時目前會顯示 `OFFLINE`
+- `02-experiment-layer` 三實例 hostPort 目前已恢復：
+  - `18081`
+  - `18082`
+  - `18083`
 
-### RFSoC External Monitoring
-
-已驗證：
-
-- `rfsoc4x2-node-exporter` 已透過 Tailscale target `100.91.37.32:9100` 接入目前 `vmagent` / `VictoriaMetrics`
-- `up{job="rfsoc4x2-node-exporter",access="tailscale",board="RFSoC4x2"}` 查詢結果為 `1`
-- 目前 `Netdata parent` `http://140.113.179.9:32163` 的 `mirrored_hosts` 已包含 `pynq`
-- `http://140.113.179.9:32163/host/pynq/api/v1/data?...` 已可回 JSON
-- `vm_agg_rfsoc.py` 已在目前主機以以下環境完成 live 驗證：
-  - `NETDATA_URL=http://140.113.179.9:32163`
-  - `VM_URL=http://140.113.179.9:31888`
-  - `ACCESS=tailscale`
-  - `INSTANCE=100.91.37.32:9100`
-  - `PL_STATUS_SSH_TARGET=xilinx@100.91.37.32`
-- `vm_agg_rfsoc.py` 已成功輸出：
-  - `collector_status = ok`
-  - `health.up = true`
-  - `pl_status.*`
-  - `node_pressure_instant.*`
-  - `node_compute_features.*`
-
-### 02 Experiment Layer
+### Experiment layer formal workflow
 
 已驗證：
 
-- `icclz1` 已啟用 `nvidia.com/gpu.shared: 4`
-- `autoscale-source-split/02-experiment-layer/yolo26_k8s/build_and_import_image_to_k3s.sh` 可建立並匯入 `local/yolo26n:0.1` / `0.5`
-- `intent-lab` 中 `yolo26n-focus`、`yolo26n-bg-1`、`yolo26n-bg-2` 可在 `icclz1` 上 `Running`
-- `http://140.113.179.6:18081/healthz`、`18082`、`18083` 皆回 `200`
-- 2026-05-28 短版 baseline smoke test：
-  - focus `50/50` success，client mean `137.589 ms`，server mean `18.783 ms`
-  - bg-1 `25/25` success，client mean `181.229 ms`，server mean `22.813 ms`
-  - bg-2 `25/25` success，client mean `221.967 ms`，server mean `22.610 ms`
-- smoke test 輸出已確認後刪除，只保留驗證結論
+- `thermal_analysis/run_cycle_from_master.sh` 已改為使用 repo-local `iccl` venv，短版 direct thermal cycle 可完成
+  - run: `thermal_direct_target80_20260603_091045`
+  - `aligned_rows=20`
+  - `within_band_ratio=0.95`
+- `scripts/run_C_thermal_yolo26_3inst_cycles.sh` 已可實際觸發 worker thermal cycle
+  - run: `C_thermal_yolo26_3inst_cycle1_20260603_091359`
+  - `Thermal command exit code=0`
+  - dataset / plots 產生成功
+  - `vm_aggregator_merge_after_build.log` 顯示 `vmagg matched ratio = 1.0`
+- `scripts/run_yolo26_singlepod_rate_sweep.sh` 短版驗證成功
+  - run: `single_yolo26_rate_sweep_20260603_091213`
+  - `1 rps` / `3 rps` 皆 `100%` success
+- `scripts/run_yolo26_singlepod_async_rate_sweep.sh` 短版驗證成功
+  - run: `single_yolo26_async_rate_sweep_20260603_091257`
+  - `10 rps` / `20 rps` 皆 `100%` success
+- `experiments_yolo/yolo_demo/` 目前僅保留 `README.md`，屬文件型參考目錄，不是可直接執行的 runtime flow
+
+## Current External Node Status
+
+### `rfsoc4x2-pynq`
+
+目前已知狀態：
+
+- `vmagent` 已配置 `rfsoc4x2-node-exporter` scrape job，target 為 `100.91.37.32:9100`
+- `vm_agg_rfsoc.py` 已可輸出 `collector_status = ok`
+- 但現場資料源仍未恢復：
+  - `100.91.37.32:9100` timeout
+  - `100.91.37.32:19999` timeout
+  - `ssh xilinx@100.91.37.32` timeout
+  - Netdata parent 尚未看到 `pynq` mirrored host
+  - `~/.ssh/id_ed25519_rfsoc` 不在目前主機上
+
+目前 dashboard 上的狀態解讀：
+
+- inventory 有這台節點
+- status 可回傳，但 telemetry 不完整
+- 因外部節點 telemetry 缺失，前端目前顯示 `OFFLINE`
+
+### `openwrt_ap`
+
+目前已知狀態：
+
+- inventory 有這台節點
+- `vm_agg_ap_gateway.py` 可被 API 納入路徑
+- 但現場資料源仍未恢復：
+  - 目前主機沒有 `~/.ssh/openwrt_ap_ed25519`
+  - 未安裝 / 未驗證 `ap-gateway.service`
+  - 未安裝 / 未驗證 `ap-snmp-gateway.service`
+  - VictoriaMetrics 內目前沒有 `ap_*` metrics
+
+目前 dashboard 上的狀態解讀：
+
+- inventory 有這台節點
+- status 可回傳，但 telemetry 缺失
+- 因外部節點 telemetry 缺失，前端目前顯示 `OFFLINE`
 
 ## Known Issues
 
-### 1. `mirc516-20250605` GPU host problem
+### 1. External node credentials and reachability are missing
 
-此節點已完成 GPU auto-discovery，但 host NVIDIA stack 異常：
+這是目前重建最主要未完成項：
 
-- kernel module: `570.211.01`
-- userspace NVML / CUDA libs: `580.159.03`
-- `nvidia-smi` 失敗
-- `nvidia-device-plugin` / `dcgm-exporter` 報 `Driver/library version mismatch`
+- RFSoC SSH key 未恢復
+- AP SSH key 未恢復
+- RFSoC Netdata / node-exporter 端點不可達
+- AP collectors 尚未在此主機重建與驗證
 
-因此：
+### 2. Long-run experiment results are shortened validations, not full-duration production runs
 
-- GPU label 已自動出現
-- 但 `nvidia.com/gpu` 尚未恢復
+目前已完成的是正式 workflow 的縮短版驗證：
 
-### 2. `z590-aorus-xtreme` stability
+- thermal direct cycle
+- three-instance thermal cycle
+- serial rate sweep
+- async rate sweep
 
-- 仍受主機磁碟壓力影響
-- 不建議當作目前重建驗收的穩定 GPU 節點
-
-### 3. VictoriaMetrics persistence
-
-- `VictoriaMetrics` 目前仍使用非持久化配置
-- 若正式環境需要長期保留 metrics，仍需補 storage 設計
-
+若之後要做論文或正式報告等級的資料蒐集，仍建議另外重跑完整時長與多 repeat 批次。
 
 ## Practical Completion Estimate
 
-若看目前已完成主線：
+以本輪主機實際重建狀態估計：
 
-- `01-monitoring-layer`: 約 `90% ~ 95%`
-- `03-shared-api-dashboard` 的 `Cluster Monitor` 主線：約 `85% ~ 90%`
-- `02-experiment-layer` 的 `icclz1` shared-GPU YOLO 主線：已可重現 baseline / 3-instance 入口，後續 thermal cycle 與完整批次實驗可在此基礎上繼續
-- 整體作為 `k3s` 重建交付基底：約 `92%`
+- `01-monitoring-layer`：約 `95%`
+- `03-shared-api-dashboard` 的 `Cluster Monitor`：約 `95%`
+- `02-experiment-layer` 主線與常用 formal workflow：約 `90% ~ 95%`
+- external nodes 真實 telemetry 恢復：低於 `50%`
+- 若先不計 external node 資料源，整體重建完成度約 `90% ~ 95%`
 
 剩餘工作主要是：
 
-- 決定是否為 `VictoriaMetrics` 補持久化
-- 修復 `mirc516-20250605` 主機 NVIDIA stack
-- 視需要再把 `02-experiment-layer` 的 thermal cycle / batch workflow 做完整驗收
-
-## AP Gateway Rebuild Status
-
-- `iccl-cluster-z2` host 端已可直接連到 OpenWrt AP `192.168.1.1:22` / `:80`：
-  - `curl -I http://192.168.1.1` 回 `HTTP/1.1 200 OK`
-  - `ssh -i ~/.ssh/openwrt_ap_ed25519 root@192.168.1.1 ...` 已可登入
-- `ap_gateway.py`（Wi-Fi collector）與 `ap_snmp_gateway.py`（SNMP collector）都已打通，且正式重建路徑已整理為 host-side `systemd service`：
-  - `ap-gateway.service`
-  - `ap-snmp-gateway.service`
-  - env 範本：`autoscale-source-split/01-monitoring-layer/systemd/ap-gateway.env.example`、`ap-snmp-gateway.env.example`
-  - 既有 `runtime_logs/ap_gateway.log`、`ap_snmp_gateway.log` 可保留作為手動執行紀錄參考
-- `autoscale_api`、`ap-gateway.service`、`ap-snmp-gateway.service` 的 `systemd` 安裝、啟動與驗證指令，已整理進：
-  - `autoscale-source-split/03-shared-api-dashboard/autoscale_api/README.md`
-  - `autoscale-source-split/03-shared-api-dashboard/LOCAL_BOOTSTRAP_STATUS.md`
-  - `autoscale-source-split/01-monitoring-layer/ap_gateway/AP_GATEWAY_DESIGN.md`
-- `VictoriaMetrics` 已可查到代表性 AP metrics：
-  - `ap_wifi_station_count{ap="openwrt_ap"}`
-  - `ap_node_cpu_usage_percent{ap="openwrt_ap"}`
-- `vm_agg_ap_gateway.py` 已在目前環境完整輸出 `collector_status = ok`：
-  - `wireless_access`、`stations` 已有值
-  - `device_resource`、`interface_traffic`、`node_pressure`、`node_compute_features` 已由 SNMP metrics 補齊
-- 另外已驗到 cluster 內 Pod 對 `192.168.1.1` 的可達性與 host 端不同：
-  - `UDP/161` 可達
-  - `TCP/22`、`TCP/80` timeout
-  - 因此 AP collectors 目前仍建議先跑在 host 上，不建議先搬進 cluster Pod
-- 後續維護重點：
-  - 以 `systemctl status ap-gateway.service`、`systemctl status ap-snmp-gateway.service`、`journalctl -u ...` 作為主要維運入口
-  - 若 OpenWrt SNMP community / iface index 變動，需同步更新 `ap-snmp-gateway.env` 或 collector 執行參數
-  - `tmux` 只保留作為臨時除錯方式，不再作為正式重建路徑
-
+- 恢復 RFSoC 可達性與 SSH key
+- 恢復 OpenWrt AP credentials / collectors / metrics producer
+- 視需求重跑 full-duration / multi-repeat 正式實驗批次

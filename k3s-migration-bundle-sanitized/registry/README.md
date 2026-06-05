@@ -31,7 +31,8 @@
 
 ## 注意事項
 
-- 目前正式支援與重建流程已統一使用 `local/yolo26n:0.1` / `harbor.iccl.local/pre6g/yolo26n:0.1`。
+- 目前正式支援與重建流程已統一使用 `local/yolo26n:0.1` / `harbor.iccl.local:8088/pre6g/yolo26n:0.1`。
+- 2026-06-04 實測後，Harbor 正式建議做法已收斂為 `HTTPS:8088 + 自簽 CA`，不再建議沿用舊的 `HTTP:8088` 路徑。
 - `intent-lab` 的歷史匯出快照仍可見 `local/yolo26n:0.5`，請將其視為歷史狀態，不要當作新的 rebuild 標準。
 - registry化能解決 image 分發問題，但 `hostPort`、`nodeSelector` 仍會限制三實例 workload 的調度彈性。
 - Kaniko 倉庫已於 2025-06-03 archived；目前保留為 PoC/實驗用 builder 樣板，長期可改為 BuildKit、Buildah、Tekton 或 CI runner。

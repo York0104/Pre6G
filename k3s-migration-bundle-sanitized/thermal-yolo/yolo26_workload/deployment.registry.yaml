@@ -19,7 +19,7 @@ spec:
         kubernetes.io/hostname: REPLACE_GPU_NODE
       containers:
         - name: yolo26
-          image: harbor.iccl.local/pre6g/yolo26n:0.1
+          image: harbor.iccl.local:8088/pre6g/yolo26n:0.1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 18080

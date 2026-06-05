@@ -32,6 +32,16 @@
 
 測試輸出已於驗證後刪除。
 
+2026-06-02 已在目前主機重新完成同等短版 smoke test：
+
+- `rows=235`
+- `success_rate=100%`
+- `client_mean_ms=42.322`
+- `client_p95_ms=49.052`
+- `server_mean_ms=16.746`
+
+測試輸出應在驗證後刪除。
+
 ## Fan Control Note
 
 目前此專案預設不再依 target temperature 做動態溫控切換，而是改成：

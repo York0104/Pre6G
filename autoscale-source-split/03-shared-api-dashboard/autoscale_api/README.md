@@ -50,11 +50,11 @@
 
 並統一回傳 dashboard 可直接顯示的 node status。
 
-`collect_node_metrics_csv.py` 目前已支援：
+目前實作上的重要行為：
 
 - 若 `nodes.json` 不存在，會 fallback 到 `kubectl get nodes -o json`
-
-這樣在目前 repo 狀態下，不需要額外補 `nodes.json` 也能完成重建。
+- external nodes telemetry 缺失時，不再強制補成 `0.0`
+- dashboard 端目前會把 external nodes 的 telemetry 缺失解讀成 `OFFLINE`
 
 ## Runtime Dependencies
 
@@ -81,50 +81,7 @@
 
 ## Start Locally
 
-### Preferred For Rebuild
-
-正式重建建議直接使用 `systemd`：
-
-```bash
-cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
-   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
-sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now autoscale-api.service
-```
-
-注意：上面這一步在 `cp ...autoscale-api.env.example -> autoscale-api.env` 之後，還必須把 `autoscale-api.env` 裡的 `<control-plane-ip>` 全部改成目前主機的真實端點，例如：
-
-- `VM_URL=http://140.113.179.9:31888`
-- `NETDATA_PARENT_BASE_URL=http://140.113.179.9:32163`
-- `NETDATA_URL=http://140.113.179.9:32163`
-- `NETDATA_CHILD_URL=http://140.113.179.9:32163`
-- `KSM_URL=http://140.113.179.9:32080`
-
-如果只複製 example 而沒有替換 `<control-plane-ip>`，`autoscale_api` 本身仍可能啟動，但 `/api/v1/full-metrics` 會常見成：RFSoC / AP 正常、所有 k8s nodes 同時失敗。
-
-狀態與 log：
-
-```bash
-systemctl status autoscale-api.service --no-pager
-journalctl -u autoscale-api.service -n 50 --no-pager
-```
-
-本次在 `iccl-cluster-z2` 實際驗證通過的安裝與啟動指令如下：
-
-Fail-fast validation：若 `AUTOSCALE_API_TOKEN` 仍是 `replace-with-a-long-random-token`，或 `VM_URL` / `NETDATA_*` / `KSM_URL` 還保留 `<control-plane-ip>` placeholder，`autoscale_api` 會在 startup 直接拒絕啟動，避免服務帶著錯誤 env 假成功。
-
-
-```bash
-cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
-   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
-sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now autoscale-api.service
-```
-
-
-### Manual Fallback
+### Validated path on current host
 
 ```bash
 cd /home/icclz2/Pre6G
@@ -137,7 +94,7 @@ bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.
 - 嘗試讀取 `systemd/autoscale-api.env`
 - 使用 repo 根下 `iccl` Python env
 
-### Manual
+### Manual fallback
 
 ```bash
 cd /home/icclz2/Pre6G
@@ -146,43 +103,29 @@ cd autoscale-source-split/03-shared-api-dashboard/autoscale_api
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-### Current Local Runtime
+### Optional systemd path
 
-目前建議的 host-side 常駐方式為：
-
-```bash
-sudo systemctl enable --now autoscale-api.service
-systemctl status autoscale-api.service --no-pager
-```
-
-若只是在手動除錯或快速 smoke test，才使用 `run_local_api.sh`。
-
-## Systemd
-
-使用模板：
+repo 內已提供 `systemd` 模板：
 
 - [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service](../../01-monitoring-layer/systemd/autoscale-api.service)
 - [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](../../01-monitoring-layer/systemd/autoscale-api.env.example)
 
-複製 env：
+但本輪 `icclz2` 重建主線，優先驗證的是手動啟動路徑；目前文件不再宣稱此主機已完成 `autoscale-api.service` 安裝與驗證。
+
+若要改成 `systemd` 常駐，再使用：
 
 ```bash
 cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
    /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
+sudo cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now autoscale-api.service
 ```
 
-接著務必把 `autoscale-api.env` 內所有 `<control-plane-ip>` 替換成真實值，不可直接保留範例內容。
+注意：
 
-再填入：
-
-```bash
-AUTOSCALE_API_TOKEN=replace-with-a-long-random-token
-VM_URL=http://140.113.179.9:31888
-NETDATA_PARENT_BASE_URL=http://140.113.179.9:32163
-NETDATA_URL=http://140.113.179.9:32163
-NETDATA_CHILD_URL=http://140.113.179.9:32163
-KSM_URL=http://140.113.179.9:32080
-```
+- `AUTOSCALE_API_TOKEN` 不可保留 placeholder
+- `VM_URL` / `NETDATA_*` / `KSM_URL` 不可保留 `<control-plane-ip>`
 
 ## Health Check
 
@@ -198,7 +141,65 @@ curl -H "Authorization: Bearer $AUTOSCALE_API_TOKEN" "$AUTOSCALE_API_BASE/api/v1
 
 - `/api/v1/nodes` 內有 `rfsoc4x2-pynq`
 - `/api/v1/nodes` 內有 `openwrt_ap`
-- `/api/v1/nodes/status` 內兩者皆有 `source` 與 CPU / memory 類欄位
+- `/api/v1/nodes/status` 內有一般 `k3s` nodes
+- external nodes 若資料源未恢復，status 仍可能存在，但 telemetry 會是 `null`
+
+## CORS Notes
+
+目前 API 預設允許以下 dashboard origins：
+
+- `localhost:4173` / `4174` / `5173` / `5174`
+- `127.0.0.1:4173` / `4174` / `5173` / `5174`
+- `140.113.179.9:4173` / `4174` / `5173` / `5174`
+
+這是因為：
+
+- `npm run dev` 常用 `517x`
+- `vite preview` 常用 `417x`
+
+若 dashboard 改由其他 host 或 port 提供，瀏覽器可能只會顯示 `Failed to fetch`。
+此時請在啟動 `autoscale_api` 前加上：
+
+```bash
+export AUTOSCALE_API_CORS_ORIGINS="http://<dashboard-host>:<port>,http://<another-origin>"
+```
+
+多個 origin 以逗號分隔即可。
+
+## Current External Node Interpretation
+
+### `rfsoc4x2-pynq`
+
+目前狀態：
+
+- inventory 已接入
+- API 路徑已接入
+- `vm_agg_rfsoc.py` 已支援 partial fallback
+
+但本機目前仍缺：
+
+- `~/.ssh/id_ed25519_rfsoc`
+- 可達的 `100.91.37.32:9100`
+- 可達的 `100.91.37.32:19999`
+- 可達的 `ssh xilinx@100.91.37.32`
+
+因此目前 dashboard 上會看到節點，但 telemetry 可能缺失並顯示 `OFFLINE`。
+
+### `openwrt_ap`
+
+目前狀態：
+
+- inventory 已接入
+- API 路徑已接入
+
+但本機目前仍缺：
+
+- `~/.ssh/openwrt_ap_ed25519`
+- `ap-gateway.service` producer 驗證
+- `ap-snmp-gateway.service` producer 驗證
+- VictoriaMetrics 中的 `ap_*` metrics
+
+因此目前 dashboard 上會看到節點，但 telemetry 可能缺失並顯示 `OFFLINE`。
 
 ## Example Response Notes
 

@@ -1,6 +1,6 @@
 # Monitoring Rebuild SOP
 
-Date: 2026-05-27
+Date: 2026-06-02
 Scope: `Pre6G` 監控層與 `Cluster Monitor` dashboard 在新 `k3s` 環境上的正式重建步驟
 
 ## How To Use This File
@@ -229,17 +229,68 @@ curl "http://<CONTROL_PLANE_IP>:<VM_NODEPORT>/api/v1/query?query=DCGM_FI_DEV_GPU
 ## Step 10: Validate VM Aggregator
 
 ```bash
-bash autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh iccl-cluster-z2
-bash autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh icclz3
+bash autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh icclz2
+bash autoscale-source-split/01-monitoring-layer/run_vm_aggregator_once.sh icclz1
 ```
 
 成功條件：
 
 - `collector_status = ok`
 
+若需同時驗證 external nodes，可再補：
+
+```bash
+cd /home/icclz2/Pre6G
+./iccl/bin/python autoscale-source-split/01-monitoring-layer/vm_agg_rfsoc.py
+./iccl/bin/python autoscale-source-split/01-monitoring-layer/vm_agg_ap_gateway.py
+```
+
+注意：
+
+- `vm_agg_rfsoc.py` 目前已支援 partial fallback；即使 `Netdata` host-scoped 路徑失敗，仍可能回 `collector_status = ok`
+- `vm_agg_ap_gateway.py` 若 VM 中尚無 `ap_*` metrics，仍會失敗；這代表 AP collectors 尚未恢復，不是 API 本身故障
+
 ## Step 11: Start API And Dashboard
 
-正式重建優先使用 `systemd` 啟動 API：
+本輪在 `icclz2` 實際驗證通過的是 host-side 手動啟動；`systemd` 模板保留作為正式常駐路徑。
+
+### Preferred validated path on this host
+
+先建立 / 更新 env：
+
+```bash
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/monitoring-runtime.host.env
+cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \
+   /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env
+```
+
+至少要把以下值換成目前主機的真實端點：
+
+- `VM_URL=http://140.113.179.9:31888`
+- `NETDATA_PARENT_BASE_URL=http://140.113.179.9:32163`
+- `NETDATA_URL=http://140.113.179.9:32163`
+- `NETDATA_CHILD_URL=http://140.113.179.9:32163`
+- `KSM_URL=http://140.113.179.9:32080`
+
+再啟 API：
+
+```bash
+cd /home/icclz2/Pre6G
+bash autoscale-source-split/03-shared-api-dashboard/autoscale_api/run_local_api.sh
+```
+
+另開 terminal 啟 dashboard：
+
+```bash
+export PATH=/home/icclz2/.local/node22/bin:$PATH
+cd /home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard
+bash run_local_dashboard.sh
+```
+
+### Optional systemd path
+
+若要改成常駐，再使用 `systemd`：
 
 ```bash
 cp /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example \

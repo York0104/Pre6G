@@ -1,0 +1,19 @@
+spec:
+  template:
+    spec:
+      containers:
+      - name: nvidia-device-plugin-ctr
+        args:
+        - --config-file=/config/config.yaml
+        volumeMounts:
+        - mountPath: /config
+          name: gpu-sharing-config
+        - mountPath: /var/lib/kubelet/device-plugins
+          name: device-plugin
+      volumes:
+      - configMap:
+          name: gpu-sharing-config
+        name: gpu-sharing-config
+      - hostPath:
+          path: /var/lib/kubelet/device-plugins
+        name: device-plugin

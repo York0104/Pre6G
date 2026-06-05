@@ -17,6 +17,7 @@ QUERY_TIMEOUT = float(os.getenv("QUERY_TIMEOUT", "5"))
 JOB = os.getenv("JOB", "rfsoc4x2-node-exporter").strip()
 ACCESS = os.getenv("ACCESS", "tailscale").strip()
 BOARD = os.getenv("BOARD", "RFSoC4x2").strip()
+DEVICE = os.getenv("DEVICE", BOARD).strip()
 INSTANCE = os.getenv("INSTANCE", "100.91.37.32:9100").strip()
 NODE_LABEL = os.getenv("NODE_LABEL", "rfsoc4x2-pynq").strip()
 ROLE = os.getenv("ROLE", "external-rfsoc").strip()
@@ -309,7 +310,7 @@ def collect_pl_status() -> Dict[str, Any]:
 
 
 def build_vm_selector() -> str:
-    return f'job="{JOB}",access="{ACCESS}",board="{BOARD}",instance="{INSTANCE}"'
+    return f'job="{JOB}",access="{ACCESS}",device="{DEVICE}",instance="{INSTANCE}"'
 
 
 def collect_netdata_metrics() -> dict:
@@ -373,12 +374,24 @@ def collect_netdata_metrics() -> dict:
 def collect_vm_metrics(selector: str) -> dict:
     return {
         "up": vm_bool_up(f"up{{{selector}}}"),
+        "cpu_usage_percent": vm_first_value(
+            f'100 * (1 - avg(rate(node_cpu_seconds_total{{{selector},mode="idle"}}[1m])))',
+            default=None,
+        ),
         "cpu_cores_total": vm_first_value(
             f"count(count by (cpu) (node_cpu_seconds_total{{{selector}}}))",
             default=None,
         ),
+        "mem_available_bytes": vm_first_value(
+            f"node_memory_MemAvailable_bytes{{{selector}}}",
+            default=None,
+        ),
         "mem_total_bytes": vm_first_value(
             f"node_memory_MemTotal_bytes{{{selector}}}",
+            default=None,
+        ),
+        "mem_free_bytes": vm_first_value(
+            f"node_memory_MemFree_bytes{{{selector}}}",
             default=None,
         ),
         "rootfs_available_bytes": vm_first_value(
@@ -411,16 +424,52 @@ def maybe_ratio_percent(numerator: Optional[float], denominator: Optional[float]
     return 100.0 * float(numerator) / float(denominator)
 
 
+def build_source_label(netdata_ok: bool, vm_ok: bool) -> str:
+    parts: List[str] = []
+    if netdata_ok:
+        parts.append("netdata")
+    if vm_ok:
+        parts.append("victoriametrics")
+        parts.append("node_exporter")
+    if not parts:
+        return "unavailable"
+    seen = []
+    for part in parts:
+        if part not in seen:
+            seen.append(part)
+    return "+".join(seen)
+
+
 def collect_state() -> dict:
     selector = build_vm_selector()
-    netdata = collect_netdata_metrics()
-    vm = collect_vm_metrics(selector)
+    debug_errors: Dict[str, str] = {}
+
+    try:
+        netdata = collect_netdata_metrics()
+        netdata_ok = True
+    except Exception as e:
+        netdata = {}
+        netdata_ok = False
+        debug_errors["netdata_error"] = str(e)
+
+    try:
+        vm = collect_vm_metrics(selector)
+        vm_ok = True
+    except Exception as e:
+        vm = {}
+        vm_ok = False
+        debug_errors["victoriametrics_error"] = str(e)
+
     pl_status = collect_pl_status()
 
     mem_total_bytes = vm.get("mem_total_bytes")
     mem_available_bytes = netdata.get("mem_available_bytes")
+    if mem_available_bytes is None:
+        mem_available_bytes = vm.get("mem_available_bytes")
     cpu_cores_total = vm.get("cpu_cores_total")
     cpu_usage_percent = netdata.get("cpu_usage_percent")
+    if cpu_usage_percent is None:
+        cpu_usage_percent = vm.get("cpu_usage_percent")
 
     memory_headroom_percent = maybe_ratio_percent(mem_available_bytes, mem_total_bytes)
     memory_usage_percent = None
@@ -435,13 +484,35 @@ def collect_state() -> dict:
     if netdata.get("swap_used_bytes") is not None and netdata.get("swap_free_bytes") is not None:
         swap_total_bytes = int(netdata["swap_used_bytes"] + netdata["swap_free_bytes"])
 
+    mem_used_bytes = netdata.get("mem_used_bytes")
+    if mem_used_bytes is None and mem_total_bytes is not None and mem_available_bytes is not None:
+        mem_used_bytes = int(float(mem_total_bytes) - float(mem_available_bytes))
+
+    mem_free_bytes = netdata.get("mem_free_bytes")
+    if mem_free_bytes is None:
+        mem_free_bytes = vm.get("mem_free_bytes")
+
+    node_memory_working_set_bytes = netdata.get("node_memory_working_set_bytes")
+    if node_memory_working_set_bytes is None:
+        node_memory_working_set_bytes = mem_used_bytes
+
     load_per_core = None
     if netdata.get("load1") is not None and cpu_cores_total not in (None, 0):
         load_per_core = float(netdata["load1"]) / float(cpu_cores_total)
 
+    source_label = build_source_label(netdata_ok, vm_ok)
+    instant_status = "ok"
+    if not netdata_ok and vm.get("up") is True:
+        instant_status = "vm_only"
+    elif netdata_ok and vm.get("up") is False:
+        instant_status = "netdata_only"
+    elif not netdata_ok and not vm_ok:
+        instant_status = "partial_unavailable"
+
     return {
         "schema": "intentcontinuum.state.v6",
         "collector_status": "ok",
+        "collector_error": "",
         "meta": {
             "ts": int(time.time()),
             "observer": OBSERVER,
@@ -474,12 +545,12 @@ def collect_state() -> dict:
                 "disk_root_usage_percent": vm.get("rootfs_used_percent"),
             },
             "node_pressure_instant": {
-                "source": "netdata_parent_host_scoped",
+                "source": source_label,
                 "scope": "host",
                 "host": NETDATA_HOST,
                 "update_every_s": 1,
                 "window_s": 1,
-                "status": "ok" if vm.get("up") is not False else "vm_up_down",
+                "status": instant_status if vm.get("up") is not False else "vm_up_down",
                 "cpu_usage_percent": cpu_usage_percent,
                 "cpu_user_percent": netdata.get("cpu_user_percent"),
                 "cpu_system_percent": netdata.get("cpu_system_percent"),
@@ -487,14 +558,14 @@ def collect_state() -> dict:
                 "cpu_iowait_percent": netdata.get("cpu_iowait_percent"),
                 "memory_usage_percent": memory_usage_percent,
                 "mem_total_bytes": mem_total_bytes,
-                "node_memory_working_set_bytes": netdata.get("node_memory_working_set_bytes"),
-                "node_memory_used_bytes": netdata.get("node_memory_working_set_bytes"),
-                "mem_used_bytes": netdata.get("mem_used_bytes"),
-                "mem_free_bytes": netdata.get("mem_free_bytes"),
+                "node_memory_working_set_bytes": node_memory_working_set_bytes,
+                "node_memory_used_bytes": node_memory_working_set_bytes,
+                "mem_used_bytes": mem_used_bytes,
+                "mem_free_bytes": mem_free_bytes,
                 "mem_available_bytes": mem_available_bytes,
                 "disk_root_usage_percent": vm.get("rootfs_used_percent"),
                 "memory_capacity": {
-                    "source": "netdata+node_exporter",
+                    "source": source_label,
                     "mem_available_bytes": mem_available_bytes,
                     "swap_used_bytes": netdata.get("swap_used_bytes"),
                     "swap_total_bytes": swap_total_bytes,
@@ -518,9 +589,9 @@ def collect_state() -> dict:
                 },
             },
             "node_compute_features": {
-                "source": "netdata+victoriametrics+node_exporter",
+                "source": source_label,
                 "cpu_compute": {
-                    "source": "netdata+victoriametrics",
+                    "source": source_label,
                     "cpu_usage_percent": cpu_usage_percent,
                     "cpu_user_percent": netdata.get("cpu_user_percent"),
                     "cpu_system_percent": netdata.get("cpu_system_percent"),
@@ -534,11 +605,11 @@ def collect_state() -> dict:
                     "load_per_core": load_per_core,
                 },
                 "ram_capacity": {
-                    "source": "netdata+node_exporter",
+                    "source": source_label,
                     "mem_available_bytes": mem_available_bytes,
                     "mem_total_bytes": mem_total_bytes,
-                    "mem_used_bytes": netdata.get("mem_used_bytes"),
-                    "mem_free_bytes": netdata.get("mem_free_bytes"),
+                    "mem_used_bytes": mem_used_bytes,
+                    "mem_free_bytes": mem_free_bytes,
                     "swap_used_bytes": netdata.get("swap_used_bytes"),
                     "swap_total_bytes": swap_total_bytes,
                     "swap_free_bytes": netdata.get("swap_free_bytes"),
@@ -551,7 +622,7 @@ def collect_state() -> dict:
                     "mem_available_mib": netdata.get("mem_available_mib"),
                 },
                 "data_movement": {
-                    "source": "netdata+node_exporter",
+                    "source": source_label,
                     "netdata_disk_read_bytes_per_s": netdata.get("disk_read_bytes_per_s"),
                     "netdata_disk_write_bytes_per_s": netdata.get("disk_write_bytes_per_s"),
                     "network_receive_kilobits_per_s": netdata.get("eth0_rx_kilobits_per_sec"),
@@ -579,6 +650,7 @@ def collect_state() -> dict:
                 "instant": "netdata",
                 "capacity": "victoriametrics",
             },
+            **debug_errors,
         },
     }
 

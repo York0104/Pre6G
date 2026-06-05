@@ -50,6 +50,19 @@ data:
             target_label: kubernetes_namespace
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: kubernetes_pod
+
+      - job_name: rfsoc4x2-node-exporter
+        static_configs:
+          - targets:
+              - 100.91.37.32:9100
+            labels:
+              node: rfsoc4x2-pynq
+              role: external-rfsoc
+              arch: aarch64
+              device: RFSoC4x2
+              access: tailscale
+              lab_ip: 192.168.100.217
+              k8s_node: "false"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -165,7 +178,7 @@ spec:
         app.kubernetes.io/component: cluster
     spec:
       nodeSelector:
-        kubernetes.io/hostname: iccl-cluster-z2
+        kubernetes.io/hostname: icclz2
       serviceAccountName: vmagent-victoria-metrics-agent
       containers:
         - name: vmagent

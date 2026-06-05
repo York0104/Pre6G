@@ -1,5 +1,21 @@
 # AP Gateway Metrics Design
 
+## Current Rebuild Status (2026-06-02)
+
+這份文件保留完整設計與既有成功案例，但要先注意目前 `icclz2` 主機上的實際狀態：
+
+- AP gateway 鏈路的設計、producer、aggregator 路徑都還在 repo 內
+- 目前 dashboard / API 已能把 `openwrt_ap` 納入 inventory
+- 但本機尚未完成 AP producer 的重建驗證：
+  - `~/.ssh/openwrt_ap_ed25519` 不存在
+  - `ap-gateway.service` / `ap-snmp-gateway.service` 尚未在此主機安裝驗證
+  - VictoriaMetrics 內目前沒有 `ap_*` metrics
+
+因此：
+
+- 本文件中提到的 `systemd` 佈署方式仍是正式建議路徑
+- 但凡是描述「已打通 SSH / SNMP / VM metrics / service」的段落，請視為 historical known-good reference，不代表本機此刻已恢復
+
 ## Overview
 
 這份文件是 AP gateway 監控鏈路的單一設計基準，整理目前 repo 內
@@ -342,9 +358,9 @@ curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_wifi_station_coun
 curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_node_cpu_usage_percent' | jq '.data.result'
 ```
 
-## Current Rebuild Status (2026-05-29)
+## Historical Rebuild Status (2026-05-29)
 
-目前 `iccl-cluster-z2` host 端已可直接到達 OpenWrt AP，且 SSH 與 SNMP 都已可用：
+以下是舊環境 / 舊主機上曾成功驗證的狀態，不代表目前 `icclz2` 已恢復：
 
 ```bash
 curl -I http://192.168.1.1
@@ -352,7 +368,7 @@ ssh -i ~/.ssh/openwrt_ap_ed25519 root@192.168.1.1 "ip addr show br-lan"
 snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
 ```
 
-目前重建進度如下：
+當時重建進度如下：
 
 - `ap_gateway.py` 已打通，並可在 host 上常駐執行
 - `ap_snmp_gateway.py` 已打通，並可在 host 上常駐執行
@@ -361,7 +377,7 @@ snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
   - `ap_node_cpu_usage_percent{ap="openwrt_ap"}`
 - `vm_agg_ap_gateway.py` 已可完整輸出 `collector_status = ok`，且 `device_resource` / `interface_traffic` / `node_pressure` 欄位已有值
 
-因此目前 AP gateway 重建主線已打通；後續建議是：
+這代表當時 AP gateway 重建主線已打通；後續建議是：
 
 1. 將兩支 collector 以 host-side `systemd service` 常駐
 2. 用 `systemctl status` / `journalctl` 取代 `tmux` 作為主要維運方式
@@ -557,7 +573,7 @@ snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
 
 ## Current Known Good State
 
-以下內容代表這條 AP gateway 鏈路在舊環境中曾成功驗證過的 known-good 行為；目前 `iccl-cluster-z2` 也已重新打通，但這一段仍應視為 historical reference：
+以下內容代表這條 AP gateway 鏈路在舊環境中曾成功驗證過的 known-good 行為；本輪 `icclz2` 不應直接假設同樣已成立：
 
 - `ap_gateway.py` 與 `ap_snmp_gateway.py` 都有在背景執行
 - VictoriaMetrics 可查到代表性 AP metrics：
@@ -583,7 +599,7 @@ snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
 - VictoriaMetrics import 與 query 路徑正常
 - `vm_agg_ap_gateway.py` 可以正常作為前端查詢器使用
 
-目前 `iccl-cluster-z2` 的重建狀態請以前面的 `Current Rebuild Status (2026-05-29)` 為準；目前已完成 host-side 重建驗證，且 `ap_wifi_station_count` / `ap_node_cpu_usage_percent` 均已可在 VM 中查到。
+若要看目前 `icclz2` 的真實狀態，請以前面 `Current Rebuild Status (2026-06-02)` 與 `MONITORING_REBUILD_PROGRESS.md` 為準。
 
 另外要注意，`station_count = 0` 與 `stations = []` 不一定代表壞掉；如果當下沒有 Wi-Fi client 連線，這就是合理結果。
 

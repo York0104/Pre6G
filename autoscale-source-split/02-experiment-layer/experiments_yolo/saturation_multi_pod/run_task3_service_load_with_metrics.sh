@@ -257,41 +257,90 @@ fi
 echo "[INFO] Quick summary..."
 
 python3 - "${RUN_DIR}" <<'PY' | tee "${RUN_DIR}/summary.txt"
+import csv
+import math
+import statistics
 import sys
+from collections import Counter
 from pathlib import Path
-import pandas as pd
+
+
+def to_float(value):
+    if value in (None, ""):
+        return None
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(num):
+        return None
+    return num
+
+
+def percentile(values, pct):
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    values = sorted(values)
+    pos = (len(values) - 1) * pct
+    lower = math.floor(pos)
+    upper = math.ceil(pos)
+    if lower == upper:
+        return values[int(pos)]
+    weight = pos - lower
+    return values[lower] * (1 - weight) + values[upper] * weight
+
+
+def print_stats(label, values):
+    if not values:
+        return
+    print(f"\n{label}:")
+    print(f"count: {len(values)}")
+    print(f"mean: {statistics.fmean(values):.6f}")
+    print(f"min: {min(values):.6f}")
+    print(f"p50: {percentile(values, 0.50):.6f}")
+    print(f"p90: {percentile(values, 0.90):.6f}")
+    print(f"p95: {percentile(values, 0.95):.6f}")
+    print(f"p99: {percentile(values, 0.99):.6f}")
+    print(f"max: {max(values):.6f}")
+
 
 run_dir = Path(sys.argv[1])
+path = run_dir / "measurement_raw.csv"
+print("\n== measurement_raw.csv ==")
+if not path.exists():
+    print("missing:", path)
+else:
+    with path.open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
 
-for name in ["measurement_raw.csv"]:
-    path = run_dir / name
-    print("\n==", name, "==")
-    if not path.exists():
-        print("missing:", path)
-        continue
+    clean = []
+    success_values = []
+    for row in rows:
+        value = row.get("success", "")
+        if str(value).strip().lower() in {"1", "1.0", "true"}:
+            success_values.append(1.0)
+            clean.append(row)
+        elif str(value).strip().lower() in {"0", "0.0", "false"}:
+            success_values.append(0.0)
 
-    df = pd.read_csv(path)
-    clean = df[df["success"] == 1].copy()
-
-    print("rows:", len(df))
-    print("success rate:", df["success"].mean() if len(df) else None)
-
+    print("rows:", len(rows))
+    print("success rate:", (sum(success_values) / len(success_values)) if success_values else None)
     print("\nerror types:")
-    print(df["error_type"].value_counts(dropna=False))
+    for key, count in Counter((row.get("error_type") or "") for row in rows).items():
+        label = key if key else "<empty>"
+        print(f"{label}: {count}")
 
-    if len(clean):
-        print("\nclean e2e latency ms:")
-        print(clean["e2e_latency_ms"].describe(percentiles=[0.5, 0.9, 0.95, 0.99]))
-
-        print("\nclean server latency ms:")
-        print(clean["server_latency_ms"].describe(percentiles=[0.5, 0.9, 0.95, 0.99]))
-
-        if "server_total_latency_ms" in clean.columns:
-            print("\nclean server total latency ms:")
-            print(clean["server_total_latency_ms"].describe(percentiles=[0.5, 0.9, 0.95, 0.99]))
+    for col in ["e2e_latency_ms", "server_latency_ms", "server_total_latency_ms"]:
+        values = [to_float(row.get(col)) for row in clean]
+        values = [v for v in values if v is not None]
+        print_stats(f"clean {col}", values)
 
     print("\npods:")
-    print(df["server_pod_name"].value_counts(dropna=False))
+    for key, count in Counter((row.get("server_pod_name") or "") for row in rows).items():
+        label = key if key else "<empty>"
+        print(f"{label}: {count}")
 
 vm_path = run_dir / "vm_aggregator_timeseries.csv"
 if vm_path.exists():
@@ -337,13 +386,13 @@ pd.DataFrame(rows).to_csv(out_path, index=False)
 print(f"[INFO] Saved {out_path}")
 PY
 
-  python3 "${STABLE_ANALYZER}" "${RUN_DIR}" | tee "${RUN_DIR}/stable_latency_summary.txt"
+  python3 "${STABLE_ANALYZER}" "${RUN_DIR}" | tee "${RUN_DIR}/stable_latency_summary.txt" || true
 else
   echo "[WARN] Stable window detection failed; skip stable latency analysis." | tee "${RUN_DIR}/stable_latency_summary.txt"
 fi
 
-python3 "${TIMELINE_PLOTTER}" "${RUN_DIR}" | tee "${RUN_DIR}/plot_full_timeline.log"
-python3 "${RESOURCE_PLOTTER}" "${RUN_DIR}" | tee "${RUN_DIR}/plot_resource_overview.log"
+python3 "${TIMELINE_PLOTTER}" "${RUN_DIR}" > "${RUN_DIR}/plot_full_timeline.log" 2>&1 || true
+python3 "${RESOURCE_PLOTTER}" "${RUN_DIR}" > "${RUN_DIR}/plot_resource_overview.log" 2>&1 || true
 
 echo "[INFO] Done."
 echo "[INFO] RUN_DIR=${RUN_DIR}"

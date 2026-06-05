@@ -32,6 +32,16 @@
 
 測試輸出已於驗證後刪除。
 
+2026-06-02 已於目前主機重新完成短版 smoke test（`TARGET_MODE=pod`、`DURATION=60`、`REPEAT=1`）：
+
+- `rows=1423`
+- `success_rate=100%`
+- `client_mean_ms=41.836`
+- `client_p95_ms=46.670`
+- `server_mean_ms=16.570`
+
+測試輸出同樣已於驗證後刪除。
+
 ## Main Scripts
 
 ### `common/request_client_serial.py`

@@ -98,7 +98,7 @@ spec:
         app.kubernetes.io/instance: ksm
     spec:
       nodeSelector:
-        kubernetes.io/hostname: iccl-cluster-z2
+        kubernetes.io/hostname: icclz2
       serviceAccountName: kube-state-metrics
       automountServiceAccountToken: true
       tolerations:

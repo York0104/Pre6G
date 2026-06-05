@@ -17,7 +17,7 @@
 
 ## 目前已驗證的基底
 
-截至 2026-05-28，下列基底已驗證成功：
+截至 2026-06-02，下列基底已重新驗證成功：
 
 - `icclz1` 具有 `nvidia.com/gpu.shared: 4`
 - 三實例 YOLO hostPort service 已可正常提供
@@ -25,13 +25,20 @@
   - `yolo26n-bg-1` -> `18082`
   - `yolo26n-bg-2` -> `18083`
 - `task3` 4-pod saturation stack 可完成短版 service-load smoke test
-- `single_pod_serial_fault_fan` 短版 smoke test 已完成
-- `single_pod_bgload_fan_cycle` 短版 smoke test 已完成
+- `single_pod_serial` 短版 smoke test 已重新完成
+- `single_pod_serial_fault_fan` 短版 smoke test 已重新完成
+- `single_pod_bgload_fan_cycle` 短版 smoke test 已重新完成
+- `scripts/run_A_normal_baseline_yolo.sh` 短版 smoke test 已重新完成
+  - focus `600/600` success，client mean `61.283 ms`，server mean `29.158 ms`
+  - bg-1 `300/300` success，client mean `90.206 ms`，server mean `45.408 ms`
+  - bg-2 `300/300` success，client mean `90.240 ms`，server mean `45.301 ms`
+  - `health_fail_total=0`
+  - `warmup_fail_total=0`
 
-因此目前阻力不在 k3s / GPU sharing / SSH，而主要在於：
+因此目前主要阻力已轉為：
 
-- 你要跑多長的正式實驗時間
-- 是否需要完整 analyzer / plotting（這些部份可能還要安裝 `pandas`）
+- 正式實驗時長與排程安排
+- 是否補 `pandas` 以取得完整 analyzer / plotting 輸出
 
 ## 核心前提
 
@@ -49,6 +56,11 @@ bash build_and_import_image_to_k3s.sh
 歷史上曾出現 `0.5`，但這不再是目前建議的驗證或重建標準。
 
 若 workload 會排到 GPU worker，請確認該 worker 的 k3s/containerd 也有相同 image。
+
+補充：
+
+- repo 內正式 canonical path 已統一為 `yolo26_workload/`
+- `icclz1` 現場若仍保留 `~/yolo26_k8s`，可作為 legacy build source 用來 build/import `local/yolo26n:0.1`
 
 ### 2. 三實例與 task3 saturation 仍需要 GPU sharing
 
@@ -91,11 +103,9 @@ bash autoscale-source-split/02-experiment-layer/scripts/run_C_thermal_yolo26_3in
 
 ## 若目前只想先驗證核心鏈路
 
-可先跑已驗證完成的短版主線：
+可先跑已重新驗證完成的短版主線：
 
 - `experiments_yolo/single_pod_serial/`
-- `experiments_yolo/single_pod_serial_fault_fan/`
-- `experiments_yolo/single_pod_bgload_fan_cycle/`
 - `experiments_yolo/saturation_multi_pod/run_task3_service_load_with_metrics.sh`
 
-這些 workflow 已在目前環境完成 smoke test，且測試輸出已證實可以在驗證後刪除，不影響 live service 恢復。
+`fault_fan` / `bgload_fan_cycle` 也已在本輪完成短版 smoke test。

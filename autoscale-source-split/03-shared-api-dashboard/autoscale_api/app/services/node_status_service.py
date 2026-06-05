@@ -25,7 +25,9 @@ import vm_aggregator  # noqa: E402
 from collect_node_metrics_csv import load_nodes, run_aggregator  # noqa: E402
 
 
-def bytes_to_mib(n: int) -> int:
+def bytes_to_mib(n: int | None) -> int | None:
+    if n is None:
+        return None
     return round(n / (1024 * 1024))
 
 
@@ -71,12 +73,34 @@ class NodeStatusService:
         if memory_usage_percent is None:
             memory_usage_percent = node_pressure.get("memory_usage_percent")
 
-        working_set_bytes = int(
+        working_set_bytes = (
             node_pressure_instant.get("node_memory_working_set_bytes")
             or node_pressure_instant.get("node_memory_used_bytes")
             or node_pressure_instant.get("mem_used_bytes")
-            or 0
         )
+        if working_set_bytes is not None:
+            working_set_bytes = int(working_set_bytes)
+
+        if memory_usage_percent is None and working_set_bytes is not None:
+            mem_available_bytes = node_pressure_instant.get("mem_available_bytes")
+            if mem_available_bytes is None:
+                mem_available_bytes = (
+                    target.get("node_compute_features", {})
+                    .get("ram_capacity", {})
+                    .get("mem_available_bytes")
+                )
+            if mem_available_bytes is not None:
+                mem_available_bytes = int(mem_available_bytes)
+                mem_total_bytes = working_set_bytes + mem_available_bytes
+                if mem_total_bytes > 0:
+                    memory_usage_percent = working_set_bytes / mem_total_bytes * 100.0
+
+        gpu_count = gpu_pressure.get("gpu_count")
+        fb_used_bytes = gpu_pressure.get("fb_used_total_bytes")
+        if gpu_count is not None:
+            gpu_count = int(gpu_count)
+        if fb_used_bytes is not None:
+            fb_used_bytes = int(fb_used_bytes)
 
         return NodeStatus(
             node_name=node_name,
@@ -86,26 +110,40 @@ class NodeStatusService:
                 gpu_metrics=str(gpu_pressure.get("source") or "dcgm_exporter+k8s"),
             ),
             cpu=NodeStatusCPU(
-                usage_percent=float(cpu_usage_percent or 0.0),
-                used_cores=float(node_pressure_instant.get("node_cpu_cores") or target.get("node_compute_features", {}).get("cpu_compute", {}).get("cpu_used_cores") or 0.0),
+                usage_percent=float(cpu_usage_percent) if cpu_usage_percent is not None else None,
+                used_cores=(
+                    float(node_pressure_instant.get("node_cpu_cores"))
+                    if node_pressure_instant.get("node_cpu_cores") is not None
+                    else (
+                        float(target.get("node_compute_features", {}).get("cpu_compute", {}).get("cpu_used_cores"))
+                        if target.get("node_compute_features", {}).get("cpu_compute", {}).get("cpu_used_cores") is not None
+                        else None
+                    )
+                ),
             ),
             memory=NodeStatusMemory(
-                usage_percent=float(memory_usage_percent or 0.0),
+                usage_percent=float(memory_usage_percent) if memory_usage_percent is not None else None,
                 working_set_bytes=working_set_bytes,
                 working_set_mib=bytes_to_mib(working_set_bytes),
             ),
             disk=NodeStatusDisk(
-                root_usage_percent=float(node_pressure.get("disk_root_usage_percent") or node_pressure_instant.get("disk_root_usage_percent") or 0.0),
+                root_usage_percent=(
+                    float(node_pressure.get("disk_root_usage_percent"))
+                    if node_pressure.get("disk_root_usage_percent") is not None
+                    else (
+                        float(node_pressure_instant.get("disk_root_usage_percent"))
+                        if node_pressure_instant.get("disk_root_usage_percent") is not None
+                        else None
+                    )
+                ),
             ),
             gpu=NodeStatusGPU(
                 status=str(gpu_pressure.get("status") or "not_applicable"),
-                count=int(gpu_pressure.get("gpu_count") or 0),
-                fb_used_bytes=int(gpu_pressure.get("fb_used_total_bytes") or 0),
+                count=gpu_count,
+                fb_used_bytes=fb_used_bytes,
                 fb_used_mib=float(
                     gpu_pressure.get("fb_used_total_mib")
-                    or bytes_to_mib(int(gpu_pressure.get("fb_used_total_bytes") or 0))
-                    or 0.0
-                ),
+                ) if gpu_pressure.get("fb_used_total_mib") is not None else bytes_to_mib(fb_used_bytes),
             ),
         )
 
@@ -132,12 +170,13 @@ class NodeStatusService:
         if memory_usage_percent is None:
             memory_usage_percent = device_resource.get("memory_usage_percent")
 
-        working_set_bytes = int(
+        working_set_bytes = (
             node_pressure_instant.get("node_memory_used_bytes")
             or node_pressure_instant.get("mem_used_bytes")
             or device_resource.get("memory_used_bytes")
-            or 0
         )
+        if working_set_bytes is not None:
+            working_set_bytes = int(working_set_bytes)
 
         return NodeStatus(
             node_name=node_name,
@@ -147,11 +186,11 @@ class NodeStatusService:
                 gpu_metrics="not_applicable",
             ),
             cpu=NodeStatusCPU(
-                usage_percent=float(cpu_usage_percent or 0.0),
-                used_cores=0.0,
+                usage_percent=float(cpu_usage_percent) if cpu_usage_percent is not None else None,
+                used_cores=None,
             ),
             memory=NodeStatusMemory(
-                usage_percent=float(memory_usage_percent or 0.0),
+                usage_percent=float(memory_usage_percent) if memory_usage_percent is not None else None,
                 working_set_bytes=working_set_bytes,
                 working_set_mib=bytes_to_mib(working_set_bytes),
             ),
@@ -160,9 +199,9 @@ class NodeStatusService:
             ),
             gpu=NodeStatusGPU(
                 status="not_applicable",
-                count=0,
-                fb_used_bytes=0,
-                fb_used_mib=0.0,
+                count=None,
+                fb_used_bytes=None,
+                fb_used_mib=None,
             ),
         )
 

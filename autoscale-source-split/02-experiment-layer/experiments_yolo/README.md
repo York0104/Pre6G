@@ -17,6 +17,22 @@
 - repo root: `/home/icclz2/Pre6G`
 - Python venv: `/home/icclz2/Pre6G/iccl`
 
+截至 `2026-06-03` 本輪已重新驗證：
+
+- `intent-lab` namespace 已建立
+- `icclz1` 已重新出現 `nvidia.com/gpu.shared: 4`
+- `yolo26n-focus` / `yolo26n-bg-1` / `yolo26n-bg-2` 已在 `intent-lab` `Running`
+- `18081` / `18082` / `18083` 的 `/healthz` 皆回 `200`
+- 短版 baseline smoke test 已重新跑通
+- `single_pod_serial/` 短版 smoke test 已重新跑通
+- `saturation_multi_pod/` 短版 service-load smoke test 已重新跑通
+- `single_pod_serial_fault_fan/` 短版 smoke test 已重新跑通
+- `single_pod_bgload_fan_cycle/` 短版 smoke test 已重新跑通
+- `thermal_analysis/run_cycle_from_master.sh` 短版 direct thermal cycle 已跑通
+- `scripts/run_C_thermal_yolo26_3inst_cycles.sh` 短版 formal thermal cycle 已跑通
+- `scripts/run_yolo26_singlepod_rate_sweep.sh` 短版 rate sweep 已跑通
+- `scripts/run_yolo26_singlepod_async_rate_sweep.sh` 短版 async rate sweep 已跑通
+
 ## 實驗場景
 
 ### 1. `single_pod_serial/`
@@ -48,6 +64,22 @@ TARGET_MODE=pod DURATION=60 TIMEOUT_SEC=20 REPEAT=1 \
 bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_serial/run_single_pod_serial_with_metrics.sh
 ```
 
+另一路目前已重新驗證的 baseline runner 是：
+
+```bash
+cd /home/icclz2/Pre6G
+DURATION=60 FOCUS_INTERVAL=0.1 BG_INTERVAL=0.2 WARMUP_N=10 \
+bash autoscale-source-split/02-experiment-layer/scripts/run_A_normal_baseline_yolo.sh
+```
+
+本輪 `2026-06-02` 重跑結果：
+
+- `rows=1423`
+- `success_rate=100%`
+- `client_mean_ms=41.836`
+- `client_p95_ms=46.670`
+- `server_mean_ms=16.570`
+
 ### 2. `single_pod_serial_fault_fan/`
 
 場景：
@@ -70,6 +102,14 @@ cd /home/icclz2/Pre6G
 CC_PASSWORD='your_coolercontrol_password' \
 bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_serial_fault_fan/run_single_pod_serial_fault_fan.sh
 ```
+
+本輪 `2026-06-02` 重跑結果：
+
+- `rows=235`
+- `success_rate=100%`
+- `client_mean_ms=42.322`
+- `client_p95_ms=49.052`
+- `server_mean_ms=16.746`
 
 短版 smoke test：
 
@@ -103,6 +143,14 @@ cd /home/icclz2/Pre6G
 CC_PASSWORD='your_coolercontrol_password' \
 bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle.sh
 ```
+
+本輪 `2026-06-02` 重跑結果：
+
+- `rows=310`
+- `success_rate=100%`
+- `client_mean_ms=55.685`
+- `client_p95_ms=64.100`
+- `server_mean_ms=31.025`
 
 短版 smoke test：
 
@@ -150,6 +198,14 @@ bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bglo
 - `yolo26_task3_saturation.yaml` 對應的 4-pod stack 可正常建立
 - `run_task3_service_load_with_metrics.sh` 已完成短版 smoke test
 
+本輪 `2026-06-02` 重跑結果：
+
+- `rows=3118`
+- `success_rate=100%`
+- `client_mean_ms=76.477`
+- `client_p95_ms=121.749`
+- `server_mean_ms=25.342`
+
 啟動：
 
 ```bash
@@ -180,6 +236,11 @@ bash build_and_import_image_to_k3s.sh
 
 注意：若 pod 會排到 GPU worker，該 worker 的 k3s/containerd 也必須有相同 image。
 
+補充：
+
+- repo 正式 canonical path 是 `02-experiment-layer/yolo26_workload`
+- `icclz1` 現場若仍保留 `~/yolo26_k8s`，可作為 legacy build source 協助匯入 `local/yolo26n:0.1`，但它不是目前 repo 文件的正式路徑
+
 ### 2. 確認 worker SSH 可用
 
 ```bash
@@ -192,10 +253,17 @@ ssh icclz1-gpu "echo ok"
 ssh icclz1-gpu "ls /home/icclz1/gpu-tempctl-lab/fan_control_lab"
 ```
 
+補充：
+
+- 這台 `icclz2` 主機已重新建立 `icclz1-gpu` SSH alias
+- worker-side `gpu-tempctl-lab` 已可由 master 端直接觸發
+
 ## 子目錄說明
 
 - `common/`
   - 共用 request client、thermal runner、summary / plot helper
+- `yolo_demo/`
+  - 目前只有 `README.md`，作為歷史示意與說明，不是現場要另外啟動的實驗元件
 - `single_pod_serial/`
   - 單 pod serial baseline
 - `single_pod_serial_fault_fan/`

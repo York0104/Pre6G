@@ -51,20 +51,20 @@ type NodeStatus = {
     gpu_metrics?: string;
   };
   cpu?: {
-    usage_percent?: number;
-    used_cores?: number;
+    usage_percent?: number | null;
+    used_cores?: number | null;
   };
   memory?: {
-    usage_percent?: number;
-    working_set_mib?: number;
+    usage_percent?: number | null;
+    working_set_mib?: number | null;
   };
   disk?: {
-    root_usage_percent?: number;
+    root_usage_percent?: number | null;
   };
   gpu?: {
     status?: string;
-    count?: number;
-    fb_used_mib?: number;
+    count?: number | null;
+    fb_used_mib?: number | null;
   };
 };
 
@@ -272,21 +272,48 @@ async function fetchJson<T>(path: string): Promise<T> {
   return res.json();
 }
 
-function clampPercent(v?: number): number {
+function clampPercent(v?: number | null): number {
   if (v === undefined || v === null || Number.isNaN(v)) return 0;
   return Math.max(0, Math.min(100, v));
 }
 
-function getHealth(status?: NodeStatus): Health {
+function isExternalRole(role?: string): boolean {
+  if (!role) return false;
+  return role !== "control-plane" && role !== "worker";
+}
+
+function getHealth(inventory: NodeInventory, status?: NodeStatus): Health {
   if (!status) return "offline";
+
+  const hasAnyTelemetry =
+    status.cpu?.usage_percent !== undefined &&
+    status.cpu?.usage_percent !== null ||
+    status.memory?.usage_percent !== undefined &&
+    status.memory?.usage_percent !== null ||
+    status.disk?.root_usage_percent !== undefined &&
+    status.disk?.root_usage_percent !== null;
 
   const cpu = clampPercent(status.cpu?.usage_percent);
   const mem = clampPercent(status.memory?.usage_percent);
   const disk = clampPercent(status.disk?.root_usage_percent);
   const gpuStatus = status.gpu?.status?.toLowerCase() || "";
   const nodeSource = status.sources?.node_metrics?.toLowerCase() || "";
+  const externalNode = isExternalRole(inventory.role);
 
   if (
+    externalNode &&
+    (
+      !hasAnyTelemetry ||
+      nodeSource === "error" ||
+      gpuStatus.includes("metrics_error") ||
+      gpuStatus.includes("error")
+    )
+  ) {
+    return "offline";
+  }
+
+  if (
+    !hasAnyTelemetry ||
     nodeSource === "error" ||
     gpuStatus.includes("metrics_error") ||
     gpuStatus.includes("error") ||
@@ -347,7 +374,7 @@ function MetricBar({
   suffix = "%",
 }: {
   label: string;
-  value?: number;
+  value?: number | null;
   suffix?: string;
 }) {
   const p = clampPercent(value);
@@ -479,7 +506,7 @@ function NodeCard({
         <div className="flex items-center justify-between text-xs">
           <span className="text-slate-400">GPU FB Used</span>
           <span className="font-mono text-slate-200">
-            {st?.gpu?.fb_used_mib !== undefined
+            {st?.gpu?.fb_used_mib !== undefined && st?.gpu?.fb_used_mib !== null
               ? `${st.gpu.fb_used_mib.toFixed(0)} MiB`
               : "N/A"}
           </span>
@@ -1152,7 +1179,7 @@ export default function App() {
       return {
         inventory: inv,
         status,
-        health: getHealth(status),
+        health: getHealth(inv, status),
       };
     });
   }, [inventory, statuses]);

@@ -6,6 +6,7 @@ EXPERIMENT_LAYER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SPLIT_ROOT="$(cd "${EXPERIMENT_LAYER_DIR}/.." && pwd)"
 PRE6G_ROOT="$(cd "${SPLIT_ROOT}/.." && pwd)"
 SHARED_API_DIR="${SPLIT_ROOT}/03-shared-api-dashboard/autoscale_api"
+PYTHON_BIN="${PYTHON_BIN:-${PRE6G_ROOT}/iccl/bin/python}"
 
 export NODE_EXPORTER_INSTANCE="${NODE_EXPORTER_INSTANCE:-140.113.179.6:9100}"
 RUN_ID="${1:-${RUN_ID:?missing run id}}"
@@ -79,7 +80,11 @@ export MPLCONFIGDIR="${MPLCONFIGDIR:-$HOME/.config/matplotlib}"
 mkdir -p "$MPLCONFIGDIR"
 
 cd "$AUTOSCALE_DIR"
-source "$AUTOSCALE_DIR/iccl/bin/activate"
+
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "[ERROR] Python env not found: $PYTHON_BIN"
+  exit 1
+fi
 
 export VM_AGGREGATOR_MODULE=vm_aggregator
 export MODE=fast
@@ -91,7 +96,7 @@ export INTERVAL_SEC="$INTERVAL_SEC"
 export OUT_DIR="$OUT_DIR"
 export RUN_TAG="$RUN_ID"
 
-python "${SHARED_API_DIR}/scripts/record_stress_metrics.py" > "$OUT_DIR/recorder.log" 2>&1 &
+"$PYTHON_BIN" "${SHARED_API_DIR}/scripts/record_stress_metrics.py" > "$OUT_DIR/recorder.log" 2>&1 &
 RECORDER_PID=$!
 
 cleanup() {
@@ -139,7 +144,7 @@ while kill -0 "$WORKER_PID" >/dev/null 2>&1; do
     "${WORKER_SSH}:${WORKER_REPO}/fan_control_lab/logs/${RUN_ID}/" \
     "$OUT_DIR/worker_logs_live/" >/dev/null 2>&1 || true
 
-  python "${SCRIPT_DIR}/live_cycle_plot.py" \
+  "$PYTHON_BIN" "${SCRIPT_DIR}/live_cycle_plot.py" \
     --csv "$OUT_DIR/worker_logs_live/thermal.csv" \
     --out "$OUT_DIR/live_plot.png" \
     --target "$PLOT_TARGET_C" \
@@ -162,7 +167,7 @@ rsync -e "ssh ${SSH_OPTS}" -av \
   "${WORKER_SSH}:${WORKER_REPO}/fan_control_lab/logs/${RUN_ID}/" \
   "$OUT_DIR/worker_logs/"
 
-python "${SCRIPT_DIR}/live_cycle_plot.py" \
+"$PYTHON_BIN" "${SCRIPT_DIR}/live_cycle_plot.py" \
   --csv "$OUT_DIR/worker_logs/thermal.csv" \
   --out "$OUT_DIR/final_plot.png" \
   --target "$PLOT_TARGET_C" \
@@ -171,7 +176,7 @@ python "${SCRIPT_DIR}/live_cycle_plot.py" \
   --band "$BAND" \
   --title "Final Thermal Curve - ${RUN_ID}" || true
 
-python "${SCRIPT_DIR}/merge_run.py" \
+"$PYTHON_BIN" "${SCRIPT_DIR}/merge_run.py" \
   --run-dir "$OUT_DIR"
 
 echo

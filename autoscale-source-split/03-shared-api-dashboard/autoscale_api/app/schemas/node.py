@@ -69,14 +69,14 @@ class NodeStatusSources(BaseModel):
 
 
 class NodeStatusCPU(BaseModel):
-    usage_percent: float
-    used_cores: float
+    usage_percent: Optional[float] = None
+    used_cores: Optional[float] = None
 
 
 class NodeStatusMemory(BaseModel):
-    usage_percent: float
-    working_set_bytes: int
-    working_set_mib: int
+    usage_percent: Optional[float] = None
+    working_set_bytes: Optional[int] = None
+    working_set_mib: Optional[int] = None
 
 
 class NodeStatusDisk(BaseModel):
@@ -85,9 +85,9 @@ class NodeStatusDisk(BaseModel):
 
 class NodeStatusGPU(BaseModel):
     status: str
-    count: int
-    fb_used_bytes: int
-    fb_used_mib: float
+    count: Optional[int] = None
+    fb_used_bytes: Optional[int] = None
+    fb_used_mib: Optional[float] = None
 
 
 class NodeStatus(BaseModel):

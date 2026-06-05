@@ -41,6 +41,9 @@ metadata:
 spec:
   replicas: 1
   serviceName: vm-victoria-metrics-single-server
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   selector:
     matchLabels:
       app: server
@@ -54,7 +57,7 @@ spec:
         app.kubernetes.io/name: victoria-metrics-single
     spec:
       nodeSelector:
-        kubernetes.io/hostname: iccl-cluster-z2
+        kubernetes.io/hostname: icclz2
       serviceAccountName: vm-victoria-metrics-single-server
       tolerations:
         - operator: Exists
@@ -88,9 +91,16 @@ spec:
           volumeMounts:
             - name: server-volume
               mountPath: /storage
-      volumes:
-        - name: server-volume
-          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: server-volume
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 50Gi
 ---
 apiVersion: v1
 kind: Service

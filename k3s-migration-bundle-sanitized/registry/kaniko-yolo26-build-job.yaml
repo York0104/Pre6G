@@ -16,9 +16,9 @@ spec:
             - "--context=git://github.com/York0104/Pre6G.git#refs/heads/k3s-rebuild"
             - "--context-sub-path=autoscale-source-split/02-experiment-layer/yolo26_workload"
             - "--dockerfile=Dockerfile"
-            - "--destination=harbor.iccl.local/pre6g/yolo26n:0.1"
+            - "--destination=harbor.iccl.local:8088/pre6g/yolo26n:0.1"
             - "--cache=true"
-            - "--cache-repo=harbor.iccl.local/pre6g/cache"
+            - "--cache-repo=harbor.iccl.local:8088/pre6g/cache"
             - "--image-name-with-digest-file=/workspace/image-name-with-digest.txt"
           volumeMounts:
             - name: docker-config
