@@ -25,6 +25,8 @@
 
 ## Environment
 
+本地開發時，前端仍可透過 `.env` 讀取：
+
 前端 `.env`：
 
 ```env
@@ -42,6 +44,13 @@ VITE_AUTOSCALE_API_TOKEN=<current-issued-token>
 若 `autoscale_api` 啟用了 token 驗證，前端必須同步設定 `VITE_AUTOSCALE_API_TOKEN`，否則 `GET /api/v1/nodes` 與 `GET /api/v1/nodes/status` 會直接回 `401 Unauthorized`。
 
 啟動前提示：若 `.env` 缺少 token 或仍保留 `replace-with-issued-token`，前端頁面會顯示 auth notice，且在 API 回 `401` 時給出明確錯誤訊息。
+
+`k3s` / container 部署時，前端也支援 runtime config：
+
+- `PRE6G_DASHBOARD_API_BASE`
+- `PRE6G_DASHBOARD_API_TOKEN`
+
+容器啟動時會把這兩個 env 寫入 `env-config.js`，因此後續只改 `ConfigMap/Secret` 並重建 Pod，就能切換 API，不需要重打 frontend image。
 
 ## Start
 
@@ -66,6 +75,12 @@ npm run dev -- --host 0.0.0.0 --port 5174
 http://<CONTROL_PLANE_IP>:5174
 ```
 
+若使用 preview：
+
+```text
+http://<CONTROL_PLANE_IP>:4174
+```
+
 ## Expected Result
 
 `Cluster Monitor` 應能顯示：
@@ -86,6 +101,34 @@ http://<CONTROL_PLANE_IP>:5174
 3. 設定 `VITE_AUTOSCALE_API_BASE` 指向目前 API，並同步填入 `VITE_AUTOSCALE_API_TOKEN`。
 4. 啟動 `run_local_dashboard.sh`。
 5. 重新整理瀏覽器頁面，確認 external nodes 已出現於 `Cluster Monitor`。
+
+## k3s Deployment
+
+前端容器化檔案已放在：
+
+- [Dockerfile](./Dockerfile)
+- [nginx/default.conf](./nginx/default.conf)
+- [docker-entrypoint.d/40-write-env-config.sh](./docker-entrypoint.d/40-write-env-config.sh)
+- [../deploy/k3s/README.md](../deploy/k3s/README.md)
+
+build 指令需以 repo root 作為 context：
+
+```bash
+cd /home/icclz2/Pre6G
+docker build \
+  -f autoscale-source-split/03-shared-api-dashboard/cluster-dashboard/Dockerfile \
+  -t harbor.iccl.local:8088/pre6g/cluster-dashboard:0.1 \
+  .
+```
+
+對 `k3s` 的建議做法是：
+
+1. 先 build 並 push image。
+2. 在 `cluster-dashboard-configmap.yaml` 設定 `PRE6G_DASHBOARD_API_BASE`。
+3. 在 `cluster-dashboard-secret.yaml` 設定 `PRE6G_DASHBOARD_API_TOKEN`。
+4. 套用 [../deploy/k3s/cluster-dashboard-deployment.yaml](../deploy/k3s/cluster-dashboard-deployment.yaml)。
+
+預設 manifest 會以 `NodePort 30080` 暴露 dashboard，並預期 API 可由瀏覽器透過 `NodePort 30081` 連到。
 
 ## Not In Scope For This Rebuild
 

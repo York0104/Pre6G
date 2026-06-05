@@ -1,0 +1,1 @@
+window.__PRE6G_DASHBOARD_CONFIG__ = window.__PRE6G_DASHBOARD_CONFIG__ || {};

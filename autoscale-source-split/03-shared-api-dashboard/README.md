@@ -39,6 +39,7 @@
 | --- | --- |
 | `autoscale_api/` | FastAPI backend，提供 node inventory/status、full metrics 與 experiment control API。 |
 | `cluster-dashboard/` | React/Vite frontend dashboard source。 |
+| `deploy/k3s/` | API + dashboard 的 `k3s` manifests、RBAC 與建置說明。 |
 | `requirements.txt` | backend/collector 共用 Python dependencies。 |
 | `LOCAL_BOOTSTRAP_STATUS.md` | 本機啟動與目前重建狀態摘要。 |
 
@@ -47,6 +48,7 @@
 | 路徑 | 說明 |
 | --- | --- |
 | `README.md` | API 啟動、重建與驗證說明。 |
+| `Dockerfile` | `k3s` / container 部署用 backend image 定義。 |
 | `app/main.py` | FastAPI app entrypoint 與 router 掛載。 |
 | `app/security.py` | API token/security helper。 |
 | `app/routers/full_metrics.py` | full metrics API routes，偏監控用途。 |
@@ -76,6 +78,7 @@
 | 路徑 | 說明 |
 | --- | --- |
 | `README.md` | dashboard 啟動與驗證方式。 |
+| `Dockerfile` | `k3s` / container 部署用 frontend image 定義。 |
 | `.gitignore` | frontend git ignore 設定。 |
 | `package.json` / `package-lock.json` | frontend dependencies 與 lockfile。 |
 | `src/App.tsx` | dashboard 主要 UI。 |
@@ -83,11 +86,14 @@
 | `src/main.tsx` | React entrypoint。 |
 | `public/favicon.svg` | dashboard favicon。 |
 | `public/icons.svg` | dashboard icon sprite/static icons。 |
+| `public/env-config.js` | runtime config 預設入口；`k3s` 容器啟動時會覆寫。 |
 | `src/assets/hero.png` | dashboard/hero 圖片資產。 |
 | `src/assets/react.svg` | React 預設 SVG 資產；保留作為 build/reference。 |
 | `src/assets/vite.svg` | Vite 預設 SVG 資產；保留作為 build/reference。 |
 | `index.html` | Vite HTML entry。 |
 | `vite.config.ts` | Vite 設定。 |
+| `nginx/default.conf` | container 版靜態站台設定。 |
+| `docker-entrypoint.d/40-write-env-config.sh` | 容器啟動時寫入 frontend runtime config。 |
 | `tailwind.config.js` / `postcss.config.js` | Tailwind/PostCSS 設定。 |
 | `eslint.config.js` | ESLint 設定。 |
 | `tsconfig*.json` | TypeScript 設定。 |
@@ -111,6 +117,25 @@
    - 若 API 已啟用 auth，也同步設定 `VITE_AUTOSCALE_API_TOKEN`
    - 執行 `cluster-dashboard/run_local_dashboard.sh`
 5. 重新整理前端頁面，確認 external nodes 已出現在 `Cluster Monitor`。
+
+## k3s 部署
+
+現在 repo 內已附上完整 `k3s` 落地樣板，建議入口為：
+
+- [deploy/k3s/README.md](./deploy/k3s/README.md)
+
+這條路徑包含：
+
+- backend/frontend Docker build 指令
+- `Deployment` / `Service` / `RBAC`
+- `ConfigMap` / `Secret` 範本
+- `NodePort` 與可選 `Ingress`
+
+另外，若目標是直接在目前 `icclz2` 完成可用部署，已實際驗證的入口是：
+
+- [deploy/k3s/live-hostpath/README.md](./deploy/k3s/live-hostpath/README.md)
+
+若目標是穩定常駐而非互動式開發，建議優先採用這條 `k3s` 路徑，而不是長時間用 `tmux + vite dev`。
 
 ## 注意事項
 

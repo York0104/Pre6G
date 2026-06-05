@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pre6g-dashboard
+  namespace: pre6g-dashboard
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: dashboard.pre6g.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cluster-dashboard
+                port:
+                  number: 80

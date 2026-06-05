@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autoscale-api-config
+  namespace: pre6g-dashboard
+data:
+  VM_URL: "http://140.113.179.9:31888"
+  NETDATA_URL: "http://140.113.179.9:32163"
+  NETDATA_CHILD_URL: "http://140.113.179.9:32163"
+  NETDATA_PARENT_BASE_URL: "http://140.113.179.9:32163"
+  KSM_URL: "http://140.113.179.9:32080"
+  AUTOSCALE_API_CORS_ORIGINS: "http://140.113.179.9:30080,http://dashboard.pre6g.local"

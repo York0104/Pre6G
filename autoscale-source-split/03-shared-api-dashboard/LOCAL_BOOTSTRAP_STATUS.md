@@ -1,6 +1,6 @@
 # Local Bootstrap Status
 
-Date: 2026-06-03
+Date: 2026-06-06
 Host: `/home/icclz2/Pre6G`
 
 ## What Is Ready
@@ -19,6 +19,9 @@ Host: `/home/icclz2/Pre6G`
 - `autoscale_api` 已能把 external nodes 拉入 dashboard：
   - `rfsoc4x2-pynq`
   - `openwrt_ap`
+- `k3s` live dashboard / API 已實際部署於 `pre6g-dashboard` namespace：
+  - dashboard: `http://140.113.179.9:30080`
+  - API: `http://140.113.179.9:30081`
 
 ## Current Local Runtime
 
@@ -84,14 +87,39 @@ bash run_local_dashboard.sh
 systemctl --user status pre6g-cluster-dashboard.service
 ```
 
+## Current k3s Runtime
+
+本輪已額外完成 `k3s` live 落地，採用：
+
+- [deploy/k3s/live-hostpath/autoscale-api-live.yaml](deploy/k3s/live-hostpath/autoscale-api-live.yaml)
+- [deploy/k3s/live-hostpath/cluster-dashboard-live.yaml](deploy/k3s/live-hostpath/cluster-dashboard-live.yaml)
+
+目前設計：
+
+- 兩個 Deployment 都固定在 `icclz2`
+- `autoscale_api` 使用 `python:3.12-slim`
+- `cluster-dashboard` 使用 `nginx:1.29-alpine`
+- frontend 直接讀取 host 上 `cluster-dashboard/dist`
+- API Pod 直接掛入 host 上的 `/usr/local/bin/kubectl`
+
+目前檢查方式：
+
+```bash
+kubectl -n pre6g-dashboard get pods -o wide
+kubectl -n pre6g-dashboard logs deploy/autoscale-api
+kubectl -n pre6g-dashboard logs deploy/cluster-dashboard
+```
+
 ## Current Validated Result
 
 - `GET /api/v1/nodes` 已可列出：
   - 一般 `k3s` nodes
   - `rfsoc4x2-pynq`
   - `openwrt_ap`
-- `GET /api/v1/nodes/status` 已可回傳 external node status
-- `Cluster Monitor` 前端頁面可看到 external node 卡片
+- `GET /api/v1/nodes/status` 已可回傳一般 `k3s` nodes 即時 metrics
+- `GET /api/v1/nodes/status` 已可回傳 `rfsoc4x2-pynq` status
+- `Cluster Monitor` 前端頁面已可透過 `NodePort 30080` 直接使用
+- 一般 `k3s` nodes 已不再因缺 `kubectl` 而全部 fallback 成 `metrics_error`
 - external nodes 沒 telemetry 時目前顯示 `OFFLINE`
 
 ## Current Gaps
@@ -115,6 +143,12 @@ systemctl --user status pre6g-cluster-dashboard.service
 
 也就是說，目前「API / dashboard 可手動啟動」與「可由目前使用者常駐啟動」都已具備；尚未重建完成的是 external data producers。
 
+另外，目前 `k3s` 正式可用路徑雖已完成，但仍有一個未完全收斂項：
+
+- Harbor image push 版尚未完成 Docker CA trust 收斂
+
+因此目前正式可用的是 `live-hostpath` 路徑，不是 Harbor image 版。
+
 ## Minimal Rebuild Sequence
 
 1. 完成 `01-monitoring-layer` 重建與驗證。
@@ -131,6 +165,24 @@ systemctl --user status pre6g-cluster-dashboard.service
    - `bash run_local_dashboard.sh`
 6. 重新整理瀏覽器，確認 `Cluster Monitor` 顯示資料。
 
+## Minimal k3s Rebuild Sequence
+
+1. 先確認 `cluster-dashboard/dist` 已由 Node 22 build 完成。
+2. 套用：
+   - `deploy/k3s/namespace.yaml`
+   - `deploy/k3s/autoscale-api-rbac.yaml`
+3. 建立：
+   - `autoscale-api-config`
+   - `autoscale-api-secret`
+   - `cluster-dashboard-config`
+   - `cluster-dashboard-secret`
+4. 套用：
+   - `deploy/k3s/live-hostpath/autoscale-api-live.yaml`
+   - `deploy/k3s/live-hostpath/cluster-dashboard-live.yaml`
+5. 驗證：
+   - `http://140.113.179.9:30081/`
+   - `http://140.113.179.9:30080`
+
 ## Notes
 
 - repo 內原本保留的 `systemd` 模板仍在：
@@ -138,3 +190,5 @@ systemctl --user status pre6g-cluster-dashboard.service
 - 本輪另補了 user-level systemd service，避免一定要修改 `/etc/systemd/system`。
 - external nodes 若只有 inventory、沒有 telemetry，前端目前會顯示 `OFFLINE`，這是刻意設計，不代表 dashboard 壞掉。
 - `run_local_api.sh` 與 dashboard dev server 是目前最短的重建驗證路徑。
+- 目前已驗證的 `k3s` 正式入口請優先看：
+  - [deploy/k3s/live-hostpath/README.md](deploy/k3s/live-hostpath/README.md)

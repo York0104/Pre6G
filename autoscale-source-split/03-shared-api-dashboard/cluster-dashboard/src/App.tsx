@@ -9,9 +9,30 @@ import {
   YAxis,
 } from "recharts";
 
+type DashboardRuntimeConfig = {
+  apiBase?: string;
+  apiToken?: string;
+};
+
+declare global {
+  interface Window {
+    __PRE6G_DASHBOARD_CONFIG__?: DashboardRuntimeConfig;
+  }
+}
+
+function getRuntimeConfig(): DashboardRuntimeConfig {
+  return window.__PRE6G_DASHBOARD_CONFIG__ || {};
+}
+
+const runtimeConfig = getRuntimeConfig();
 const API_BASE =
-  import.meta.env.VITE_AUTOSCALE_API_BASE || "http://127.0.0.1:8000";
-const API_TOKEN = import.meta.env.VITE_AUTOSCALE_API_TOKEN?.trim() || "";
+  runtimeConfig.apiBase?.trim() ||
+  import.meta.env.VITE_AUTOSCALE_API_BASE ||
+  "http://127.0.0.1:8000";
+const API_TOKEN =
+  runtimeConfig.apiToken?.trim() ||
+  import.meta.env.VITE_AUTOSCALE_API_TOKEN?.trim() ||
+  "";
 const API_TOKEN_PLACEHOLDER = "replace-with-issued-token";
 
 function isDashboardTokenMissing(): boolean {

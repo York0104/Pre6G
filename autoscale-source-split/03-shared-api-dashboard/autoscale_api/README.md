@@ -127,6 +127,45 @@ sudo systemctl enable --now autoscale-api.service
 - `AUTOSCALE_API_TOKEN` 不可保留 placeholder
 - `VM_URL` / `NETDATA_*` / `KSM_URL` 不可保留 `<control-plane-ip>`
 
+## Run In k3s
+
+`autoscale_api` 現在已支援：
+
+- Pod 內優先使用 `in-cluster config`
+- 非 Pod 環境 fallback 到本機 `kubeconfig`
+
+因此在 `k3s` 內不需要額外掛 `~/.kube/config`。
+
+容器映像與 manifests 已放在：
+
+- [Dockerfile](./Dockerfile)
+- [../deploy/k3s/README.md](../deploy/k3s/README.md)
+- [../deploy/k3s/autoscale-api-rbac.yaml](../deploy/k3s/autoscale-api-rbac.yaml)
+- [../deploy/k3s/autoscale-api-configmap.example.yaml](../deploy/k3s/autoscale-api-configmap.example.yaml)
+- [../deploy/k3s/autoscale-api-secret.example.yaml](../deploy/k3s/autoscale-api-secret.example.yaml)
+- [../deploy/k3s/autoscale-api-deployment.yaml](../deploy/k3s/autoscale-api-deployment.yaml)
+
+build 指令需以 repo root 作為 context：
+
+```bash
+cd /home/icclz2/Pre6G
+docker build \
+  -f autoscale-source-split/03-shared-api-dashboard/autoscale_api/Dockerfile \
+  -t harbor.iccl.local:8088/pre6g/autoscale-api:0.1 \
+  .
+```
+
+部署前至少要準備：
+
+- `VM_URL`
+- `NETDATA_URL`
+- `NETDATA_CHILD_URL`
+- `NETDATA_PARENT_BASE_URL`
+- `KSM_URL`
+- `AUTOSCALE_API_TOKEN`
+
+API Pod 另外需要讀取 `nodes` 的 RBAC，否則 `/api/v1/nodes` 會失敗。
+
 ## Health Check
 
 ```bash
