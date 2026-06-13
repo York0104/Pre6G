@@ -36,5 +36,6 @@ autoscale-source-split/03-shared-api-dashboard/experiments/experiments_yolo/yolo
 
 # Out-of-scope duplicate experiment workload copies; keep tracked yolo26_k8s sources only.
 # Generated experiment outputs and ad-hoc shareable bundle mirrors.
-autoscale-source-split/02-experiment-layer/experiments_yolo/results
+autoscale-source-split/02-experiment-layer/experiments_yolo/results/
 shareable-bundles-nicetree
+task/
