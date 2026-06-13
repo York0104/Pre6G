@@ -1,41 +1,54 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: kaniko-build-yolo26n
+  name: kaniko-build-yolo26-app
   namespace: image-build
 spec:
   backoffLimit: 1
   template:
     spec:
-      # Retained as the full-build validation/benchmark path.
-      # Daily builds should use the split base/app pipeline instead.
-      # Current cluster DNS does not resolve harbor.iccl.local inside ordinary pods.
-      # Keep this until harbor.iccl.local is provided by cluster-wide DNS.
       hostAliases:
         - ip: "140.113.179.9"
           hostnames:
             - "harbor.iccl.local"
+      initContainers:
+        - name: clone-repo
+          image: alpine/git:2.47.2
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              git clone --branch k3s-rebuild --single-branch \
+                https://github.com/York0104/Pre6G.git /workspace/src
+              test -f /workspace/src/autoscale-source-split/02-experiment-layer/yolo26_workload/Dockerfile.app
+              ls -la /workspace/src/autoscale-source-split/02-experiment-layer/yolo26_workload
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
       restartPolicy: Never
       containers:
         - name: kaniko
           image: gcr.io/kaniko-project/executor:v1.23.2-debug
           args:
-            # Replace the branch ref with a fixed commit SHA if you need fully reproducible builds.
-            - "--context=git://github.com/York0104/Pre6G.git#refs/heads/k3s-rebuild"
-            - "--context-sub-path=autoscale-source-split/02-experiment-layer/yolo26_workload"
-            - "--dockerfile=Dockerfile"
+            - "--context=dir:///workspace/src/autoscale-source-split/02-experiment-layer/yolo26_workload"
+            - "--dockerfile=/workspace/src/autoscale-source-split/02-experiment-layer/yolo26_workload/Dockerfile.app"
             - "--destination=harbor.iccl.local:8088/pre6g/yolo26n:REPLACE_IMAGE_TAG"
             - "--cache=true"
             - "--cache-repo=harbor.iccl.local:8088/pre6g/cache"
             - "--registry-certificate=harbor.iccl.local:8088=/kaniko/certs/harbor-ca.crt"
             - "--image-name-with-digest-file=/workspace/image-name-with-digest.txt"
           volumeMounts:
+            - name: workspace
+              mountPath: /workspace
             - name: docker-config
               mountPath: /kaniko/.docker
             - name: harbor-ca
               mountPath: /kaniko/certs
               readOnly: true
       volumes:
+        - name: workspace
+          emptyDir: {}
         - name: docker-config
           secret:
             secretName: harbor-push-secret

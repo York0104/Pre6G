@@ -188,3 +188,4 @@ Control plane IP: `140.113.179.9`
 - [k3s-migration-bundle-sanitized/registry/REBUILD_STEPS.md](k3s-migration-bundle-sanitized/registry/REBUILD_STEPS.md)
 - [k3s-migration-bundle-sanitized/registry/IMPLEMENTATION_PROGRESS.md](k3s-migration-bundle-sanitized/registry/IMPLEMENTATION_PROGRESS.md)
 - [k3s-migration-bundle-sanitized/registry/VERIFY_REGISTRY_PULL.md](k3s-migration-bundle-sanitized/registry/VERIFY_REGISTRY_PULL.md)
+- [docs/rebuild/kaniko-yolo26-build-rebuild.md](docs/rebuild/kaniko-yolo26-build-rebuild.md)
