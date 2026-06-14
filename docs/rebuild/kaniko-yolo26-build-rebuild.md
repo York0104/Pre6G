@@ -28,11 +28,24 @@ Workspace: `/home/icclz2/Pre6G`
   - 代表主要瓶頸是 heavy image build / final snapshot / upload
   - 不再適合作為日常 build 主線
 - `split build` 的 repo 內檔案結構與 job 樣板已完成
-- `split build` 的第一個 live run 目前卡在 `Dockerfile path resolution`
-  - `kaniko-build-yolo26-base` 會在 clone 完 repo 後立即失敗
-  - 目前尚未進到 Harbor push 階段
+- `split build` 曾在第一輪 live run 卡在 `Dockerfile path resolution`
+  - 原因是 `Kaniko git context + context-sub-path + custom Dockerfile name` 的組合解析不穩定
+  - 已改成 `initContainer clone repo + dir:// context + explicit Dockerfile path`
+  - 2026-06-14 新版 live validation 已確認此 blocker 已解除
 - `split build` 已正式改成 `initContainer clone repo + dir:// context`
-- 目前待重新進行的是修正後 job 的新一輪 live validation
+- 2026-06-14 的新版 `base build` live validation 已確認：
+  - `clone-repo` 成功
+  - `test -f Dockerfile.base` 成功
+  - `yolo26_workload` 目錄內容可列出
+  - Kaniko 不再出現 `error resolving dockerfile path`
+  - Kaniko 已開始執行 `Dockerfile.base`
+  - build 已成功跑完整個 `base build` job
+- `base image` build job 已 `Complete 1/1`
+- `base image` runtime pull 已成功
+- `app build` 已成功完成並 push
+- `app image` runtime pull 已成功
+- `intent-lab` rollout 已成功
+- 三個 `/healthz` 已全部成功
 
 ## Why Full Build Is Not The Daily Path
 
@@ -342,6 +355,23 @@ Success criteria:
 - log 不再出現 `error resolving dockerfile path`
 - log 顯示 push 成功
 
+已確認達成：
+
+- `job 成功建立`
+- `clone-repo` 成功
+- `yolo26_workload` 目錄內容可見
+- 不再出現 `error resolving dockerfile path`
+- 已開始執行真正的 `Dockerfile.base`
+- `kaniko-build-yolo26-base` 最終狀態為 `Complete 1/1`
+- `sudo crictl pull harbor.iccl.local:8088/pre6g/yolo26-base:0.1` 成功
+- runtime digest readback:
+  - `sha256:290d8e363fd1d3f90063a3c70e0337ed969f2c108a80d6af96dfbabb7df55991`
+
+待補最終確認：
+
+- Harbor 出現 `harbor.iccl.local:8088/pre6g/yolo26-base:0.1`
+- 若需要 repository tag list 證據，再補 Harbor API readback
+
 ## App Image Build
 
 ### Dockerfile Summary
@@ -402,6 +432,28 @@ Success criteria:
 - log 顯示 push 成功
 - Harbor 出現 `harbor.iccl.local:8088/pre6g/yolo26n:${IMAGE_TAG}`
 
+目前狀態：
+
+- 已完成
+- 已驗證：
+  - `clone-repo` 成功
+  - `FROM harbor.iccl.local:8088/pre6g/yolo26-base:0.1` 成功
+  - push 成功
+  - job 最終 `Complete 1/1`
+  - runtime pull 成功
+
+實際驗證 tag：
+
+- `kaniko-app-20260614-2220`
+
+實際 push digest：
+
+- `sha256:dfee5f43bd6a500cac056ee20359e78de0878c207df8644179e5f554f66ba75b`
+
+runtime pull readback digest：
+
+- `sha256:fbc8d5750f5d56423db748e50045a8600a5f26cfd0c2a60b93123d941b4e51fa`
+
 ## Harbor Tag Verification
 
 ### Base Image
@@ -414,6 +466,12 @@ curl -sk -u '<HARBOR_PUSH_USERNAME>:<HARBOR_PUSH_TOKEN>' \
 Success criteria:
 
 - `0.1` 出現在 tag list
+
+目前狀態：
+
+- `base build job` 已完成
+- runtime pull readback 已成功
+- 若需要 API 證據，可再補 Harbor tag list 輸出
 
 ### App Image
 
@@ -441,6 +499,10 @@ Success criteria:
 - pull 成功
 - 不出現 `x509`、`401 Unauthorized`、`no basic auth credentials`
 
+已確認達成：
+
+- `sudo crictl pull harbor.iccl.local:8088/pre6g/yolo26-base:0.1` 成功
+
 ### App Image
 
 ```bash
@@ -451,6 +513,10 @@ Success criteria:
 
 - pull 成功
 - runtime node 能讀到新 tag
+
+已確認達成：
+
+- `sudo crictl pull harbor.iccl.local:8088/pre6g/yolo26n:kaniko-app-20260614-2220` 成功
 
 ## Rollout To intent-lab
 
@@ -494,6 +560,13 @@ Success criteria:
 - 三個 rollout 全部完成
 - 三個 pod 最後都 `1/1 Running`
 
+已確認達成：
+
+- `yolo26n-focus` rollout 成功
+- `yolo26n-bg-1` rollout 成功
+- `yolo26n-bg-2` rollout 成功
+- 最終三個 pods 皆為 `1/1 Running`
+
 ## /healthz Verification
 
 ```bash
@@ -505,6 +578,12 @@ curl -fsS http://140.113.179.6:18083/healthz
 Success criteria:
 
 - 三個 `/healthz` 都回傳成功
+
+已確認達成：
+
+- `18081` `focus` 成功
+- `18082` `background-1` 成功
+- `18083` `background-2` 成功
 
 ## Rollback
 
@@ -667,6 +746,38 @@ kubectl -n image-build get job kaniko-build-yolo26n -o wide
 
 ### Symptom
 
+`yolo26n-bg-1` rollout 看似成功，但 `kubectl get pods -l app=yolo26n` 只看到 `focus` 與 `bg-2`，而 `curl http://140.113.179.6:18082/healthz` 連不到
+
+### Root cause
+
+- live deployment `yolo26n-bg-1` 的 `spec.replicas` 被設成 `0`
+- 因此 K8s 沒有建立任何 `bg-1` pod
+
+### Correct fix
+
+將 `bg-1` 明確恢復為 1 個 replica：
+
+```bash
+kubectl -n intent-lab scale deployment/yolo26n-bg-1 --replicas=1
+kubectl -n intent-lab rollout status deployment/yolo26n-bg-1
+```
+
+### Verification
+
+```bash
+kubectl -n intent-lab get deploy yolo26n-bg-1
+kubectl -n intent-lab get pods -l app=yolo26n -o wide
+curl -fsS http://140.113.179.6:18082/healthz
+```
+
+Success criteria:
+
+- `yolo26n-bg-1` 不再是 `0/0`
+- `bg-1` pod 變成 `1/1 Running`
+- `18082` `/healthz` 回傳成功
+
+### Symptom
+
 Kaniko log 出現 `Dockerfile not found`
 
 ### Root cause
@@ -774,7 +885,18 @@ Success criteria:
   - Dockerfiles：已補齊
   - rebuild guide：已更新
   - decision log：已新增
-- 目前待完成的是：
-  - base build live rerun
-  - app build live rerun
-  - rollout 與 `/healthz` 驗證
+  - `base build`：成功
+  - `app build`：成功
+  - runtime pull：成功
+  - rollout：成功
+  - `/healthz`：成功
+- 2026-06-14 的 split pipeline live validation 已最終驗通：
+  - `clone-repo` 成功
+  - `Dockerfile.base` / `Dockerfile.app` 路徑已被正確讀取
+  - `kaniko-build-yolo26-base` 最終 `Complete 1/1`
+  - `kaniko-build-yolo26-app` 最終 `Complete 1/1`
+  - 舊的 Dockerfile path blocker 已確認解除
+  - `base` 與 `app` image 均已可被 runtime side `crictl pull`
+  - 三個 runtime service 最終均可通過 `/healthz`
+- 已知唯一 runtime 注意事項：
+  - 若 `yolo26n-bg-1` live deployment 被縮成 `replicas: 0`，需先手動恢復成 1

@@ -28,7 +28,7 @@
 | `crictl pull` 自動 auth | 部分完成 | `k3s ctr --user ... pull` 已成功，`crictl pull` 仍有 `no basic auth credentials` 殘餘問題。 |
 | Kaniko rebuild 文檔 | 完成 | 已改寫 `docs/rebuild/kaniko-yolo26-build-rebuild.md`，將正式主線收斂為 split pipeline，並保留 full build validation path。 |
 | Kaniko full-build live validation | 部分完成 | 2026-06-13 full build 已成功通過 clone / DNS / auth / TLS / Dockerfile path，主要瓶頸已收斂為 heavy full-image build/upload。 |
-| Kaniko split-build live validation | 部分完成 | 舊版 `git context + context-sub-path + Dockerfile.base/app` 已確認會卡在 Dockerfile path resolution；現已改為 `initContainer clone + dir:// context`，待重跑新一輪 live validation。 |
+| Kaniko split-build live validation | 部分完成 | 舊版 `git context + context-sub-path + Dockerfile.base/app` 已確認會卡在 Dockerfile path resolution；現已改為 `initContainer clone + dir:// context`，且新版 base job 已實際通過 clone + Dockerfile path 驗證並進入 `Dockerfile.base` 內容執行。 |
 
 ## 已知風險與待決策
 
