@@ -12,10 +12,10 @@ import matplotlib.pyplot as plt
 
 
 METRICS = [
-    ("cpu_percent", "CPU", "#1f77b4", "-"),
-    ("ram_used_percent", "RAM", "#2ca02c", "--"),
-    ("gpu_util_percent", "GPU", "#ff7f0e", "-."),
-    ("vram_used_percent", "VRAM", "#d62728", ":"),
+    ("cpu_percent", "CPU", "#1f77b4", "-", 1.6, 2),
+    ("ram_used_percent", "RAM", "#2ca02c", "--", 1.8, 3),
+    ("gpu_util_percent", "GPU", "#ff7f0e", "-.", 1.4, 4),
+    ("vram_used_percent", "VRAM", "#b22222", ":", 2.2, 5),
 ]
 
 TASK_LABELS = {
@@ -101,13 +101,13 @@ def main():
             ax.set_axis_off()
             continue
 
-        for key, label, color, linestyle in METRICS:
+        for key, label, color, linestyle, linewidth, zorder in METRICS:
             x = [row["elapsed_s"] for row in rows if row.get(key) is not None]
             y = [row[key] for row in rows if row.get(key) is not None]
             if not x:
                 continue
             y = rolling_median(y, args.smooth_window)
-            ax.plot(x, y, color=color, linestyle=linestyle, linewidth=1.5, label=label)
+            ax.plot(x, y, color=color, linestyle=linestyle, linewidth=linewidth, label=label, zorder=zorder)
 
         ax.set_ylim(0, 100)
         ax.set_ylabel("Util. (%)")
@@ -115,8 +115,7 @@ def main():
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.set_title(f"({chr(ord('a') + index)}) {TASK_LABELS.get(task, task)}", loc="left")
-        if index == 0:
-            ax.legend(loc="upper center", ncol=4, frameon=False)
+        ax.legend(loc="upper center", ncol=4, frameon=False)
         if index == len(manifest) - 1:
             ax.set_xlabel("Time (s)")
 

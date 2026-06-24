@@ -44,7 +44,9 @@
 ### Key Areas
 
 - `cluster_semantic`
+- `cluster_semantic.gpu`
 - `target_node_semantic.node_pressure`
+- `target_node_semantic.gpu`
 - `target_node_semantic.node_pressure_instant`
 - `target_node_semantic.node_compute_features`
 - `target_node_semantic.gpu_pressure`
@@ -89,6 +91,14 @@ Disk / Temp:
 
 GPU:
 
+- `cluster_semantic.gpu.physical_count`
+- `cluster_semantic.gpu.standard_allocatable`
+- `cluster_semantic.gpu.shared_allocatable`
+- `cluster_semantic.gpu.mode`
+- `target_node_semantic.gpu.physical_count`
+- `target_node_semantic.gpu.standard_allocatable`
+- `target_node_semantic.gpu.shared_allocatable`
+- `target_node_semantic.gpu.mode`
 - `target_node_semantic.gpu_pressure.gpus[]`
 - `target_node_semantic.gpu_bound_features.gpu_compute.gpu_util_avg`
 - `target_node_semantic.gpu_bound_features.gpu_compute.power_watts_avg`
@@ -124,6 +134,11 @@ GPU:
 - `fb_used_percent` 已正規化為真百分比
   - 若上游回傳 `0~1` ratio，輸出前會自動乘 `100`
 - GPU 顯存欄位目前以 `bytes` 為主
+- `cluster_semantic.gpu` 與 `target_node_semantic.gpu` 已改成簡化語意
+  - `physical_count` 代表 DCGM 實際觀測到的實體 GPU 數
+  - `standard_allocatable` 代表 K8s `nvidia.com/gpu` 可排程量
+  - `shared_allocatable` 代表 K8s `nvidia.com/gpu.shared` 可排程量
+  - `mode` 只會是 `none` / `standard` / `shared` / `mixed`
 - `None` 欄位會在最終輸出前被清掉
 
 ### Typical Commands

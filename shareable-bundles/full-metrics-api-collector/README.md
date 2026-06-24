@@ -32,6 +32,19 @@ PYTHON_BIN=python3
 
 本工具透過 `AutoScale API` 週期性讀取 `/api/v1/full-metrics`，並將所有節點監控資料落地為 CSV 與 JSONL。
 
+目前 K8s node 的 GPU 摘要欄位已改成較清楚的語意：
+
+- `cluster_semantic.gpu.physical_count`
+- `cluster_semantic.gpu.standard_allocatable`
+- `cluster_semantic.gpu.shared_allocatable`
+- `cluster_semantic.gpu.mode`
+- `target_node_semantic.gpu.physical_count`
+- `target_node_semantic.gpu.standard_allocatable`
+- `target_node_semantic.gpu.shared_allocatable`
+- `target_node_semantic.gpu.mode`
+
+若使用 CSV，bundle 也會另外保留 `gpu.mode` 與相關 `status` 文字欄位，方便人工判讀。
+
 外部整合者只需要：
 
 - `AUTOSCALE_API_BASE`

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NAMESPACE="intent-lab"
-APP="yolo26n"
-EXP="task3-saturation"
-NODE_NAME="icclz1"
+NAMESPACE="${NAMESPACE:-intent-lab}"
+APP="${APP:-yolo26n}"
+EXP="${EXP:-task3-saturation}"
+NODE_NAME="${NODE_NAME:-icclz1}"
 NODE_SSH_ALIAS="${NODE_SSH_ALIAS:-icclz1-gpu}"
 NODE_SSH="${NODE_SSH:-$NODE_SSH_ALIAS}"
 VM_URL="${VM_URL:-http://140.113.179.9:31888}"

@@ -29,6 +29,13 @@ COMMON_COLUMNS = [
     "schema",
 ]
 
+TEXT_PATH_COLUMNS = [
+    "cluster_semantic.gpu.mode",
+    "target_node_semantic.gpu.mode",
+    "target_node_semantic.gpu_pressure.status",
+    "target_node_semantic.namespace_total_instant_local.status",
+]
+
 
 def iso_now(ts: Optional[int] = None) -> str:
     if ts is None:
@@ -112,6 +119,10 @@ def flatten_row(payload: Dict[str, Any], node: Dict[str, Any]) -> Tuple[List[str
         if key.startswith("meta."):
             numeric_metrics.pop(key, None)
     row.update(numeric_metrics)
+    for path in TEXT_PATH_COLUMNS:
+        value = get_path(payload, path, None)
+        if value is not None:
+            row[path] = value
     fieldnames = COMMON_COLUMNS + sorted(k for k in row.keys() if k not in COMMON_COLUMNS)
     return fieldnames, row
 

@@ -14,6 +14,7 @@ MASTER_PYTHON_BIN="${MASTER_PYTHON_BIN:-${SPLIT_ROOT}/../iccl/bin/python}"
 
 WORKER_SSH="${WORKER_SSH:-mirc516@100.90.127.1}"
 WORKER_NODE_NAME="${WORKER_NODE_NAME:-ICCL-S3-251230}"
+K8S_NODE_NAME="${K8S_NODE_NAME:-}"
 REMOTE_ROOT="${REMOTE_ROOT:-/home/mirc516/Pre6g}"
 SSH_OPTS="${SSH_OPTS:- -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10}"
 MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/pre6g-matplotlib}"
@@ -101,17 +102,75 @@ cleanup() {
 }
 trap cleanup EXIT
 
+resolve_k8s_node_name() {
+  if [ -n "${K8S_NODE_NAME}" ]; then
+    return 0
+  fi
+
+  local remote_host_candidates
+  remote_host_candidates="$(
+    ssh ${SSH_OPTS} "${WORKER_SSH}" 'hostname; hostname -s; hostname -f 2>/dev/null || true' 2>/dev/null \
+      | awk 'NF' \
+      | awk '!seen[$0]++'
+  )"
+
+  K8S_NODE_NAME="$(
+    NODES="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{\"\n\"}{end}' 2>/dev/null || true)" \
+    CANDIDATES="${remote_host_candidates}" \
+    WORKER_NAME="${WORKER_NODE_NAME}" \
+    python3 - <<'PY'
+import os
+
+node_names = [line.strip() for line in os.environ.get("NODES", "").splitlines() if line.strip()]
+candidates = [line.strip() for line in os.environ.get("CANDIDATES", "").splitlines() if line.strip()]
+worker_name = os.environ.get("WORKER_NAME", "").strip()
+if worker_name:
+    candidates.extend([worker_name, worker_name.lower(), worker_name.replace("_", "-").lower()])
+
+def variants(text):
+    t = text.strip()
+    lower = t.lower()
+    return {t, lower, lower.replace("_", "-")}
+
+best_name = ""
+best_score = -1
+for node_name in node_names:
+    node_variants = variants(node_name)
+    for candidate in candidates:
+        candidate_variants = variants(candidate)
+        score = -1
+        if node_variants & candidate_variants:
+            score = 100
+        else:
+            cl = candidate.lower().replace("_", "-")
+            nl = node_name.lower()
+            if cl in nl or nl in cl:
+                score = 80
+        if score > best_score:
+            best_name = node_name
+            best_score = score
+
+if best_name:
+    print(best_name)
+PY
+  )"
+
+  if [ -z "${K8S_NODE_NAME}" ]; then
+    K8S_NODE_NAME="${WORKER_NODE_NAME}"
+  fi
+}
+
 capture_cluster_state() {
   local phase="$1"
   {
     echo "# node"
-    kubectl get node "${WORKER_NODE_NAME}" -o wide || true
+    kubectl get node "${K8S_NODE_NAME}" -o wide || true
     echo
     echo "# pods_on_worker"
-    kubectl get pods -A --field-selector "spec.nodeName=${WORKER_NODE_NAME}" -o wide || true
+    kubectl get pods -A --field-selector "spec.nodeName=${K8S_NODE_NAME}" -o wide || true
   } > "${RUN_DIR}/deploy_${phase}.txt" 2>&1 || true
 
-  kubectl get pods -A --field-selector "spec.nodeName=${WORKER_NODE_NAME}" -o wide \
+  kubectl get pods -A --field-selector "spec.nodeName=${K8S_NODE_NAME}" -o wide \
     > "${RUN_DIR}/pods_${phase}.txt" 2>&1 || true
 
   kubectl get events -A --sort-by=.lastTimestamp | tail -n 50 \
@@ -579,6 +638,8 @@ else
   exit 1
 fi
 
+resolve_k8s_node_name
+echo "K8S_NODE_NAME=${K8S_NODE_NAME}" | tee -a "${RUN_DIR}/experiment_config.txt"
 capture_cluster_state "before"
 
 if [ "${ENABLE_REMOTE_NVIDIA_SMI}" = "1" ]; then
@@ -594,7 +655,7 @@ if [ "${ENABLE_KUBECTL_TOP}" = "1" ]; then
   (
     while true; do
       echo "timestamp,$(date -Is)"
-      kubectl top node "${WORKER_NODE_NAME}" --no-headers || true
+      kubectl top node "${K8S_NODE_NAME}" --no-headers || true
       echo "----"
       sleep 1
     done
@@ -613,7 +674,7 @@ python3 "${VM_AGG_COLLECTOR}" \
   --out "${RUN_DIR}/vm_aggregator_timeseries.csv" \
   --seconds "${VM_AGG_SECONDS}" \
   --interval "${VM_AGG_INTERVAL}" \
-  --node "${WORKER_NODE_NAME}" \
+  --node "${K8S_NODE_NAME}" \
   --vm-url "${VM_URL}" \
   --netdata-url "${NETDATA_URL}" \
   --netdata-child-url "${NETDATA_CHILD_URL}" \
@@ -672,7 +733,7 @@ else
 fi
 
 log_info "Exporting VictoriaMetrics query_range snapshots..."
-python3 - "${VM_URL}" "${START_EPOCH}" "${END_EPOCH}" "${RUN_DIR}" "${WORKER_NODE_NAME}" <<'PY'
+python3 - "${VM_URL}" "${START_EPOCH}" "${END_EPOCH}" "${RUN_DIR}" "${K8S_NODE_NAME}" <<'PY'
 import sys
 import urllib.parse
 import urllib.request

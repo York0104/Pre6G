@@ -21,6 +21,13 @@ COMMON_COLUMNS = [
     "schema",
 ]
 
+TEXT_PATH_COLUMNS = [
+    "cluster_semantic.gpu.mode",
+    "target_node_semantic.gpu.mode",
+    "target_node_semantic.gpu_pressure.status",
+    "target_node_semantic.namespace_total_instant_local.status",
+]
+
 API_BASE_URL = os.getenv("AUTOSCALE_API_BASE", "http://127.0.0.1:8000").rstrip("/")
 API_TOKEN = os.getenv("AUTOSCALE_API_TOKEN", "").strip()
 INTERVAL_SECONDS = int(os.getenv("INTERVAL_SECONDS", "30"))
@@ -115,6 +122,10 @@ def flatten_row(payload: Dict[str, Any], node: Dict[str, Any]) -> Tuple[List[str
             numeric_metrics.pop(key, None)
 
     row.update(numeric_metrics)
+    for path in TEXT_PATH_COLUMNS:
+        value = get_path(payload, path, None)
+        if value is not None:
+            row[path] = value
     fieldnames = COMMON_COLUMNS + sorted(
         key for key in row.keys() if key not in COMMON_COLUMNS
     )

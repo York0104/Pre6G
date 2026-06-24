@@ -1,94 +1,123 @@
 # experiments_benchmark
 
-這個目錄提供一套 **master-side remote benchmark orchestration**，用途是：
+這個目錄整理了目前 Pre6G 的四瓶頸 benchmark 控制與繪圖流程，目標是用一致的方式觀察：
 
-- 從 master 端透過 SSH 觸發 worker 本地 benchmark
-- 在 benchmark 執行期間同步收集 node-level 監控資料
-- 拉回 worker 端 summary / monitor artifacts
-- 自動生成單次 run 與整體 suite 的圖表
+- CPU-bound
+- RAM-bound
+- VRAM-bound
+- GPU-bound
 
-這條 workflow 的定位，和 `experiments_yolo/` 類似，但 benchmark workload 不是 pod/service，而是 **worker 本地腳本**。
+其中前 3 類沿用 **master -> worker 本地腳本** 的 remote orchestration；第 4 類 GPU-bound 則改成 **master -> k3s pod on GPU node** 的 experiment mode，但結果輸出仍對齊到這個目錄的 benchmark 結構。
+
+---
+
+## 實驗設計
+
+### 四個 bound 的定位
+
+1. `CPU-bound`
+   - 任務：`video_compression.py`
+   - 執行位置：worker 本地
+   - 核心壓力：`ffmpeg + libx265 + veryslow`
+   - 目標：讓 CPU 長時間接近滿載，GPU / VRAM 干擾低
+
+2. `RAM-bound`
+   - 任務：`redis_test.py`
+   - 執行位置：worker 本地
+   - 核心壓力：Redis 寫入大量 key 並 hold
+   - 目標：讓主機 RAM 使用率長時間維持高檔
+
+3. `VRAM-bound`
+   - 任務：`long_text_llm.py`
+   - 執行位置：worker 本地
+   - 核心壓力：`qwen3:32b` 長上下文推論
+   - 目標：長時間佔用顯卡記憶體，並觀察 GPU / VRAM 行為
+
+4. `GPU-bound`
+   - 任務：YOLO experiment mode
+   - 執行位置：k3s pod，指定到 4090 節點
+   - 核心壓力：容器內連續 batch infer，不走高併發 HTTP 壓測
+   - 目標：盡量讓單卡 GPU utilization 長時間處於高載，且避免主因變成 VRAM / CPU / RAM
+
+### 階段概念
+
+所有圖表都盡量對齊這三段：
+
+- `warm-up`
+- `steady-state`
+- `cooldown`
+
+worker-local 三類任務由 master 根據時間窗與任務型態推導 phase；GPU experiment mode 會直接產生 `phase_windows.csv`，因此 phase 對齊更直接。
+
+### 為什麼不是只靠固定 sleep
+
+suite 切換任務時，除了固定 cooldown 觀察，還會再比對 baseline 附近的資源狀態，避免前一個任務殘留資源壓力直接污染下一個任務。
 
 ---
 
 ## 目錄功能
 
-這個目錄主要負責四件事：
+這個目錄目前負責 5 件事：
 
-1. **單次 remote benchmark 執行**
-2. **整套 benchmark suite 執行**
-3. **單次 run 繪圖**
-4. **整套 suite 繪圖**
+1. 單次 remote benchmark 執行
+2. 三個 worker-local benchmark 的 suite orchestration
+3. 單次 run 繪圖
+4. suite-level 繪圖
+5. 四個 bound 的整體對照圖
 
-支援的三類 benchmark：
+---
+
+## 主要程式
+
+### 1. `run_remote_benchmark_with_metrics.sh`
+
+單次 remote run 主入口，支援：
 
 - `cpu_bound`
 - `ram_bound`
 - `vram_bound`
 
-它們對應 worker 端既有 wrapper：
+主要功能：
+
+- task-aware preflight
+- SSH 到 worker 啟動對應 wrapper
+- 在 master 側同步收集監控
+- 拉回 worker summary / monitor artifacts
+- 產生 `master_verdict.json`
+- 呼叫單次 run plotter
+
+對應 worker wrapper：
 
 - `cpu_bound` -> `/home/mirc516/Pre6g/run_task_cpu.sh`
 - `ram_bound` -> `/home/mirc516/Pre6g/run_task_ram.sh`
 - `vram_bound` -> `/home/mirc516/Pre6g/run_task_vram.sh`
 
----
-
-## 檔案介紹
-
-### 1. `run_remote_benchmark_with_metrics.sh`
-
-單次 remote run 的主入口。
-
-負責：
-
-- task-aware preflight
-- SSH 到 worker 啟動 benchmark wrapper
-- 啟動 master-side 監控：
-  - `vm_aggregator`
-  - `kubectl top node`
-  - remote `nvidia-smi`
-- 拉回 worker artifacts
-- 解析 summary
-- 產生 `master_verdict.json`
-- 呼叫單次 run plotter
-
-這支是單任務主控腳本。
-
----
-
 ### 2. `run_remote_benchmark_suite.sh`
 
-整套 benchmark suite 的主入口。
+三個 worker-local 任務的 suite orchestrator。
 
-負責：
+主要功能：
 
-- 依序執行：
-  - `cpu_bound`
-  - `ram_bound`
-  - `vram_bound`
-- suite 開始前先抓 baseline
-- 每個任務後做 fixed cooldown observation
-- 輪詢 worker 資源是否已回到 baseline 附近
-- 整理 `suite_manifest.csv`
+- 依序執行 `cpu_bound -> ram_bound -> vram_bound`
+- suite 開始前抓 baseline
+- 每個任務完成後先做固定 cooldown
+- 再輪詢 worker 狀態，等資源接近 baseline
+- 產出 `suite_manifest.csv`
 - 產出 `suite_summary.json`
 - 呼叫 suite plotter
 
-這支是整體 orchestrator。
-
----
-
 ### 3. `plot_remote_benchmark_run.py`
 
-單次 run 的繪圖工具。
+單次 run 繪圖器。
 
-輸入：
+主要輸入：
 
 - `kubectl_top_node_1s.log`
 - `worker_nvidia_smi_1s.csv`
 - `time_window.txt`
+- `phase_windows.csv`（若有）
 
-輸出：
+主要輸出：
 
 - `combined_monitor.csv`
 - `measurement_raw.csv`
@@ -96,116 +125,100 @@
 - `plots/resource_utilization.png`
 - `plot_summary.json`
 
-圖中只畫四條：
-
-- CPU
-- RAM
-- GPU
-- VRAM
-
----
-
 ### 4. `plot_remote_benchmark_suite.py`
 
-整套 suite 的繪圖工具。
+suite-level 繪圖器。
 
-輸入：
+主要輸入：
 
 - `suite_manifest.csv`
-- 各 run 的 `combined_monitor.csv`
+- 各 task run 目錄下的 `combined_monitor.csv`
 
-輸出：
+主要輸出：
 
 - `suite_resource_utilization.png`
 - `suite_plot_summary.json`
 
-這支會把 suite 中每個 task 畫成一個 panel。
+### 5. `plot_four_bounds_overview.py`
+
+四個 bound 的整體對照圖工具。
+
+主要功能：
+
+- 把 CPU / RAM / VRAM / GPU 四個 run 畫成同一張多 panel 圖
+- 每個 panel 固定畫 4 條線：
+  - CPU
+  - RAM
+  - GPU
+  - VRAM
+- 可選 rolling median 平滑
+
+目前輸出檔名：
+
+- `four_bounds_resource_utilization.png`
+- `four_bounds_resource_utilization_smoothed.png`
+
+### 6. `../experiments_yolo/single_pod_gpu_bound/run_single_pod_gpu_experiment_mode_on_node.sh`
+
+GPU-bound 的正式入口，雖然檔案不在本目錄，但現在會把結果寫回 `experiments_benchmark/results/`，因此已視為這套 benchmark 的一部分。
+
+主要功能：
+
+- 在指定 GPU node 建立單 pod
+- 用 ConfigMap 掛載 `gpu_burn.py`
+- 在 pod 內做連續 batch infer
+- 在 master 側收：
+  - `vm_aggregator`
+  - `kubectl top node`
+  - remote `nvidia-smi`
+- 產生 benchmark-compatible artifacts：
+  - `combined_monitor.csv`
+  - `resource_utilization.png`
+  - `phase_windows.csv`
+  - `benchmark_compat_summary.json`
+
+### 7. `../yolo26_workload/gpu_burn.py`
+
+GPU-bound experiment mode 的容器內 workload。
+
+主要功能：
+
+- 根據 env var 控制 model / imgsz / batch / repeat / duration
+- 先 warmup，再進入持續 infer
+- 週期性輸出 JSON progress
+- 任務結束輸出 summary JSON
 
 ---
 
-## 架構說明
+## preflight 設計
 
-### master 端負責
-
-- orchestration
-- metrics collection
-- artifact pull
-- verdict / manifest / suite summary
-- plotting
-
-### worker 端負責
-
-- 真正執行 benchmark
-- 產生 benchmark-specific summary / monitor CSV
-
----
-
-## 前提條件
-
-### 1. master 可以無密碼 SSH 到 worker
-
-至少要通：
-
-```bash
-ssh mirc516@100.90.127.1 'echo ok'
-```
-
-### 2. worker 端已具備 benchmark wrapper
-
-預期存在：
-
-- `/home/mirc516/Pre6g/run_task_cpu.sh`
-- `/home/mirc516/Pre6g/run_task_ram.sh`
-- `/home/mirc516/Pre6g/run_task_vram.sh`
-
-### 3. worker wrapper contract
-
-成功判定使用兩層：
-
-1. process exit code = `0`
-2. summary JSON 內 `success == true`
-
-master 端 orchestration 依賴這個 contract。
-
----
-
-## Task-aware Preflight
-
-目前 preflight 不是直接把 worker 端 generic `check_benchmark_env.sh` 整支照跑，而是由 master 端依 task 類型做 remote preflight。
+`run_remote_benchmark_with_metrics.sh` 現在是 task-aware preflight，不會對所有任務一律檢查完整 GPU / Ollama / PDF。
 
 ### `cpu_bound`
 
-檢查：
-
-- `ffmpeg`
-- `libx265`
-- Python env import
-- `input_4k.mp4`
+- `ffmpeg` 存在
+- `libx265` encoder 可用
+- Python env 可用
+- `input_4k.mp4` 存在
 
 ### `ram_bound`
 
-檢查：
-
-- `redis-cli ping`
-- Python env import
+- `redis-server` / `redis-cli ping`
+- Python env 可用
 
 ### `vram_bound`
 
-檢查：
-
-- Ollama service
-- `qwen3:32b`
-- `nvidia-smi`
-- Python env import
-- `Attention Is All You Need.pdf`
+- Ollama service 可達
+- `http://127.0.0.1:11434/api/tags` 中可找到 `qwen3:32b`
+- `nvidia-smi` 可用
+- Python env 可用
+- `Attention Is All You Need.pdf` 存在
 
 ---
 
-## 正式 baseline 理解
+## 正式 baseline
 
-這套 orchestration 目前是按照 worker 正式 baseline 去理解任務。
-
-### CPU 正式組
+### CPU-bound 正式組
 
 - `codec=libx265`
 - `preset=veryslow`
@@ -215,12 +228,9 @@ master 端 orchestration 依賴這個 contract。
 - `min_duration_seconds=3000`
 - `timeout_seconds=5400`
 
-注意：
+注意：`min_duration_seconds` 是至少執行多久，不是硬切斷。若當前 ffmpeg round 尚未完成，任務會等該輪結束。
 
-- `min_duration_seconds=3000` 是「至少跑到這麼久」
-- 真正停止還要等當前 ffmpeg round 結束
-
-### RAM 正式組
+### RAM-bound 正式組
 
 - `target_keys=6000000`
 - `data_size_kb=16`
@@ -231,319 +241,321 @@ master 端 orchestration 依賴這個 contract。
 - `post_cleanup_purge=1`
 - `post_cleanup_restart_redis=0`
 
-### VRAM 正式組
+### VRAM-bound 正式組
 
 - `model=qwen3:32b`
-- `concurrency=2`
 - `repeat=28`
+- `concurrency=2`
 - `max_chars=260000`
 - `num_ctx=32768`
 - `num_predict=256`
 - `keep_alive=0`
 - `min_duration_seconds=3000`
 
-### Suite 正式時間語意
-
-- `warmup_seconds=300`
-- `steady_seconds=2700`
-- `cooldown_seconds=900`
-
----
-
-## master 預設如何傳參
-
-如果你 **沒有明確指定 duration 類參數**，master 會主動套用一組統一預設，方便 remote 任務時長與監控窗對齊：
+### Suite 正式時間
 
 - `DEFAULT_WARMUP_SECONDS=300`
 - `DEFAULT_STEADY_SECONDS=2700`
 - `DEFAULT_COOLDOWN_SECONDS=900`
 
-對應如下：
-
-- `cpu_bound` -> 傳 `MIN_DURATION_SECONDS = 3000`
-- `ram_bound` -> 傳 `HOLD_SECONDS = 2700`
-- `vram_bound` -> 傳 `MIN_DURATION_SECONDS = 3000`
-
-如果你有明確指定：
-
-- `MIN_DURATION_SECONDS`
-- `HOLD_SECONDS`
-- `DURATION`
-
-則 master 會優先用你傳的值。
+也就是 5 分鐘 warm-up、45 分鐘 steady-state、15 分鐘 cooldown。
 
 ---
 
-## 結果目錄結構
+## 使用方式
 
-### 單次 run
-
-輸出位置：
-
-```text
-autoscale-source-split/02-experiment-layer/experiments_benchmark/results/<RUN_ID>/
-```
-
-常見檔案：
-
-- `experiment_config.txt`
-- `deploy_before.txt`
-- `deploy_after.txt`
-- `pods_before.txt`
-- `pods_after.txt`
-- `events_before.txt`
-- `events_after.txt`
-- `preflight.log`
-- `remote_wrapper.log`
-- `measurement.log`
-- `time_window.txt`
-- `vm_aggregator_timeseries.csv`
-- `vm_aggregator_timeseries.log`
-- `vm_aggregator_training_features.csv`
-- `vm_aggregator_training_features.log`
-- `kubectl_top_node_1s.log`
-- `kubectl_top_1s.log`
-- `worker_nvidia_smi_1s.csv`
-- `worker_nvidia_smi_1s.err`
-- `nvidia_smi_gpu_1s.csv`
-- `nvidia_smi_gpu_1s.err`
-- `vm_metrics/*.json`
-- `worker_logs/`
-- `master_verdict.json`
-- `combined_monitor.csv`
-- `measurement_raw.csv`
-- `resource_utilization.png`
-- `plots/`
-- `summary.txt`
-- `plot_summary.json`
-
-### suite
-
-輸出位置：
-
-```text
-autoscale-source-split/02-experiment-layer/experiments_benchmark/results/<SUITE_ID>/
-```
-
-常見檔案：
-
-- `baseline.json`
-- `suite_manifest.csv`
-- `suite_summary.json`
-- `summary.txt`
-- 各 task console log
-- `suite_resource_utilization.png`
-- `plots/suite_resource_utilization.png`
-- `suite_plot_summary.json`
-
----
-
-## 結構化輸出 contract
-
-### per-run
-
-`master_verdict.json` 會至少包含：
-
-- preflight 結果
-- remote wrapper exit code
-- artifact pull 結果
-- summary 狀態
-- plotting 狀態
-- start / remote_end / end 時間
-- artifact 路徑
-
-### suite
-
-`suite_manifest.csv` 會至少包含：
-
-- `task`
-- `run_id`
-- `run_dir`
-- `status`
-- `failure_category`
-- `remote_exit_code`
-- `summary_success`
-- `task_start_epoch`
-- `task_end_epoch`
-- `remote_end_epoch`
-- `cooldown_ready`
-- `cooldown_extra_wait_sec`
-- artifact paths
-
-`suite_summary.json` 會至少包含：
-
-- `suite_id`
-- `task_order`
-- `tasks`
-- `status`
-- `failure_category`
-- plotting 結果
-
----
-
-## 錯誤分類
-
-目前至少會分類：
-
-- `preflight_failed`
-- `remote_wrapper_failed`
-- `artifact_pull_failed`
-- `summary_missing`
-- `summary_parse_failed`
-- `cooldown_timeout`
-- `plotting_failed`
-
-其中 `plotting_failed` 預設不是 suite 致命錯誤；會記錄在 summary，但不一定讓整體 exit code 失敗。
-
----
-
-## 如何使用
-
-### 1. 跑單次 CPU
+### 1. 跑單次 CPU-bound
 
 ```bash
-cd /home/icclz2/Pre6G
+cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark
 
 TASK=cpu_bound \
-WORKER_SSH='mirc516@100.90.127.1' \
-WORKER_NODE_NAME='ICCL-S3-251230' \
-MIN_DURATION_SECONDS=3000 \
-TIMEOUT_SECONDS=5400 \
-PARALLEL_JOBS=2 \
-bash autoscale-source-split/02-experiment-layer/experiments_benchmark/run_remote_benchmark_with_metrics.sh
+RUN_ID=cpu_bound_$(date +%Y%m%d_%H%M%S) \
+bash run_remote_benchmark_with_metrics.sh
 ```
 
-### 2. 跑單次 RAM
+### 2. 跑單次 RAM-bound
 
 ```bash
-cd /home/icclz2/Pre6G
+cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark
 
 TASK=ram_bound \
-WORKER_SSH='mirc516@100.90.127.1' \
-WORKER_NODE_NAME='ICCL-S3-251230' \
-HOLD_SECONDS=2700 \
-STOP_ON_MEMORY_THRESHOLD_GB=96 \
-TARGET_KEYS=6000000 \
-DATA_SIZE_KB=16 \
-BATCH_SIZE=4000 \
-bash autoscale-source-split/02-experiment-layer/experiments_benchmark/run_remote_benchmark_with_metrics.sh
+RUN_ID=ram_bound_$(date +%Y%m%d_%H%M%S) \
+bash run_remote_benchmark_with_metrics.sh
 ```
 
-### 3. 跑單次 VRAM
+### 3. 跑單次 VRAM-bound
 
 ```bash
-cd /home/icclz2/Pre6G
+cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark
 
 TASK=vram_bound \
-WORKER_SSH='mirc516@100.90.127.1' \
-WORKER_NODE_NAME='ICCL-S3-251230' \
-MIN_DURATION_SECONDS=3000 \
-MODEL_NAME=qwen3:32b \
-CONCURRENCY=2 \
-REPEAT=28 \
-MAX_CHARS=260000 \
-NUM_CTX=32768 \
-NUM_PREDICT=256 \
-KEEP_ALIVE=0 \
-bash autoscale-source-split/02-experiment-layer/experiments_benchmark/run_remote_benchmark_with_metrics.sh
+RUN_ID=vram_bound_$(date +%Y%m%d_%H%M%S) \
+bash run_remote_benchmark_with_metrics.sh
 ```
 
-### 4. 跑整套 suite
+### 4. 跑三任務 suite
 
 ```bash
-cd /home/icclz2/Pre6G
+cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark
 
-bash autoscale-source-split/02-experiment-layer/experiments_benchmark/run_remote_benchmark_suite.sh
+bash run_remote_benchmark_suite.sh
 ```
 
-### 5. 指定 cooldown policy
+若只想做短版 smoke test，可覆蓋：
 
 ```bash
-COOLDOWN_TIMEOUT_POLICY=warn-and-continue \
-bash autoscale-source-split/02-experiment-layer/experiments_benchmark/run_remote_benchmark_suite.sh
-```
-
-或：
-
-```bash
-COOLDOWN_TIMEOUT_POLICY=fail \
-bash autoscale-source-split/02-experiment-layer/experiments_benchmark/run_remote_benchmark_suite.sh
-```
-
----
-
-## smoke test 建議
-
-正式 baseline 很重，尤其 CPU。
-
-如果你只是驗證 orchestration 鏈路，建議先用較短參數，例如：
-
-```bash
-cd /home/icclz2/Pre6G
+cd /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark
 
 MIN_DURATION_SECONDS=60 \
 HOLD_SECONDS=60 \
+PARALLEL_JOBS=1 \
+PRESET=medium \
 FIXED_COOLDOWN_SECONDS=30 \
 COOLDOWN_TIMEOUT_SECONDS=120 \
 COOLDOWN_TIMEOUT_POLICY=warn-and-continue \
-bash autoscale-source-split/02-experiment-layer/experiments_benchmark/run_remote_benchmark_suite.sh
+bash run_remote_benchmark_suite.sh
 ```
 
-注意：
+### 5. 跑 GPU-bound experiment mode
 
-- 這對 `cpu_bound` 不一定是快速完成，因為 `libx265 + veryslow + parallel_jobs=2` 單輪轉碼本身就可能很久
-- 如果只是 smoke test，建議另外準備較輕的 smoke profile
+這支會把結果直接寫進 `experiments_benchmark/results/`。
+
+```bash
+RESULT_ROOT='/home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results' \
+GPU_NODE_NAME=iccl-s3-251230 \
+NODE_SSH='mirc516@100.90.127.1' \
+IMAGE_REF='local/yolo26n:0.2' \
+IMAGE_PULL_POLICY=Never \
+YOLO_MODEL='yolo26m.pt' \
+YOLO_IMGSZ=1536 \
+BATCH_SIZE=24 \
+REPEAT=1 \
+DURATION=300 \
+START_DELAY_SECONDS=10 \
+WARMUP_ITERS=2 \
+CPU_REQUEST=4000m \
+CPU_LIMIT=8000m \
+MEMORY_REQUEST=8Gi \
+MEMORY_LIMIT=16Gi \
+CLEANUP_ON_EXIT=1 \
+bash /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_gpu_bound/run_single_pod_gpu_experiment_mode_on_node.sh
+```
+
+### 6. 重畫單次 run
+
+```bash
+/home/icclz2/Pre6G/iccl/bin/python \
+plot_remote_benchmark_run.py \
+  --run-dir /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/cpu_bound_20260614_223757
+```
+
+### 7. 重畫 suite-level 圖
+
+```bash
+/home/icclz2/Pre6G/iccl/bin/python \
+plot_remote_benchmark_suite.py \
+  --suite-dir /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/remote_suite_20260614_223756
+```
+
+### 8. 畫四個 bound 的總覽圖
+
+```bash
+/home/icclz2/Pre6G/iccl/bin/python \
+plot_four_bounds_overview.py \
+  --cpu-run-dir /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/cpu_bound_20260614_223757 \
+  --ram-run-dir /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/ram_bound_20260614_235851 \
+  --vram-run-dir /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/vram_bound_20260615_012538 \
+  --gpu-run-dir /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/single_gpu_exp_iccl-s3-251230_yolo26m_pt_img1536_b24_r1_300s_20260615_131446 \
+  --output /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/four_bounds_resource_utilization.png \
+  --summary-output /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/four_bounds_resource_utilization.summary.json
+```
+
+平滑版：
+
+```bash
+/home/icclz2/Pre6G/iccl/bin/python \
+plot_four_bounds_overview.py \
+  --cpu-run-dir /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/cpu_bound_20260614_223757 \
+  --ram-run-dir /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/ram_bound_20260614_235851 \
+  --vram-run-dir /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/vram_bound_20260615_012538 \
+  --gpu-run-dir /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/single_gpu_exp_iccl-s3-251230_yolo26m_pt_img1536_b24_r1_300s_20260615_131446 \
+  --output /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/four_bounds_resource_utilization_smoothed.png \
+  --summary-output /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/four_bounds_resource_utilization_smoothed.summary.json \
+  --smooth-window 5
+```
 
 ---
 
-## 繪圖方式
+## 參數覆蓋原則
 
-### 單次 run
+### worker-local benchmark
 
-單次 run 完成後會自動嘗試產出：
+master 會盡量與 worker wrapper 對齊，主要靠 env var 透傳。
 
+常用參數：
+
+- CPU:
+  - `MIN_DURATION_SECONDS`
+  - `TIMEOUT_SECONDS`
+  - `PARALLEL_JOBS`
+  - `PRESET`
+- RAM:
+  - `HOLD_SECONDS`
+  - `STOP_ON_MEMORY_THRESHOLD_GB`
+  - `TARGET_KEYS`
+  - `DATA_SIZE_KB`
+- VRAM:
+  - `MIN_DURATION_SECONDS`
+  - `CONCURRENCY`
+  - `NUM_CTX`
+  - `MAX_CHARS`
+  - `NUM_PREDICT`
+  - `REPEAT`
+
+若 master 沒顯式傳值，就盡量讓 worker 端使用自己的原始預設。
+
+### GPU experiment mode
+
+常用參數：
+
+- `YOLO_MODEL`
+- `YOLO_IMGSZ`
+- `BATCH_SIZE`
+- `REPEAT`
+- `DURATION`
+- `START_DELAY_SECONDS`
+- `WARMUP_ITERS`
+- `CPU_REQUEST`
+- `CPU_LIMIT`
+- `MEMORY_REQUEST`
+- `MEMORY_LIMIT`
+
+---
+
+## 輸出結果結構
+
+### 單次 worker-local run
+
+每次 run 會落在：
+
+```text
+results/<RUN_ID>/
+```
+
+常見檔案：
+
+- `master_verdict.json`
+- `experiment_config.txt`
+- `time_window.txt`
+- `worker_summary.json` 或 pulled summary
+- `worker_monitor.csv`
+- `kubectl_top_node_1s.log`
+- `worker_nvidia_smi_1s.csv`
 - `combined_monitor.csv`
 - `measurement_raw.csv`
 - `resource_utilization.png`
-- `plots/resource_utilization.png`
+- `plot_summary.json`
+- `summary.txt`
 
-手動重畫：
+### suite run
 
-```bash
-python3 autoscale-source-split/02-experiment-layer/experiments_benchmark/plot_remote_benchmark_run.py \
-  --run-dir autoscale-source-split/02-experiment-layer/experiments_benchmark/results/<RUN_ID>
+每次 suite 會落在：
+
+```text
+results/<SUITE_ID>/
 ```
 
-### suite
+常見檔案：
 
-手動重畫：
+- `suite_manifest.csv`
+- `suite_summary.json`
+- `suite_resource_utilization.png`
+- `suite_plot_summary.json`
+- `summary.txt`
 
-```bash
-python3 autoscale-source-split/02-experiment-layer/experiments_benchmark/plot_remote_benchmark_suite.py \
-  --suite-dir autoscale-source-split/02-experiment-layer/experiments_benchmark/results/<SUITE_ID>
-```
+### GPU experiment mode run
+
+結果同樣放在 `results/<RUN_ID>/`，但會額外有：
+
+- `phase_windows.csv`
+- `gpu_burn_summary.json`
+- `benchmark_compat_summary.json`
+- `vm_metrics/`
 
 ---
 
-## 目前已知限制
+## 目前結果
 
-1. 這套 workflow 主要抓 **node-level metrics**
-   - `kubectl top node`
-   - `vm_aggregator`
-   - remote `nvidia-smi`
+目前這個目錄下已經有一組正式四圖整合結果：
 
-2. benchmark-specific 細節仍以 worker wrapper 輸出的 monitor CSV 為主
-   - CPU：`video_cpu.csv`
-   - RAM：`redis_stats.csv`
-   - VRAM：`qwen_gpu.csv`
+- `results/cpu_bound_20260614_223757`
+- `results/ram_bound_20260614_235851`
+- `results/vram_bound_20260615_012538`
+- `results/single_gpu_exp_iccl-s3-251230_yolo26m_pt_img1536_b24_r1_300s_20260615_131446`
 
-3. CPU 任務的 `min_duration_seconds` 不是硬中斷時間
-   - 會等當前 ffmpeg round 結束
+以及四個 bound 的總覽圖：
+
+- `results/four_bounds_resource_utilization.png`
+- `results/four_bounds_resource_utilization_smoothed.png`
+
+GPU experiment mode 這組的 benchmark-compatible summary 位於：
+
+- [benchmark_compat_summary.json](/home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_benchmark/results/single_gpu_exp_iccl-s3-251230_yolo26m_pt_img1536_b24_r1_300s_20260615_131446/benchmark_compat_summary.json)
+
+這組至少可確認：
+
+- pod 成功完成
+- benchmark-compatible plot 已生成
+- `combined_monitor.csv` 已生成
+- `phase_windows.csv` 已生成
+- 可直接納入四個 bound 對照圖
 
 ---
 
-## 建議使用方式
+## 圖的判讀
 
-- **正式實驗**：直接用 worker baseline 正式參數
-- **鏈路驗證**：另外用較輕的 smoke profile
-- **分析與畫圖**：直接讀這個目錄下產生的 run / suite artifacts
+### 為什麼 GPU 曲線看起來像快速震盪
+
+GPU-bound 的 YOLO experiment mode 是容器內一輪一輪 batch infer；`nvidia-smi` 又是 1 秒取樣，所以圖上常會看到高頻鋸齒，而不是像 CPU 那樣平滑貼頂。
+
+這通常不是失敗，而是：
+
+- 單次 infer iteration 很短
+- kernel launch / synchronize / 後處理之間存在空隙
+- 1 秒粒度採樣把 burst 行為放大
+
+如果只是想做展示，可以使用平滑版：
+
+- `four_bounds_resource_utilization_smoothed.png`
+
+但分析時仍建議保留原始版一起看。
+
+---
+
+## 成功判定
+
+### worker-local 三任務
+
+正式成功條件：
+
+1. remote wrapper exit code = `0`
+2. worker summary JSON 中 `success == true`
+
+### GPU experiment mode
+
+正式成功條件：
+
+1. pod 成功完成
+2. `gpu_burn_summary.json` 存在
+3. benchmark-compatible plotting 成功
+4. `benchmark_compat_summary.json` 中 `success == true`
+
+---
+
+## 已知限制
+
+1. CPU-bound 若使用正式參數，單輪 `ffmpeg` 很可能遠超 60 秒，smoke test 需要降 `preset` 或 `parallel_jobs`。
+2. GPU-bound 若要追求更穩定的高利用率，`batch size`、`imgsz`、模型大小與資料前後處理都會影響曲線形狀。
+3. suite orchestrator 目前只直接串 `cpu_bound / ram_bound / vram_bound`；GPU-bound 仍是獨立跑完後再納入四圖整合。
+4. 平滑圖是展示用，不應拿來取代原始監控資料。

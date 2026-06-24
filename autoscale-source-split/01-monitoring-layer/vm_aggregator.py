@@ -840,6 +840,16 @@ def scalar_optional(promql: str) -> Optional[float]:
     return first_value_optional(vm_query_optional(promql))
 
 
+def gpu_mode_from_allocatable(standard_allocatable: int, shared_allocatable: int) -> str:
+    if standard_allocatable > 0 and shared_allocatable > 0:
+        return "mixed"
+    if shared_allocatable > 0:
+        return "shared"
+    if standard_allocatable > 0:
+        return "standard"
+    return "none"
+
+
 def sum_rate_optional(metric: str, instance: str, rate_window: Optional[str] = None) -> Optional[float]:
     rw = rate_window or RATE_WINDOW
     q = f'sum(rate({metric}{{instance="{instance}"}}[{rw}]))'
@@ -1594,14 +1604,39 @@ def collect_state_for_node(
     target_gpu_allocatable = safe_int(first_value_optional(vm_query_optional(
         f'sum(kube_node_status_allocatable{{node="{target_k8s_node}",resource="nvidia_com_gpu"}})'
     )), None)
+    cluster_shared_gpu_capacity = safe_int(first_value_optional(vm_query_optional(
+        'sum(kube_node_status_capacity{resource="nvidia_com_gpu_shared"})'
+    )), None)
+    cluster_shared_gpu_allocatable = safe_int(first_value_optional(vm_query_optional(
+        'sum(kube_node_status_allocatable{resource="nvidia_com_gpu_shared"})'
+    )), None)
+    target_shared_gpu_capacity = safe_int(first_value_optional(vm_query_optional(
+        f'sum(kube_node_status_capacity{{node="{target_k8s_node}",resource="nvidia_com_gpu_shared"}})'
+    )), None)
+    target_shared_gpu_allocatable = safe_int(first_value_optional(vm_query_optional(
+        f'sum(kube_node_status_allocatable{{node="{target_k8s_node}",resource="nvidia_com_gpu_shared"}})'
+    )), None)
 
-    if None in (cluster_gpu_capacity, cluster_gpu_allocatable, target_gpu_capacity, target_gpu_allocatable):
+    if None in (
+        cluster_gpu_capacity,
+        cluster_gpu_allocatable,
+        target_gpu_capacity,
+        target_gpu_allocatable,
+        cluster_shared_gpu_capacity,
+        cluster_shared_gpu_allocatable,
+        target_shared_gpu_capacity,
+        target_shared_gpu_allocatable,
+    ):
         try:
             ksm_capacity_by_node = ksm_resource_metric_by_node('kube_node_status_capacity', 'nvidia_com_gpu')
             ksm_allocatable_by_node = ksm_resource_metric_by_node('kube_node_status_allocatable', 'nvidia_com_gpu')
+            ksm_shared_capacity_by_node = ksm_resource_metric_by_node('kube_node_status_capacity', 'nvidia_com_gpu_shared')
+            ksm_shared_allocatable_by_node = ksm_resource_metric_by_node('kube_node_status_allocatable', 'nvidia_com_gpu_shared')
         except Exception:
             ksm_capacity_by_node = {}
             ksm_allocatable_by_node = {}
+            ksm_shared_capacity_by_node = {}
+            ksm_shared_allocatable_by_node = {}
 
         if cluster_gpu_capacity is None:
             cluster_gpu_capacity = sum(ksm_capacity_by_node.values())
@@ -1611,11 +1646,26 @@ def collect_state_for_node(
             target_gpu_capacity = safe_int(ksm_capacity_by_node.get(target_k8s_node), 0)
         if target_gpu_allocatable is None:
             target_gpu_allocatable = safe_int(ksm_allocatable_by_node.get(target_k8s_node), 0)
+        if cluster_shared_gpu_capacity is None:
+            cluster_shared_gpu_capacity = sum(ksm_shared_capacity_by_node.values())
+        if cluster_shared_gpu_allocatable is None:
+            cluster_shared_gpu_allocatable = sum(ksm_shared_allocatable_by_node.values())
+        if target_shared_gpu_capacity is None:
+            target_shared_gpu_capacity = safe_int(ksm_shared_capacity_by_node.get(target_k8s_node), 0)
+        if target_shared_gpu_allocatable is None:
+            target_shared_gpu_allocatable = safe_int(ksm_shared_allocatable_by_node.get(target_k8s_node), 0)
 
     cluster_gpu_capacity = safe_int(cluster_gpu_capacity, 0)
     cluster_gpu_allocatable = safe_int(cluster_gpu_allocatable, 0)
     target_gpu_capacity = safe_int(target_gpu_capacity, 0)
     target_gpu_allocatable = safe_int(target_gpu_allocatable, 0)
+    cluster_shared_gpu_capacity = safe_int(cluster_shared_gpu_capacity, 0)
+    cluster_shared_gpu_allocatable = safe_int(cluster_shared_gpu_allocatable, 0)
+    target_shared_gpu_capacity = safe_int(target_shared_gpu_capacity, 0)
+    target_shared_gpu_allocatable = safe_int(target_shared_gpu_allocatable, 0)
+
+    cluster_gpu_mode = gpu_mode_from_allocatable(cluster_gpu_allocatable, cluster_shared_gpu_allocatable)
+    target_gpu_mode = gpu_mode_from_allocatable(target_gpu_allocatable, target_shared_gpu_allocatable)
 
     gpu_workload_fb_vec = vm_query_optional(
         'sum by (namespace, pod) (DCGM_FI_DEV_FB_USED{namespace!="",pod!=""})'
@@ -1891,12 +1941,12 @@ def collect_state_for_node(
             "deployments": deployments,
             "standalone_pods": standalone_pods,
             "rate_ready": (ns_running > 0 and ns_ready >= ns_running and all_dep_ok),
-            "gpu_inventory": {
+            "gpu": {
                 "source": "dcgm_exporter+k8s",
-                "nodes_with_gpu": cluster_gpu_nodes,
-                "observed_gpus": cluster_gpu_total,
-                "capacity_gpus": cluster_gpu_capacity,
-                "allocatable_gpus": cluster_gpu_allocatable,
+                "physical_count": cluster_gpu_total,
+                "standard_allocatable": cluster_gpu_allocatable,
+                "shared_allocatable": cluster_shared_gpu_allocatable,
+                "mode": cluster_gpu_mode,
             },
             "gpu_workloads": gpu_workloads,
             "gpu_workload_pods": gpu_workload_pods,
@@ -1962,13 +2012,18 @@ def collect_state_for_node(
                     "io_pressure_stalled_seconds_per_s": node_metrics.get("io_pressure_stalled_seconds_per_s"),
                 },
             },
+            "gpu": {
+                "source": "dcgm_exporter+k8s",
+                "physical_count": node_gpu_count,
+                "standard_allocatable": target_gpu_allocatable,
+                "shared_allocatable": target_shared_gpu_allocatable,
+                "mode": target_gpu_mode,
+            },
             "gpu_pressure": {
                 "source": "dcgm_exporter+k8s",
                 "status": "ok" if node_gpu_count > 0 else "no_gpu_or_not_observed",
                 "gpu_count": node_gpu_count,
-                "capacity_gpus": target_gpu_capacity,
-                "allocatable_gpus": target_gpu_allocatable,
-                "schedulable_gpu": target_gpu_allocatable > 0,
+                "schedulable_gpu": (target_gpu_allocatable + target_shared_gpu_allocatable) > 0,
                 "fb_used_total_bytes": total_gpu_fb_used_bytes if node_gpu_count > 0 else 0,
                 "gpus": gpu_list,
             },
@@ -2033,8 +2088,12 @@ def collect_state_for_node(
     output["_debug"]["cluster_gpu_total"] = cluster_gpu_total
     output["_debug"]["cluster_gpu_capacity"] = cluster_gpu_capacity
     output["_debug"]["cluster_gpu_allocatable"] = cluster_gpu_allocatable
+    output["_debug"]["cluster_shared_gpu_capacity"] = cluster_shared_gpu_capacity
+    output["_debug"]["cluster_shared_gpu_allocatable"] = cluster_shared_gpu_allocatable
     output["_debug"]["target_gpu_capacity"] = target_gpu_capacity
     output["_debug"]["target_gpu_allocatable"] = target_gpu_allocatable
+    output["_debug"]["target_shared_gpu_capacity"] = target_shared_gpu_capacity
+    output["_debug"]["target_shared_gpu_allocatable"] = target_shared_gpu_allocatable
     output["_debug"]["gpu_workloads_found"] = len(gpu_workloads)
     output["_debug"]["gpu_workload_pods"] = gpu_workload_pods
     output["_debug"]["gpu_workload_map_keys"] = sorted(list(gpu_workload_map.keys()))
