@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemma4-e2b-vllm
+  namespace: ai-serving
+  labels:
+    app: gemma4-e2b-vllm
+    app.kubernetes.io/name: gemma4-e2b-vllm
+    app.kubernetes.io/component: llm-serving
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gemma4-e2b-vllm
+  template:
+    metadata:
+      labels:
+        app: gemma4-e2b-vllm
+        app.kubernetes.io/name: gemma4-e2b-vllm
+        app.kubernetes.io/component: llm-serving
+    spec:
+      terminationGracePeriodSeconds: 120
+      runtimeClassName: nvidia
+      nodeSelector:
+        kubernetes.io/hostname: iccl-s3-251230
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.23.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - vllm
+          args:
+            - serve
+            - unsloth/gemma-4-E2B-it-qat-w4a16
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --served-model-name
+            - gemma4-e2b-w4a16
+            - --max-model-len
+            - "8192"
+            - --gpu-memory-utilization
+            - "0.85"
+          env:
+            - name: HF_HOME
+              value: /models/hf-cache
+          ports:
+            - name: http-metrics
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: "4"
+              memory: 24Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/gpu: "1"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http-metrics
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http-metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http-metrics
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 6
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /models/hf-cache
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: gemma4-e2b-w4a16-hf-cache

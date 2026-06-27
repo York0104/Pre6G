@@ -2,11 +2,12 @@
 
 `cluster-dashboard` 是 `Pre6G` 的前端 dashboard。
 
-本次 `k3s` 重建驗收只針對：
+本次 `k3s` 重建驗收目前涵蓋：
 
-- `Cluster Monitor` 頁面
+- `Cluster Monitor`
+- `LLM Serving Lab`
 
-`Fan-Cycle Experiment` 仍依賴 `02-experiment-layer`，不列入本次正式重建驗收。
+`Fan-Cycle Experiment` 已於 `2026-06-24` 重建為目前實驗室環境可操作的頁面，但仍依賴 `02-experiment-layer` 與 worker-side `gpu-tempctl-lab`，因此目前屬於 host-side verified path，而非通用 `k3s` productized path。
 
 ## API Dependency
 
@@ -14,12 +15,27 @@
 
 - `GET /api/v1/nodes`
 - `GET /api/v1/nodes/status`
+- `GET /api/v1/workloads`
+- `GET /api/v1/experiments/fan-cycle/latest`
+- `GET /api/v1/experiments/fan-cycle/status`
+- `GET /api/v1/experiments/yolo-demo/status`
+- `POST /api/v1/experiments/fan-cycle/start`
+- `POST /api/v1/experiments/fan-cycle/stop`
+- `POST /api/v1/experiments/yolo-demo/start`
+- `POST /api/v1/experiments/yolo-demo/stop`
+- `POST /api/v1/experiments/yolo-demo/fan-mode/{mode}`
 
 目前已驗證前端會透過這兩個 endpoint 顯示：
 
 - 一般 `k3s` nodes
 - `RFSoC` external node：`rfsoc4x2-pynq`
 - `AP gateway` external node：`openwrt_ap`
+
+另外 `2026-06-27` 起，`LLM Serving Lab` 會使用 `GET /api/v1/workloads` 與 per-workload status endpoint 顯示：
+
+- `Service Overview`
+- `Live Serving Observation`
+- `Replica / Kubernetes Observation`
 
 這次 external nodes 進 dashboard 的方式是擴充 API 層，不是重寫 React 卡片元件；因此 API 更新完成後，前端重新整理頁面即可看到新節點。
 
@@ -51,6 +67,25 @@ VITE_AUTOSCALE_API_TOKEN=<current-issued-token>
 - `PRE6G_DASHBOARD_API_TOKEN`
 
 容器啟動時會把這兩個 env 寫入 `env-config.js`，因此後續只改 `ConfigMap/Secret` 並重建 Pod，就能切換 API，不需要重打 frontend image。
+
+## Fan-Cycle Runtime Notes
+
+若要讓 `Fan-Cycle Experiment` 頁籤可真正操作，目前 `autoscale_api` runtime 還需要對應的 experiment env：
+
+- `PRE6G_EXPERIMENT_NAMESPACE`
+- `PRE6G_EXPERIMENT_NODE_NAME`
+- `PRE6G_EXPERIMENT_NODE_SSH`
+- `PRE6G_EXPERIMENT_FOCUS_DEPLOY`
+- `PRE6G_EXPERIMENT_BG_DEPLOY`
+- `PRE6G_EXPERIMENT_TARGET_MODE`
+- `PRE6G_EXPERIMENT_WORKER_REPO`
+- `PRE6G_EXPERIMENT_WORKER_VENV`
+- `PRE6G_EXPERIMENT_CC_PASSWORD`
+
+這些值建議放在：
+
+- host-side: `autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env`
+- private runtime 入口: `config/private-runtime/api/autoscale-api.env`
 
 ## Start
 
@@ -92,7 +127,52 @@ http://<CONTROL_PLANE_IP>:4174
 - `rfsoc4x2-pynq` 卡片
 - `openwrt_ap` 卡片
 
+`LLM Serving Lab` 應能顯示：
+
+- `Workload Discovered`
+- `Runtime Image`
+- `Metrics Sample`
+- `Metrics Freshness`
+- `Generation TPS`
+- `Prompt TPS`
+- `Waiting Requests`
+- `KV Cache Usage`
+- `Query Window`
+- `Pod`
+- `Node`
+- `Pod Phase`
+- `Ready Condition`
+- `Last Metrics Timestamp`
+
+若 `Gemma 4 vLLM` 已部署且 metrics 可抓取，table 內應可看到：
+
+- `gemma4-e2b-vllm`
+- node `iccl-s3-251230`
+- `generation TPS`
+- `prompt TPS`
+- `waiting`
+- `KV Cache`
+- `Pod Phase`
+- `Ready Condition`
+- `metrics freshness`
+
+這一版的 UI 原則是：
+
+- 只顯示客觀觀測值
+- 不顯示 `AVAILABLE` / `SATURATED` / capacity score
+- 不對是否應接新任務做 dashboard 級推論
+
 若 `z590-aorus-xtreme` 顯示 error，這屬於該節點本身既有監控問題，不代表 dashboard 重建失敗。
+
+`Fan-Cycle Experiment` 在目前 host-side rebuild 完成後，應能做到：
+
+- 顯示 latest completed fan-cycle run
+- 顯示 fan-cycle execution runtime state
+- 顯示 YOLO demo status / events
+- 手動切換 `GPU_DEFAULT` / `FIXED_*` fan mode
+- 從頁面啟動 / 停止完整 fan-cycle run
+
+若目前還沒有 completed run，頁面仍應可載入控制區塊，而不是直接停在 `404`。
 
 ## Rebuild Steps
 
@@ -101,6 +181,11 @@ http://<CONTROL_PLANE_IP>:4174
 3. 設定 `VITE_AUTOSCALE_API_BASE` 指向目前 API，並同步填入 `VITE_AUTOSCALE_API_TOKEN`。
 4. 啟動 `run_local_dashboard.sh`。
 5. 重新整理瀏覽器頁面，確認 external nodes 已出現於 `Cluster Monitor`。
+6. 若要驗證 `Fan-Cycle Experiment`：
+   - 確認 `autoscale_api` 已載入 `PRE6G_EXPERIMENT_*`
+   - 確認 `ssh icclz1-gpu` 與 worker-side `gpu-tempctl-lab` 可用
+   - 先在頁面中操作 `Start YOLO Demo`
+   - 再操作 `Start Fan-Cycle Run`
 
 ## k3s Deployment
 
@@ -134,6 +219,6 @@ docker build \
 
 以下內容不作為本次 `k3s` 監控重建驗收項目：
 
-- `Fan-Cycle Experiment`
-- YOLO demo control
-- thermal experiment live charts
+- 將 `Fan-Cycle Experiment` 完整產品化成通用 `k3s` Pod 內 runtime
+- 不依賴 host-side SSH / private runtime 的全自足 experiment control
+- 更長時間、更多 cycle 的正式研究級 rerun 驗證

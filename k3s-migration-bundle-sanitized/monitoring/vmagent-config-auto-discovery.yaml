@@ -58,3 +58,31 @@ data:
             target_label: kubernetes_namespace
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: kubernetes_pod
+
+      - job_name: vllm-serving-pods
+        scrape_interval: 1s
+        scrape_timeout: 800ms
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - ai-serving
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_container_port_name]
+            regex: .*metrics.*
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_container_init]
+            regex: "false"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_phase]
+            regex: Pending|Running
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: kubernetes_node
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: kubernetes_pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: kubernetes_container

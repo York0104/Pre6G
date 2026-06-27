@@ -1,0 +1,65 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gemma4-e2b-vllm-benchmark
+  namespace: ai-serving
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: gemma4-e2b-vllm-benchmark
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: icclz2
+      containers:
+        - name: bench
+          image: vllm/vllm-openai:v0.23.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              echo "[smoke] waiting for service health"
+              until curl -fsS http://gemma4-e2b-vllm.ai-serving.svc.cluster.local:8000/health >/dev/null; do
+                sleep 5
+              done
+
+              echo "[smoke] input=128 output=64 concurrency=1"
+              vllm bench serve \
+                --backend openai-chat \
+                --base-url http://gemma4-e2b-vllm.ai-serving.svc.cluster.local:8000 \
+                --endpoint /v1/chat/completions \
+                --served-model-name gemma4-e2b-w4a16 \
+                --model unsloth/gemma-4-E2B-it-qat-w4a16 \
+                --dataset-name random \
+                --num-prompts 16 \
+                --request-rate 1 \
+                --max-concurrency 1 \
+                --input-len 128 \
+                --output-len 64
+
+              echo "[steady] input=512 output=128 concurrency=4"
+              vllm bench serve \
+                --backend openai-chat \
+                --base-url http://gemma4-e2b-vllm.ai-serving.svc.cluster.local:8000 \
+                --endpoint /v1/chat/completions \
+                --served-model-name gemma4-e2b-w4a16 \
+                --model unsloth/gemma-4-E2B-it-qat-w4a16 \
+                --dataset-name random \
+                --num-prompts 48 \
+                --request-rate 4 \
+                --max-concurrency 4 \
+                --input-len 512 \
+                --output-len 128
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi

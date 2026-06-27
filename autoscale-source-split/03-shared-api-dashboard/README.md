@@ -10,8 +10,21 @@
 - 一般 `k3s` 節點
 - `RFSoC` external node：`rfsoc4x2-pynq`
 - `AP gateway` external node：`openwrt_ap`
+- `vLLM` workload-level monitoring for `Gemma 4`
 
-`Fan-Cycle Experiment` 與其他 experiment-control 相關 API 仍保留，但不列入本次正式重建驗收。
+另外，`Fan-Cycle Experiment` 已於 `2026-06-24` 重建成目前實驗室環境可用的 host-side experiment console：
+
+- dashboard 已可顯示完整頁面，不再只剩 `404` / 空白狀態
+- `autoscale_api` 已提供 fan-cycle run `status/start/stop`
+- `autoscale_api` 已把 YOLO demo / fan mode / fan-cycle runner 的現場設定抽成 runtime env
+
+但它目前仍主要對齊：
+
+- `icclz2` host-side `autoscale_api`
+- `icclz1` worker-side `gpu-tempctl-lab`
+- 目前 `intent-lab` YOLO single-pod topology
+
+因此它屬於「已重建、可在現場啟用」，但尚未宣稱為通用 `k3s` productized path。
 
 ## 目前資料流
 
@@ -33,12 +46,36 @@
 
 不需要額外修改 React 卡片元件。
 
+另外，`2026-06-25` 已新增 workload-level API，並於 `2026-06-27` 重整成獨立的 `LLM Serving Lab` 前端頁面：
+
+- `GET /api/v1/workloads`
+- `GET /api/v1/workloads/{namespace}/{workload}/status`
+- `GET /api/v1/nodes/{node_name}/workloads`
+
+前端 `LLM Serving Lab` 目前會顯示：
+
+- `Service Overview`
+- `Live Serving Observation`
+- `Replica / Kubernetes Observation`
+
+用於查看：
+
+- generation TPS
+- prompt TPS
+- waiting requests
+- KV cache usage
+- pod phase
+- ready condition
+- metrics freshness
+- runtime image
+- query window
+
 ## 目錄與檔案說明
 
 | 路徑 | 說明 |
 | --- | --- |
-| `autoscale_api/` | FastAPI backend，提供 node inventory/status、full metrics 與 experiment control API。 |
-| `cluster-dashboard/` | React/Vite frontend dashboard source。 |
+| `autoscale_api/` | FastAPI backend，提供 node inventory/status、full metrics、workload metrics 與 experiment control API。 |
+| `cluster-dashboard/` | React/Vite frontend dashboard source，包含 `Cluster Monitor`、`Fan-Cycle Experiment`、`LLM Serving Lab` 三個主頁籤。 |
 | `deploy/k3s/` | API + dashboard 的 `k3s` manifests、RBAC 與建置說明。 |
 | `requirements.txt` | backend/collector 共用 Python dependencies。 |
 | `LOCAL_BOOTSTRAP_STATUS.md` | 本機啟動與目前重建狀態摘要。 |
@@ -58,8 +95,10 @@
 | `app/services/full_metrics_service.py` | full metrics 組裝邏輯。 |
 | `app/services/node_inventory_service.py` | 整合 k8s nodes、external nodes 與 extra metadata。 |
 | `app/services/node_status_service.py` | 透過 monitoring layer aggregator 取得節點狀態，已支援 `k8s` / `RFSoC` / `AP gateway`。 |
-| `app/services/fan_cycle_experiment_service.py` | fan-cycle experiment orchestration service。 |
-| `app/services/yolo_demo_service.py` | YOLO demo/experiment service helper。 |
+| `app/services/fan_cycle_experiment_service.py` | fan-cycle result reader 與 live metrics adapter。 |
+| `app/services/fan_cycle_run_service.py` | fan-cycle run 啟停與 runtime state tracking。 |
+| `app/services/yolo_demo_service.py` | YOLO demo/experiment runtime helper。 |
+| `app/services/experiment_runtime.py` | experiment runtime env / path contract。 |
 | `app/adapters/k8s_adapter.py` | Kubernetes API adapter。 |
 | `app/adapters/gpu_static_map_adapter.py` | GPU static map adapter。 |
 | `app/adapters/inventory_extra_adapter.py` | 額外 inventory 資料 adapter。 |
@@ -118,6 +157,21 @@
    - 執行 `cluster-dashboard/run_local_dashboard.sh`
 5. 重新整理前端頁面，確認 external nodes 已出現在 `Cluster Monitor`。
 
+若要使用 `Fan-Cycle Experiment`：
+
+1. 先確認 `02-experiment-layer` 依賴仍在目前主機可用：
+   - `intent-lab`
+   - `yolo26n-focus`
+   - `yolo26n-bg-1`
+   - `ssh icclz1-gpu`
+   - `/home/icclz1/gpu-tempctl-lab`
+2. 在 `autoscale-api.env` 或等價 runtime env 設定：
+   - `PRE6G_EXPERIMENT_*`
+   - `PRE6G_EXPERIMENT_CC_PASSWORD`
+3. 啟動 host-side `autoscale_api`。
+4. 開啟 dashboard 的 `Fan-Cycle Experiment` 頁籤。
+5. 先用 `Start YOLO Demo` / `Fan Mode` 驗證互動，再用 `Start Fan-Cycle Run` 啟動完整 experiment。
+
 ## k3s 部署
 
 現在 repo 內已附上完整 `k3s` 落地樣板，建議入口為：
@@ -140,5 +194,6 @@
 ## 注意事項
 
 - 若目標是目前可交付的 `k3s` 監控重建，請優先使用 `autoscale_api/README.md` 與 `cluster-dashboard/README.md`。
-- `app/services/fan_cycle_experiment_service.py`、`app/services/yolo_demo_service.py` 與 experiment routers 仍屬未驗證的實驗層接口。
+- `Fan-Cycle Experiment` 目前建議優先走 host-side `run_local_api.sh` 或 user-level systemd 的 API 路徑。
+- 一般化 `k3s` Pod 內若要完整啟用 experiment control，仍需同時處理 `kubectl`、`ssh`、worker credential 與 private runtime env。
 - 真實 `.env` 未放在本層；請使用 `../current-lab-handoff-private/private-files-to-fill/` 中的 private handoff。

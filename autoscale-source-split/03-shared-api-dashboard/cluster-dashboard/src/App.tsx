@@ -103,8 +103,87 @@ type NodeStatusListResponse = {
   nodes: NodeStatus[];
 };
 
+type WorkloadListItem = {
+  namespace: string;
+  workload: string;
+  runtime: string;
+  model_name?: string | null;
+  runtime_image?: string | null;
+  runtime_version?: string | null;
+  nodes: string[];
+  status: "ready" | "not_ready" | "metrics_unavailable" | string;
+  desired_replicas: number;
+  ready_replicas: number;
+  generation_tokens_per_second?: number | null;
+  prompt_tokens_per_second?: number | null;
+  waiting_requests?: number | null;
+  kv_cache_usage_percent_max?: number | null;
+};
+
+type WorkloadListResponse = {
+  schema: string;
+  ts: number;
+  freshness_seconds: number;
+  query_window_seconds: number;
+  count: number;
+  workloads: WorkloadListItem[];
+};
+
+type WorkloadIdentity = {
+  namespace: string;
+  workload: string;
+  runtime: string;
+  model_name?: string | null;
+  served_model_id?: string | null;
+  runtime_image?: string | null;
+  runtime_version?: string | null;
+};
+
+type WorkloadReplicaSummary = {
+  desired: number;
+  ready: number;
+  metrics_available: number;
+  metrics_unavailable: number;
+};
+
+type WorkloadReplicaStatus = {
+  pod: string;
+  node_name: string;
+  status: "ready" | "not_ready" | "metrics_unavailable" | string;
+  owner_resolution: string;
+  pod_phase?: string | null;
+  ready_condition?: boolean | null;
+  metrics_observed_ts?: number | null;
+  metrics_freshness_seconds?: number | null;
+  generation_tokens_per_second?: number | null;
+  prompt_tokens_per_second?: number | null;
+  waiting_requests?: number | null;
+  kv_cache_usage_percent?: number | null;
+};
+
+type WorkloadAggregateMetrics = {
+  generation_tokens_per_second?: number | null;
+  prompt_tokens_per_second?: number | null;
+  waiting_requests?: number | null;
+  kv_cache_usage_percent_max?: number | null;
+};
+
+type WorkloadStatusResponse = {
+  schema: string;
+  ts: number;
+  freshness_seconds: number;
+  query_window_seconds: number;
+  metrics_observed_ts?: number | null;
+  scrape_source: string;
+  status: "ready" | "not_ready" | "metrics_unavailable" | string;
+  identity: WorkloadIdentity;
+  replica_summary: WorkloadReplicaSummary;
+  replicas: WorkloadReplicaStatus[];
+  aggregate: WorkloadAggregateMetrics;
+};
+
 type Health = "healthy" | "degraded" | "offline";
-type ActiveTab = "monitor" | "fan-experiment";
+type ActiveTab = "monitor" | "fan-experiment" | "llm-serving";
 type FanMode =
   | "GPU_DEFAULT"
   | "FIXED_5"
@@ -160,6 +239,8 @@ type FanCycleCommandPreview = {
 type FanControlSelection = {
   mode: FanMode;
 };
+
+type TimeWindow = "last-60s" | "last-5m" | "whole-run";
 
 type FanCycleRunInfo = {
   run_id: string;
@@ -229,6 +310,24 @@ type FanCycleLiveResponse = {
   current: FanCycleCurrentMetrics;
 };
 
+type FanCycleExecutionStatusResponse = {
+  schema_name: string;
+  generated_at: number;
+  status: "idle" | "starting" | "running" | "stopping" | "stopped" | "error";
+  run_id: string;
+  pid: number;
+  started_at: number;
+  result_run_dir: string;
+  stdout_log: string;
+  stderr_log: string;
+  namespace: string;
+  focus_deploy: string;
+  bg_deploy: string;
+  node_name: string;
+  message: string;
+  last_exit_code?: number | null;
+};
+
 type YoloDemoStatusResponse = {
   schema_name: string;
   generated_at: number;
@@ -244,6 +343,8 @@ type YoloDemoStatusResponse = {
   measurement_pid: number;
   bgload_pid: number;
   fan_mode: FanMode;
+  fan_control_available: boolean;
+  fan_control_message: string;
   started_at: number;
   message: string;
 };
@@ -262,13 +363,22 @@ type YoloDemoEventsResponse = {
 };
 
 type FanLivePoint = {
+  ts: number;
   time: string;
+  phase: string;
   gpu_temp: number;
   fan_pct: number;
   sm_clock: number;
   gpu_util: number;
   server_latency: number;
   e2e_latency: number;
+};
+
+type ThermalDemoStep = {
+  key: "baseline" | "fault_fan" | "thermal_rise" | "clock_drop" | "recovery";
+  label: string;
+  detail: string;
+  state: "done" | "active" | "pending";
 };
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -291,6 +401,11 @@ async function fetchJson<T>(path: string): Promise<T> {
     throw new Error(`${res.status} ${res.statusText}`);
   }
   return res.json();
+}
+
+function isNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.startsWith("404 ");
 }
 
 function clampPercent(v?: number | null): number {
@@ -387,6 +502,91 @@ function modeFanPercent(mode: FanMode, fallbackPercent: number): number {
   if (mode === "FIXED_15") return 15;
   if (mode === "FIXED_20") return 20;
   return 25;
+}
+
+function humanizePhase(phase?: string): string {
+  if (!phase) return "Waiting";
+  if (phase === "normal_hold") return "Baseline";
+  if (phase === "fault_hold") return "Fault Fan";
+  if (phase === "recovery_wait") return "Recovery";
+  if (phase === "setup") return "Setup";
+  if (phase === "completed") return "Completed";
+  return phase.replaceAll("_", " ");
+}
+
+function formatDelta(value: number, suffix: string, positiveIsGood = false): string {
+  if (!Number.isFinite(value)) return `0${suffix}`;
+  const sign = value > 0 ? "+" : "";
+  const fixed = Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(1);
+  if (positiveIsGood) return `${sign}${fixed}${suffix}`;
+  return `${sign}${fixed}${suffix}`;
+}
+
+function phaseBadgeClass(state: ThermalDemoStep["state"]): string {
+  if (state === "done") return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+  if (state === "active") return "border-orange-500/40 bg-orange-500/10 text-orange-200";
+  return "border-slate-700 bg-slate-900/60 text-slate-400";
+}
+
+function getDemoStageLabel(mode: FanMode, yoloRunning: boolean, current: FanCycleCurrentMetrics, config?: FanCycleConfig): string {
+  if (!yoloRunning) return "Ready";
+  if (mode === "GPU_DEFAULT") return "Baseline";
+  if (config && current.gpu_temp_c >= config.fault_temp_target_c) return "Thermal Rise";
+  if (current.sm_clock_mhz <= 1000) return "Clock Drop";
+  return "Fault Fan";
+}
+
+function humanizeRunStatus(status: string): string {
+  if (status === "demo_live") return "Live Demo";
+  if (status === "running") return "Running";
+  if (status === "starting") return "Starting";
+  if (status === "stopping") return "Stopping";
+  if (status === "stopped") return "Stopped";
+  if (status === "idle") return "Idle";
+  if (status === "error") return "Error";
+  return status.replaceAll("_", " ");
+}
+
+function displayFanModeLabel(mode: FanMode): string {
+  if (mode === "GPU_DEFAULT") return "Auto Cooling";
+  return modeLabel(mode);
+}
+
+function formatWorkloadMetric(
+  value?: number | null,
+  digits = 1,
+  suffix = "",
+): string {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return "N/A";
+  }
+  return `${value.toFixed(digits)}${suffix}`;
+}
+
+function formatObservedTimestamp(ts?: number | null): string {
+  if (!ts) return "N/A";
+  return new Date(ts * 1000).toLocaleString();
+}
+
+function formatFreshness(value?: number | null): string {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return "N/A";
+  }
+  return `${value.toFixed(1)} sec`;
+}
+
+function formatReadyCondition(value?: boolean | null): string {
+  if (value === undefined || value === null) return "Unknown";
+  return value ? "True" : "False";
+}
+
+function observationLine(label: string, value: string) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="text-slate-400">{label}</div>
+      <div className="text-right font-mono text-slate-200">{value}</div>
+    </div>
+  );
 }
 
 function MetricBar({
@@ -672,7 +872,6 @@ function NodeDetail({
             <MetricBar label="Disk Root Usage" value={st?.disk?.root_usage_percent} />
           </div>
         </div>
-
         <div className="grid gap-4">
           <MultiLineChart
             title="CPU / Memory / Disk Usage"
@@ -699,8 +898,221 @@ function NodeDetail({
   );
 }
 
+function LlmServingLabPage({
+  workloads,
+  workloadDetails,
+}: {
+  workloads: WorkloadListItem[];
+  workloadDetails: Record<string, WorkloadStatusResponse>;
+}) {
+  const sortedWorkloads = [...workloads].sort((a, b) => {
+    const left = `${a.namespace}/${a.workload}`;
+    const right = `${b.namespace}/${b.workload}`;
+    return left.localeCompare(right);
+  });
+
+  const primaryWorkload = sortedWorkloads[0] || null;
+  const primaryKey = primaryWorkload
+    ? `${primaryWorkload.namespace}/${primaryWorkload.workload}`
+    : "";
+  const primaryDetail = primaryKey ? workloadDetails[primaryKey] || null : null;
+  const replicas = primaryDetail?.replicas || [];
+  const metricsSamplePresent =
+    !!primaryDetail && replicas.some((replica) => replica.metrics_observed_ts);
+
+  return (
+    <section className="space-y-6">
+      <SectionCard title="LLM Serving Lab">
+        <div className="text-sm text-slate-400">vLLM service observation</div>
+        {sortedWorkloads.length > 1 && primaryWorkload && (
+          <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-sm text-amber-100">
+            Multiple vLLM workloads detected; showing{" "}
+            <span className="font-mono">
+              {primaryWorkload.namespace}/{primaryWorkload.workload}
+            </span>
+            .
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Service Overview">
+        {!primaryWorkload ? (
+          <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
+            No discovered vLLM workload.
+          </div>
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+              <div className="space-y-2">
+                {observationLine("Workload", primaryWorkload.workload)}
+                {observationLine("Namespace", primaryWorkload.namespace)}
+                {observationLine("Runtime", primaryWorkload.runtime || "vLLM")}
+                {observationLine(
+                  "Runtime Image",
+                  primaryDetail?.identity.runtime_image ||
+                    primaryWorkload.runtime_image ||
+                    "N/A",
+                )}
+                {observationLine(
+                  "Model",
+                  primaryDetail?.identity.model_name ||
+                    primaryWorkload.model_name ||
+                    "N/A",
+                )}
+                {observationLine(
+                  "Desired Replicas",
+                  String(primaryDetail?.replica_summary.desired ?? primaryWorkload.desired_replicas),
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+              <div className="space-y-2">
+                {observationLine("Ready Replicas", String(primaryDetail?.replica_summary.ready ?? primaryWorkload.ready_replicas))}
+                {observationLine("Workload Discovered", "True")}
+                {observationLine("Metrics Sample", metricsSamplePresent ? "Present" : "No recent sample")}
+                {observationLine(
+                  "Metrics Freshness",
+                  formatFreshness(primaryDetail?.freshness_seconds ?? null),
+                )}
+                {observationLine(
+                  "Data Pipeline",
+                  primaryDetail?.scrape_source || "vmagent -> VictoriaMetrics",
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </SectionCard>
+
+      {primaryWorkload && (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <SectionCard title="Live Serving Observation">
+            {!primaryDetail ? (
+              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
+                No recent workload detail sample.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <SummaryCard
+                    label="Generation TPS"
+                    value={formatWorkloadMetric(
+                      primaryDetail.aggregate.generation_tokens_per_second,
+                      1,
+                      " tok/s",
+                    )}
+                    tone="blue"
+                  />
+                  <SummaryCard
+                    label="Prompt TPS"
+                    value={formatWorkloadMetric(
+                      primaryDetail.aggregate.prompt_tokens_per_second,
+                      1,
+                      " tok/s",
+                    )}
+                    tone="blue"
+                  />
+                  <SummaryCard
+                    label="Waiting Requests"
+                    value={formatWorkloadMetric(
+                      primaryDetail.aggregate.waiting_requests,
+                      0,
+                    )}
+                    tone="gray"
+                  />
+                  <div className="rounded-2xl border border-sky-500/30 bg-slate-950/70 p-4 shadow-lg">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">
+                      KV Cache Usage
+                    </div>
+                    <div className="mt-3">
+                      <MetricBar
+                        label="KV Cache Usage"
+                        value={primaryDetail.aggregate.kv_cache_usage_percent_max}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+                  <div className="space-y-2">
+                    {observationLine("Query Window", `${primaryDetail.query_window_seconds} sec`)}
+                    {observationLine(
+                      "Metrics Observed At",
+                      formatObservedTimestamp(primaryDetail.metrics_observed_ts),
+                    )}
+                    {observationLine("Metrics Freshness", formatFreshness(primaryDetail.freshness_seconds))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard title="Replica / Kubernetes Observation">
+            {!primaryDetail ? (
+              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
+                No replica detail available.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {primaryDetail.replicas.map((replica) => (
+                  <div
+                    key={`${primaryDetail.identity.namespace}/${primaryDetail.identity.workload}/${replica.pod}`}
+                    className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm"
+                  >
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        {observationLine("Pod", replica.pod)}
+                        {observationLine("Node", replica.node_name || "N/A")}
+                        {observationLine("Pod Phase", replica.pod_phase || "Unknown")}
+                        {observationLine(
+                          "Ready Condition",
+                          formatReadyCondition(replica.ready_condition),
+                        )}
+                        {observationLine(
+                          "Last Metrics Timestamp",
+                          formatObservedTimestamp(replica.metrics_observed_ts),
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        {observationLine(
+                          "Metrics Freshness",
+                          formatFreshness(replica.metrics_freshness_seconds),
+                        )}
+                        {observationLine(
+                          "Generation TPS",
+                          formatWorkloadMetric(replica.generation_tokens_per_second, 1, " tok/s"),
+                        )}
+                        {observationLine(
+                          "Prompt TPS",
+                          formatWorkloadMetric(replica.prompt_tokens_per_second, 1, " tok/s"),
+                        )}
+                        {observationLine(
+                          "Waiting Requests",
+                          formatWorkloadMetric(replica.waiting_requests, 0),
+                        )}
+                        <div className="pt-1">
+                          <MetricBar
+                            label="KV Cache Usage"
+                            value={replica.kv_cache_usage_percent}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function FanExperimentPage({
   data,
+  execution,
   liveCurrent,
   liveSeries,
   yoloDemo,
@@ -709,13 +1121,19 @@ function FanExperimentPage({
   error,
   fanControl,
   onFanModeChange,
+  onStartFanCycle,
+  onStopFanCycle,
+  onStartThermalDemo,
+  onRestoreAutoCooling,
   onStartYoloDemo,
   onStopYoloDemo,
   captureRunning,
   onStartCapture,
   onPauseCapture,
+  demoWorkflowBusy,
 }: {
   data: FanCycleLatestResponse | null;
+  execution: FanCycleExecutionStatusResponse | null;
   liveCurrent: FanCycleCurrentMetrics | null;
   liveSeries: FanLivePoint[];
   yoloDemo: YoloDemoStatusResponse | null;
@@ -724,11 +1142,16 @@ function FanExperimentPage({
   error: string;
   fanControl: FanControlSelection;
   onFanModeChange: (mode: FanMode) => void;
+  onStartFanCycle: () => void;
+  onStopFanCycle: () => void;
+  onStartThermalDemo: () => void;
+  onRestoreAutoCooling: () => void;
   onStartYoloDemo: () => void;
   onStopYoloDemo: () => void;
   captureRunning: boolean;
   onStartCapture: () => void;
   onPauseCapture: () => void;
+  demoWorkflowBusy: boolean;
 }) {
   if (loading) {
     return (
@@ -746,78 +1169,307 @@ function FanExperimentPage({
     );
   }
 
-  if (!data || data.timeseries.length === 0) {
-    return (
-      <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-8 text-slate-400">
-        No completed fan-cycle experiment run found yet.
-      </section>
-    );
-  }
-
-  const { run, config, current, phase_summary } = data;
-  const displayCurrent = liveCurrent || current;
-  const displaySeries = liveSeries.length > 1 ? liveSeries : data.timeseries;
-  const runtimeRunId = yoloDemo?.run_id || run.run_id;
-  const runtimeFocusPod = yoloDemo?.focus_pod || run.focus_pod;
-  const runtimeTargetUrl = yoloDemo?.target_url || run.target_url;
+  const hasHistoricalData = Boolean(data && data.timeseries.length > 0);
+  const run = data?.run;
+  const config = data?.config;
+  const current = data?.current;
+  const phaseSummary = data?.phase_summary || [];
+  const displayCurrent = liveCurrent || current || {
+    gpu_temp_c: 0,
+    fan_pct: 0,
+    sm_clock_mhz: 0,
+    gpu_util_pct: 0,
+    server_latency_ms: 0,
+    e2e_latency_ms: 0,
+  };
+  const [timeWindow, setTimeWindow] = useState<TimeWindow>("last-60s");
+  const displaySeries = liveSeries.length > 1 ? liveSeries : data?.timeseries || [];
+  const runtimeRunId = yoloDemo?.run_id || execution?.run_id || run?.run_id || "N/A";
+  const runtimeFocusPod = yoloDemo?.focus_pod || run?.focus_pod || "N/A";
+  const runtimeTargetUrl = yoloDemo?.target_url || run?.target_url || "N/A";
   const yoloDemoRunning =
     yoloDemo?.status === "running" || yoloDemo?.status === "starting";
-  const latencySeries = yoloDemoRunning ? displaySeries : [];
+  const fanControlAvailable = yoloDemo?.fan_control_available ?? true;
+  const fanControlMessage =
+    yoloDemo?.fan_control_message || "Fixed fan override is available.";
+  const fanCycleRunning =
+    execution?.status === "running" ||
+    execution?.status === "starting" ||
+    execution?.status === "stopping";
   const activeServerLatency = yoloDemoRunning ? displayCurrent.server_latency_ms : null;
   const activeE2ELatency = yoloDemoRunning ? displayCurrent.e2e_latency_ms : null;
-  const selectedFanPercent = modeFanPercent(fanControl.mode, config.fixed_fan_pct);
+  const selectedFanPercent = modeFanPercent(fanControl.mode, config?.fixed_fan_pct || 5);
+  const actualFanPercent = displayCurrent.fan_pct;
+  const requestedFanLabel =
+    fanControl.mode === "GPU_DEFAULT" ? "Auto / GPU Default" : `${selectedFanPercent}%`;
+  const fanOverrideNotHonored =
+    fanControl.mode !== "GPU_DEFAULT" &&
+    Math.abs(actualFanPercent - selectedFanPercent) >= 3;
+  const liveDemoMode = yoloDemoRunning && !fanCycleRunning;
+  const rawTargetNode = yoloDemo?.node_name || execution?.node_name || run?.target_node || "unknown";
+  const targetNode = rawTargetNode || "unknown";
   const currentPhaseSummary =
-    phase_summary.find(
+    phaseSummary.find(
       (item) =>
-        item.cycle_index === run.current_cycle &&
-        item.phase === run.current_phase,
-    ) || phase_summary[phase_summary.length - 1];
-  const thermalRisk =
-    displayCurrent.gpu_temp_c >= config.fault_temp_target_c
+        item.cycle_index === run?.current_cycle &&
+        item.phase === run?.current_phase,
+    ) || phaseSummary[phaseSummary.length - 1];
+  const thermalRisk = config
+    ? displayCurrent.gpu_temp_c >= config.fault_temp_target_c
       ? "Thermal target exceeded"
       : displayCurrent.gpu_temp_c > config.normal_temp_max_c
         ? "Above normal thermal band"
-        : "Within expected thermal band";
+        : "Within expected thermal band"
+    : "Waiting for the first completed fan-cycle run";
+  const currentRunStatus = fanCycleRunning
+    ? execution?.status || run?.status || "running"
+    : liveDemoMode
+      ? "demo_live"
+      : execution?.status || run?.status || "idle";
+  const demoModeLabel = fanCycleRunning
+    ? "Fan-Cycle Replay"
+    : yoloDemoRunning
+      ? "Live Demo"
+      : "Idle";
+  const currentPhase = fanCycleRunning
+    ? humanizePhase(run?.current_phase || "running")
+    : getDemoStageLabel(fanControl.mode, yoloDemoRunning, displayCurrent, config);
+  const gpuName = run?.gpu_name || "Unknown GPU";
+  const resultRunDir = execution?.result_run_dir || "Pending first output directory";
+  const chartEmptyText = fanCycleRunning
+    ? "Experiment is running. Charts will populate after live samples or the first completed run appear."
+    : "No completed fan-cycle experiment run found yet.";
+  const wholeRunSeries = data?.timeseries || [];
+  const last60Series = (displaySeries as FanLivePoint[]).slice(-60);
+  const last5mSeries = (displaySeries as FanLivePoint[]).slice(-300);
+  const activeSeries =
+    timeWindow === "whole-run"
+      ? wholeRunSeries.length > 0
+        ? wholeRunSeries
+        : displaySeries
+      : timeWindow === "last-5m"
+        ? last5mSeries
+        : last60Series;
+  const baselineSeries =
+    wholeRunSeries.filter((point) => point.phase === "normal_hold").slice(0, 120) ||
+    [];
+  const fallbackBaselineSeries = wholeRunSeries.slice(0, Math.min(wholeRunSeries.length, 30));
+  const baselineWindow = baselineSeries.length > 0 ? baselineSeries : fallbackBaselineSeries;
+  const baseline = baselineWindow.length > 0
+    ? {
+        gpu_temp: baselineWindow.reduce((sum, point) => sum + point.gpu_temp, 0) / baselineWindow.length,
+        sm_clock: baselineWindow.reduce((sum, point) => sum + point.sm_clock, 0) / baselineWindow.length,
+        server_latency: baselineWindow.reduce((sum, point) => sum + point.server_latency, 0) / baselineWindow.length,
+        e2e_latency: baselineWindow.reduce((sum, point) => sum + point.e2e_latency, 0) / baselineWindow.length,
+      }
+    : {
+        gpu_temp: displayCurrent.gpu_temp_c,
+        sm_clock: displayCurrent.sm_clock_mhz,
+        server_latency: displayCurrent.server_latency_ms,
+        e2e_latency: displayCurrent.e2e_latency_ms,
+      };
+  const deltaTemp = displayCurrent.gpu_temp_c - baseline.gpu_temp;
+  const deltaClock = displayCurrent.sm_clock_mhz - baseline.sm_clock;
+  const deltaServerLatency = displayCurrent.server_latency_ms - baseline.server_latency;
+  const deltaE2E = displayCurrent.e2e_latency_ms - baseline.e2e_latency;
+  const phaseSteps: ThermalDemoStep[] = [
+    {
+      key: "baseline",
+      label: "Baseline",
+      detail: yoloDemoRunning ? "YOLO steady-state with auto cooling" : "Start YOLO demo workload",
+      state: yoloDemoRunning ? "done" : "active",
+    },
+    {
+      key: "fault_fan",
+      label: "Fault Fan",
+      detail: `Requested ${requestedFanLabel}`,
+      state: fanControl.mode !== "GPU_DEFAULT" ? "done" : yoloDemoRunning ? "active" : "pending",
+    },
+    {
+      key: "thermal_rise",
+      label: "Thermal Rise",
+      detail: config ? `Target > ${config.fault_temp_target_c.toFixed(0)}°C` : "Observe GPU temp climb",
+      state:
+        config && displayCurrent.gpu_temp_c >= config.fault_temp_target_c
+          ? "done"
+          : fanControl.mode !== "GPU_DEFAULT" && yoloDemoRunning
+            ? "active"
+            : "pending",
+    },
+    {
+      key: "clock_drop",
+      label: "Clock Drop",
+      detail: "SM clock should collapse under heat",
+      state:
+        deltaClock <= -200
+          ? "done"
+          : config && displayCurrent.gpu_temp_c >= (config.fault_temp_target_c || 85)
+            ? "active"
+            : "pending",
+    },
+    {
+      key: "recovery",
+      label: "Recovery",
+      detail: "Restore GPU_DEFAULT and watch latency recover",
+      state:
+        fanControl.mode === "GPU_DEFAULT" && yoloDemoRunning && deltaTemp <= 2
+          ? "done"
+          : fanControl.mode === "GPU_DEFAULT" && yoloDemoRunning
+            ? "active"
+            : "pending",
+    },
+  ];
 
   return (
     <section className="space-y-6">
-      <SectionCard
-        title="Fan-Cycle Experiment Console"
-        action={
-          <div className="rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs uppercase text-sky-300">
-            {run.status}
+      <SectionCard title="Thermal Demo">
+        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Demo Mode</div>
+              <div className="mt-2 text-lg font-semibold text-slate-100">{demoModeLabel}</div>
+              <div className="mt-1 text-sm text-slate-400">{humanizeRunStatus(currentRunStatus)}</div>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Current Stage</div>
+              <div className="mt-2 text-lg font-semibold text-orange-300">{currentPhase}</div>
+              <div className="mt-1 text-sm text-slate-400">{thermalRisk}</div>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Current GPU Temp</div>
+              <div className="mt-2 text-lg font-semibold text-orange-200">
+                {displayCurrent.gpu_temp_c.toFixed(1)}°C
+              </div>
+              <div className="mt-1 text-sm text-slate-400">Fan {displayCurrent.fan_pct.toFixed(0)}%</div>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Current E2E Latency</div>
+              <div className="mt-2 text-lg font-semibold text-slate-100">
+                {formatMaybeMs(activeE2ELatency)}
+              </div>
+              <div className="mt-1 text-sm text-slate-400">
+                {activeServerLatency === null
+                  ? "YOLO workload is not running"
+                  : `Server ${activeServerLatency.toFixed(1)} ms`}
+              </div>
+            </div>
           </div>
-        }
-      >
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-5">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Primary Actions</div>
+            <div className="mt-4 grid gap-3">
+              <button
+                onClick={onStartThermalDemo}
+                disabled={demoWorkflowBusy || !fanControlAvailable}
+                className={`rounded-2xl border px-4 py-4 text-left transition ${
+                  demoWorkflowBusy || !fanControlAvailable
+                    ? "border-slate-700 bg-slate-900/60 text-slate-500"
+                    : "border-red-500/40 bg-red-500/15 text-red-100 hover:border-red-400"
+                }`}
+              >
+                <div className="text-sm font-semibold uppercase tracking-wide">Start Live Thermal Demo</div>
+                <div className="mt-1 text-xs opacity-80">
+                  Start YOLO workload if needed, resume live view, and apply the demo fault fan preset.
+                </div>
+              </button>
+              <button
+                onClick={onRestoreAutoCooling}
+                disabled={demoWorkflowBusy}
+                className={`rounded-2xl border px-4 py-4 text-left transition ${
+                  demoWorkflowBusy
+                    ? "border-slate-700 bg-slate-900/60 text-slate-500"
+                    : "border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:border-emerald-400"
+                }`}
+              >
+                <div className="text-sm font-semibold uppercase tracking-wide">Restore Auto Cooling</div>
+                <div className="mt-1 text-xs opacity-80">
+                  Switch fan control back to GPU default and observe recovery.
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="System Context">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Node</div>
+            <div className="mt-2 text-lg font-semibold text-slate-100">{targetNode}</div>
+            <div className="mt-1 text-xs text-slate-400">{gpuName}</div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Workload</div>
+            <div className="mt-2 break-all text-sm font-semibold text-slate-100">{runtimeRunId}</div>
+            <div className="mt-1 text-xs text-slate-400">Focus {runtimeFocusPod}</div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Path</div>
+            <div className="mt-2 break-all text-sm font-semibold text-slate-100">{runtimeTargetUrl}</div>
+            <div className="mt-1 text-xs text-slate-400">{yoloDemoRunning ? "Workload active" : "Workload stopped"}</div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Cooling</div>
+            <div className="mt-2 text-lg font-semibold text-slate-100">{requestedFanLabel}</div>
+            <div className="mt-1 text-xs text-slate-400">Actual {actualFanPercent.toFixed(0)}%</div>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Demo Flow">
+        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="grid gap-3 md:grid-cols-5">
+            {phaseSteps.map((step) => (
+              <div
+                key={step.key}
+                className={`rounded-2xl border p-4 shadow-sm ${phaseBadgeClass(step.state)}`}
+              >
+                <div className="text-[11px] uppercase tracking-[0.18em] opacity-70">
+                  {step.state === "active" ? "Active" : step.state === "done" ? "Done" : "Pending"}
+                </div>
+                <div className="mt-3 text-sm font-semibold">{step.label}</div>
+                <div className="mt-2 text-xs leading-5 opacity-90">{step.detail}</div>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-2xl border border-slate-700 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-5 text-sm text-slate-300 shadow-lg">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Narration</div>
+            <div className="mt-3 text-2xl font-semibold text-slate-50">{currentPhase}</div>
+            <div className="mt-2 text-sm leading-6 text-slate-300">
+              {fanControl.mode === "GPU_DEFAULT"
+                ? "System is still in baseline / recovery mode."
+                : "Fault fan mode is applied. Watch temperature, SM clock, and latency drift."}
+            </div>
+            <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Next Cue</div>
+              <div className="mt-2 text-sm leading-6 text-slate-200">
+              {fanControl.mode === "GPU_DEFAULT"
+                ? "Press Start Thermal Demo to enter the degraded cooling stage."
+                : "Press Restore Auto Cooling after the degradation is visible to show recovery."}
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Requested</div>
+                <div className="mt-2 text-lg font-semibold text-slate-100">{requestedFanLabel}</div>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Actual Fan</div>
+                <div className="mt-2 text-lg font-semibold text-slate-100">{actualFanPercent.toFixed(0)}%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Delta KPI">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Target Node</div>
-            <div className="mt-2 text-lg font-semibold text-slate-100">{run.target_node}</div>
-            <div className="mt-1 text-sm text-slate-400">Worker / {run.gpu_name}</div>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Run Status</div>
-            <div className="mt-2 text-lg font-semibold text-orange-300">{run.status}</div>
-            <div className="mt-1 text-sm text-slate-400">{run.current_phase}</div>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Current GPU Temp</div>
-            <div className="mt-2 text-lg font-semibold text-orange-200">
-              {displayCurrent.gpu_temp_c.toFixed(1)}°C
-            </div>
-            <div className="mt-1 text-sm text-slate-400">{thermalRisk}</div>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Current E2E Latency</div>
-            <div className="mt-2 text-lg font-semibold text-slate-100">
-              {formatMaybeMs(activeE2ELatency)}
-            </div>
-            <div className="mt-1 text-sm text-slate-400">
-              {activeServerLatency === null
-                ? "YOLO demo is not running"
-                : `Server ${activeServerLatency.toFixed(1)} ms`}
-            </div>
-          </div>
+          <SummaryCard label="Temp Delta" value={formatDelta(deltaTemp, "°C")} tone={deltaTemp >= 5 ? "orange" : "blue"} />
+          <SummaryCard label="SM Clock Delta" value={formatDelta(deltaClock, " MHz")} tone={deltaClock <= -150 ? "orange" : "blue"} />
+          <SummaryCard label="Server Delta" value={formatDelta(deltaServerLatency, " ms")} tone={deltaServerLatency >= 20 ? "orange" : "blue"} />
+          <SummaryCard label="E2E Delta" value={formatDelta(deltaE2E, " ms")} tone={deltaE2E >= 20 ? "orange" : "blue"} />
+        </div>
+        <div className="mt-4 text-xs text-slate-400">
+          Relative to the earliest stable baseline window.
         </div>
       </SectionCard>
 
@@ -839,22 +1491,25 @@ function FanExperimentPage({
 
       <div className="grid grid-cols-[minmax(320px,0.92fr)_minmax(420px,1.08fr)] items-start gap-6 overflow-x-auto">
         <div className="min-w-0 space-y-6">
-          <SectionCard title="YOLO Service">
+          <SectionCard title="Advanced Controls">
             <div className="space-y-3 text-sm text-slate-300">
+              <details className="group rounded-2xl border border-slate-800 bg-slate-900/40 p-0 open:bg-slate-900/55">
+                <summary className="cursor-pointer list-none px-4 py-4 text-sm font-semibold text-slate-200">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div>Engineering Controls</div>
+                      <div className="mt-1 text-xs font-normal text-slate-500">
+                        Manual workload, replay, cooling mode, and live-view toggles
+                      </div>
+                    </div>
+                    <div className="rounded-full border border-slate-700 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                      Expand
+                    </div>
+                  </div>
+                </summary>
+                <div className="border-t border-slate-800 px-4 py-4 space-y-4">
               <div className="rounded-xl bg-slate-900/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-500">Current Run</div>
-                <div className="mt-1 break-all font-mono text-xs text-slate-100">{runtimeRunId}</div>
-              </div>
-              <div className="rounded-xl bg-slate-900/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-500">Focus Pod</div>
-                <div className="mt-1 break-all font-mono text-xs text-slate-100">{runtimeFocusPod || "N/A"}</div>
-              </div>
-              <div className="rounded-xl bg-slate-900/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-500">Target URL</div>
-                <div className="mt-1 break-all font-mono text-xs text-slate-100">{runtimeTargetUrl || "N/A"}</div>
-              </div>
-              <div className="rounded-xl bg-slate-900/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-500">YOLO Demo Status</div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">YOLO Workload Status</div>
                 <div className="mt-1 flex items-center gap-2 font-semibold text-slate-100">
                   <span
                     className={`h-2.5 w-2.5 rounded-full ${
@@ -877,7 +1532,7 @@ function FanExperimentPage({
                       : "border-red-500/40 bg-red-500/15 text-red-200 hover:border-red-400"
                   }`}
                 >
-                  Start YOLO Demo
+                  Start YOLO Workload
                 </button>
                 <button
                   onClick={onStopYoloDemo}
@@ -888,7 +1543,7 @@ function FanExperimentPage({
                       : "border-slate-700 bg-slate-900/60 text-slate-500"
                   }`}
                 >
-                  Stop YOLO Demo
+                  Stop YOLO Workload
                 </button>
                 <button
                   onClick={onStartCapture}
@@ -898,7 +1553,7 @@ function FanExperimentPage({
                       : "border-slate-700 bg-slate-900/60 text-slate-500 hover:border-slate-500"
                   }`}
                 >
-                  Start E2E Capture
+                  Resume Live View
                 </button>
                 <button
                   onClick={onPauseCapture}
@@ -908,7 +1563,7 @@ function FanExperimentPage({
                       : "border-orange-500/40 bg-orange-500/15 text-orange-200"
                   }`}
                 >
-                  Pause Capture
+                  Pause Live View
                 </button>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -925,12 +1580,44 @@ function FanExperimentPage({
                   </div>
                 </div>
               </div>
-            </div>
-          </SectionCard>
-
-          <SectionCard title="Experiment Control">
-            <div className="mb-4 space-y-3">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Fan Mode</div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  onClick={onStartFanCycle}
+                  disabled={fanCycleRunning}
+                  className={`rounded-xl border px-3 py-2 text-sm transition ${
+                    fanCycleRunning
+                      ? "border-slate-700 bg-slate-900/60 text-slate-500"
+                      : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:border-emerald-400"
+                  }`}
+                >
+                  Start Fan-Cycle Replay
+                </button>
+                <button
+                  onClick={onStopFanCycle}
+                  disabled={!fanCycleRunning}
+                  className={`rounded-xl border px-3 py-2 text-sm transition ${
+                    fanCycleRunning
+                      ? "border-orange-500/40 bg-orange-500/15 text-orange-200 hover:border-orange-400"
+                      : "border-slate-700 bg-slate-900/60 text-slate-500"
+                  }`}
+                >
+                  Stop Fan-Cycle Replay
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl bg-slate-900/60 p-3 text-sm text-slate-300">
+                  Replay State: {execution?.message || "Waiting for a fan-cycle run"}
+                </div>
+                <div className="rounded-xl bg-slate-900/60 p-3 text-sm text-slate-300">
+                  Result Run Dir: <span className="font-mono text-xs">{resultRunDir}</span>
+                </div>
+              </div>
+              <div className="text-xs uppercase tracking-wide text-slate-500">Cooling Mode</div>
+              {!fanControlAvailable && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+                  {fanControlMessage}
+                </div>
+              )}
               <div className="grid gap-2 sm:grid-cols-2">
                 {(
                   [
@@ -944,63 +1631,121 @@ function FanExperimentPage({
                   <button
                     key={mode}
                     onClick={() => onFanModeChange(mode)}
+                    disabled={mode !== "GPU_DEFAULT" && !fanControlAvailable}
                     className={`rounded-xl border px-3 py-2 text-left text-sm transition ${
                       fanControl.mode === mode
                         ? "border-orange-500/40 bg-orange-500/15 text-orange-200"
-                        : "border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-500"
+                        : mode !== "GPU_DEFAULT" && !fanControlAvailable
+                          ? "border-slate-700 bg-slate-900/60 text-slate-600"
+                          : "border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-500"
                     }`}
                   >
-                    {modeLabel(mode)}
+                    {displayFanModeLabel(mode)}
                   </button>
                 ))}
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-xl bg-slate-900/60 p-3 text-sm text-slate-300">
-                  Selected Mode: {modeLabel(fanControl.mode)}
+                  Selected Mode: {displayFanModeLabel(fanControl.mode)}
                 </div>
                 <div className="rounded-xl bg-slate-900/60 p-3 text-sm text-slate-300">
-                  Effective Fan %: {selectedFanPercent}%
+                  Requested Fan %: {requestedFanLabel}
                 </div>
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl bg-slate-900/60 p-3 text-sm text-slate-300">
+                  Actual Fan %: {actualFanPercent.toFixed(0)}%
+                </div>
+                <div
+                  className={`rounded-xl border p-3 text-sm ${
+                    fanOverrideNotHonored
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+                      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                  }`}
+                >
+                  {fanOverrideNotHonored
+                    ? "fan override not honored"
+                    : "fan override matches requested value"}
+                </div>
+              </div>
+              {data?.command_preview && (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-400">
+                  <div className="mb-2 uppercase tracking-wide text-slate-500">CLI Fallback</div>
+                  <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-slate-300">
+                    {data.command_preview.smoke_test}
+                  </pre>
+                </div>
+              )}
+                </div>
+              </details>
             </div>
           </SectionCard>
         </div>
 
         <div className="min-w-0 space-y-6">
-          <MultiLineChart
-            title="GPU Temperature / Fan Speed"
-            data={displaySeries}
-            lines={[
-              { key: "gpu_temp", name: "GPU Temp", stroke: "#f97316" },
-              { key: "fan_pct", name: "Fan %", stroke: "#38bdf8" },
-            ]}
-            height={220}
-          />
-          <MultiLineChart
-            title="SM Clock"
-            data={displaySeries}
-            lines={[
-              { key: "sm_clock", name: "SM Clock", stroke: "#a78bfa" },
-            ]}
-            height={220}
-          />
-          <MultiLineChart
-            title="GPU Utilization"
-            data={displaySeries}
-            lines={[
-              { key: "gpu_util", name: "GPU Util", stroke: "#22c55e" },
-            ]}
-            height={220}
-          />
-          <MultiLineChart
-            title="Server Latency"
-            data={latencySeries}
-            unit=" ms"
-            lines={[
-              { key: "server_latency", name: "Server Latency", stroke: "#f59e0b" },
-            ]}
-            height={220}
-          />
+          {hasHistoricalData || displaySeries.length > 0 ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                {(
+                  [
+                    ["last-60s", "Last 60s"],
+                    ["last-5m", "5min"],
+                    ["whole-run", "Whole Run"],
+                  ] as [TimeWindow, string][]
+                ).map(([windowKey, label]) => (
+                  <button
+                    key={windowKey}
+                    onClick={() => setTimeWindow(windowKey)}
+                    className={`rounded-full border px-3 py-1 text-xs transition ${
+                      timeWindow === windowKey
+                        ? "border-sky-500/40 bg-sky-500/15 text-sky-200"
+                        : "border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-500"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <MultiLineChart
+                title="GPU Temperature / Fan Speed"
+                data={activeSeries}
+                lines={[
+                  { key: "gpu_temp", name: "GPU Temp", stroke: "#f97316" },
+                  { key: "fan_pct", name: "Fan %", stroke: "#38bdf8" },
+                ]}
+                height={220}
+              />
+              <MultiLineChart
+                title="SM Clock"
+                data={activeSeries}
+                lines={[
+                  { key: "sm_clock", name: "SM Clock", stroke: "#a78bfa" },
+                ]}
+                height={220}
+              />
+              <MultiLineChart
+                title="GPU Utilization"
+                data={activeSeries}
+                lines={[
+                  { key: "gpu_util", name: "GPU Util", stroke: "#22c55e" },
+                ]}
+                height={220}
+              />
+              <MultiLineChart
+                title="Server Latency"
+                data={timeWindow === "whole-run" ? activeSeries : activeSeries.filter((point) => Number(point.server_latency) > 0)}
+                unit=" ms"
+                lines={[
+                  { key: "server_latency", name: "Server Latency", stroke: "#f59e0b" },
+                ]}
+                height={220}
+              />
+            </>
+          ) : (
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-8 text-sm text-slate-400">
+              {chartEmptyText}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1027,6 +1772,10 @@ function FanExperimentPage({
 export default function App() {
   const [inventory, setInventory] = useState<NodeInventory[]>([]);
   const [statuses, setStatuses] = useState<NodeStatus[]>([]);
+  const [workloads, setWorkloads] = useState<WorkloadListItem[]>([]);
+  const [workloadDetails, setWorkloadDetails] = useState<
+    Record<string, WorkloadStatusResponse>
+  >({});
   const [selectedNode, setSelectedNode] = useState<string>("");
   const [lastUpdated, setLastUpdated] = useState<string>("-");
   const [error, setError] = useState<string>("");
@@ -1039,10 +1788,12 @@ export default function App() {
   const [fanExperimentLoading, setFanExperimentLoading] = useState(true);
   const [fanExperimentError, setFanExperimentError] = useState("");
   const [fanCaptureRunning, setFanCaptureRunning] = useState(true);
+  const [fanExecutionStatus, setFanExecutionStatus] = useState<FanCycleExecutionStatusResponse | null>(null);
   const [fanLiveCurrent, setFanLiveCurrent] = useState<FanCycleCurrentMetrics | null>(null);
   const [fanLiveSeries, setFanLiveSeries] = useState<FanLivePoint[]>([]);
   const [yoloDemoStatus, setYoloDemoStatus] = useState<YoloDemoStatusResponse | null>(null);
   const [yoloDemoEvents, setYoloDemoEvents] = useState<YoloDemoEvent[]>([]);
+  const [demoWorkflowBusy, setDemoWorkflowBusy] = useState(false);
 
   async function loadInventory() {
     const data = await fetchJson<NodeListResponse>("/api/v1/nodes");
@@ -1058,6 +1809,49 @@ export default function App() {
     setLastUpdated(new Date().toLocaleTimeString());
   }
 
+  async function loadWorkloads() {
+    try {
+      const data = await fetchJson<WorkloadListResponse>("/api/v1/workloads");
+      const items = [...(data.workloads || [])].sort((a, b) =>
+        `${a.namespace}/${a.workload}`.localeCompare(`${b.namespace}/${b.workload}`),
+      );
+      setWorkloads(items);
+
+      if (items.length === 0) {
+        setWorkloadDetails({});
+        return;
+      }
+
+      const detailEntries = await Promise.all(
+        items.map(async (item) => {
+          const key = `${item.namespace}/${item.workload}`;
+          try {
+            const detail = await fetchJson<WorkloadStatusResponse>(
+              `/api/v1/workloads/${encodeURIComponent(item.namespace)}/${encodeURIComponent(item.workload)}/status`,
+            );
+            return [key, detail] as const;
+          } catch (e) {
+            if (isNotFoundError(e)) {
+              return null;
+            }
+            throw e;
+          }
+        }),
+      );
+
+      setWorkloadDetails(
+        Object.fromEntries(detailEntries.filter((entry): entry is readonly [string, WorkloadStatusResponse] => entry !== null)),
+      );
+    } catch (e) {
+      if (isNotFoundError(e)) {
+        setWorkloads([]);
+        setWorkloadDetails({});
+        return;
+      }
+      throw e;
+    }
+  }
+
   async function loadFanExperiment() {
     try {
       setFanExperimentError("");
@@ -1065,25 +1859,40 @@ export default function App() {
       setFanExperiment(data);
     } catch (e) {
       setFanExperiment(null);
-      setFanExperimentError(e instanceof Error ? e.message : String(e));
+      if (!isNotFoundError(e)) {
+        setFanExperimentError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setFanExperimentLoading(false);
     }
   }
 
   async function loadFanLive() {
-    const data = await fetchJson<FanCycleLiveResponse>("/api/v1/experiments/fan-cycle/live");
-    setFanLiveCurrent(data.current);
-    const point: FanLivePoint = {
-      time: new Date(data.generated_at * 1000).toLocaleTimeString(),
-      gpu_temp: data.current.gpu_temp_c,
-      fan_pct: data.current.fan_pct,
-      sm_clock: data.current.sm_clock_mhz,
-      gpu_util: data.current.gpu_util_pct,
-      server_latency: data.current.server_latency_ms,
-      e2e_latency: data.current.e2e_latency_ms,
-    };
-    setFanLiveSeries((prev) => [...prev, point].slice(-60));
+    try {
+      const data = await fetchJson<FanCycleLiveResponse>("/api/v1/experiments/fan-cycle/live");
+      setFanLiveCurrent(data.current);
+      const point: FanLivePoint = {
+        ts: data.generated_at * 1000,
+        time: new Date(data.generated_at * 1000).toLocaleTimeString(),
+        phase: data.run.current_phase || "live_demo",
+        gpu_temp: data.current.gpu_temp_c,
+        fan_pct: data.current.fan_pct,
+        sm_clock: data.current.sm_clock_mhz,
+        gpu_util: data.current.gpu_util_pct,
+        server_latency: data.current.server_latency_ms,
+        e2e_latency: data.current.e2e_latency_ms,
+      };
+      setFanLiveSeries((prev) => [...prev, point].slice(-60));
+    } catch (e) {
+      if (!isNotFoundError(e)) {
+        throw e;
+      }
+    }
+  }
+
+  async function loadFanExecutionStatus() {
+    const data = await fetchJson<FanCycleExecutionStatusResponse>("/api/v1/experiments/fan-cycle/status");
+    setFanExecutionStatus(data);
   }
 
   async function loadYoloDemoStatus() {
@@ -1122,11 +1931,52 @@ export default function App() {
     return res.json();
   }
 
+  async function runThermalDemoWorkflow() {
+    setDemoWorkflowBusy(true);
+    try {
+      setFanExperimentError("");
+      setFanCaptureRunning(true);
+      let nextStatus = yoloDemoStatus;
+      if (!nextStatus || (nextStatus.status !== "running" && nextStatus.status !== "starting")) {
+        nextStatus = await postJson<YoloDemoStatusResponse>("/api/v1/experiments/yolo-demo/start");
+        setYoloDemoStatus(nextStatus);
+      }
+      const fixedStatus = await postJson<YoloDemoStatusResponse>("/api/v1/experiments/yolo-demo/fan-mode/FIXED_20");
+      setYoloDemoStatus(fixedStatus);
+      setFanControl({ mode: "FIXED_20" });
+      await loadYoloDemoEvents();
+      await loadFanLive();
+      await loadFanExecutionStatus();
+    } catch (e) {
+      setFanExperimentError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDemoWorkflowBusy(false);
+    }
+  }
+
+  async function restoreAutoCoolingWorkflow() {
+    setDemoWorkflowBusy(true);
+    try {
+      setFanExperimentError("");
+      const status = await postJson<YoloDemoStatusResponse>("/api/v1/experiments/yolo-demo/fan-mode/GPU_DEFAULT");
+      setYoloDemoStatus(status);
+      setFanControl({ mode: "GPU_DEFAULT" });
+      await loadYoloDemoEvents();
+      await loadFanLive();
+    } catch (e) {
+      setFanExperimentError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDemoWorkflowBusy(false);
+    }
+  }
+
   async function loadAll() {
     try {
       setError("");
       await loadInventory();
       await loadStatus();
+      await loadWorkloads();
+      setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -1137,15 +1987,15 @@ export default function App() {
     loadFanExperiment();
 
     const statusTimer = window.setInterval(() => {
-      loadStatus().catch((e) =>
-        setError(e instanceof Error ? e.message : String(e)),
-      );
+      Promise.all([loadStatus(), loadWorkloads()])
+        .then(() => setError(""))
+        .catch((e) => setError(e instanceof Error ? e.message : String(e)));
     }, 3000);
 
     const inventoryTimer = window.setInterval(() => {
-      loadInventory().catch((e) =>
-        setError(e instanceof Error ? e.message : String(e)),
-      );
+      loadInventory()
+        .then(() => setError(""))
+        .catch((e) => setError(e instanceof Error ? e.message : String(e)));
     }, 60000);
 
     return () => {
@@ -1162,6 +2012,9 @@ export default function App() {
     loadFanExperiment().catch((e) =>
       setFanExperimentError(e instanceof Error ? e.message : String(e)),
     );
+    loadFanExecutionStatus().catch((e) =>
+      setFanExperimentError(e instanceof Error ? e.message : String(e)),
+    );
     loadFanLive().catch((e) =>
       setFanExperimentError(e instanceof Error ? e.message : String(e)),
     );
@@ -1174,6 +2027,9 @@ export default function App() {
 
     const fanExperimentTimer = window.setInterval(() => {
       loadFanExperiment().catch((e) =>
+        setFanExperimentError(e instanceof Error ? e.message : String(e)),
+      );
+      loadFanExecutionStatus().catch((e) =>
         setFanExperimentError(e instanceof Error ? e.message : String(e)),
       );
       loadFanLive().catch((e) =>
@@ -1309,6 +2165,16 @@ export default function App() {
             >
               Fan-Cycle Experiment
             </button>
+            <button
+              onClick={() => setActiveTab("llm-serving")}
+              className={`rounded-xl border px-4 py-2 text-sm transition ${
+                activeTab === "llm-serving"
+                  ? "border-sky-500/40 bg-sky-500/20 text-sky-300"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              LLM Serving Lab
+            </button>
           </div>
 
           {isDashboardTokenMissing() && (
@@ -1372,9 +2238,14 @@ export default function App() {
           </>
         )}
 
+        {activeTab === "llm-serving" && (
+          <LlmServingLabPage workloads={workloads} workloadDetails={workloadDetails} />
+        )}
+
         {activeTab === "fan-experiment" && (
           <FanExperimentPage
             data={fanExperiment}
+            execution={fanExecutionStatus}
             liveCurrent={fanLiveCurrent}
             liveSeries={fanLiveSeries}
             yoloDemo={yoloDemoStatus}
@@ -1383,13 +2254,37 @@ export default function App() {
             error={fanExperimentError}
             fanControl={fanControl}
             onFanModeChange={(mode) => {
+              const previousMode = fanControl.mode;
               setFanControl({ mode });
               postJson<YoloDemoStatusResponse>(`/api/v1/experiments/yolo-demo/fan-mode/${mode}`)
                 .then(setYoloDemoStatus)
                 .then(() => loadYoloDemoEvents())
+                .catch((e) => {
+                  setFanControl({ mode: previousMode });
+                  setFanExperimentError(e instanceof Error ? e.message : String(e)),
+                  loadYoloDemoStatus().catch(() => undefined);
+                });
+            }}
+            onStartFanCycle={() => {
+              postJson<FanCycleExecutionStatusResponse>("/api/v1/experiments/fan-cycle/start")
+                .then(setFanExecutionStatus)
+                .then(() => loadFanExperiment())
                 .catch((e) =>
                   setFanExperimentError(e instanceof Error ? e.message : String(e)),
                 );
+            }}
+            onStopFanCycle={() => {
+              postJson<FanCycleExecutionStatusResponse>("/api/v1/experiments/fan-cycle/stop")
+                .then(setFanExecutionStatus)
+                .catch((e) =>
+                  setFanExperimentError(e instanceof Error ? e.message : String(e)),
+                );
+            }}
+            onStartThermalDemo={() => {
+              runThermalDemoWorkflow().catch(() => undefined);
+            }}
+            onRestoreAutoCooling={() => {
+              restoreAutoCoolingWorkflow().catch(() => undefined);
             }}
             onStartYoloDemo={() => {
               postJson<YoloDemoStatusResponse>("/api/v1/experiments/yolo-demo/start")
@@ -1433,6 +2328,7 @@ export default function App() {
                 },
               ].slice(-50));
             }}
+            demoWorkflowBusy={demoWorkflowBusy}
           />
         )}
       </div>

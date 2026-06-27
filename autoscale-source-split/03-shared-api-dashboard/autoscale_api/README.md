@@ -11,9 +11,9 @@
 - `RFSoC` external node aggregator 輸出
 - `AP gateway` external node aggregator 輸出
 
-整理成固定 JSON schema，供 `Cluster Monitor` dashboard 使用。
+整理成固定 JSON schema，供 `Cluster Monitor` 與 `LLM Serving Lab` dashboard 使用。
 
-本 README 只描述目前已驗證的 `monitoring + cluster monitor` 主線；experiment 相關 API 不列入本次正式重建驗收。
+本 README 以目前已驗證的 `monitoring + cluster monitor` 主線為主，並補充 `2026-06-24` 完成的 `Fan-Cycle Experiment` host-side rebuild 狀態。
 
 ## Main Endpoints
 
@@ -23,6 +23,19 @@
 - `GET /api/v1/nodes/{node_name}/status`
 - `GET /api/v1/full-metrics`
 - `GET /api/v1/full-metrics/{node_name}`
+- `GET /api/v1/workloads`
+- `GET /api/v1/workloads/{namespace}/{workload}/status`
+- `GET /api/v1/nodes/{node_name}/workloads`
+- `GET /api/v1/experiments/fan-cycle/latest`
+- `GET /api/v1/experiments/fan-cycle/live`
+- `GET /api/v1/experiments/fan-cycle/status`
+- `POST /api/v1/experiments/fan-cycle/start`
+- `POST /api/v1/experiments/fan-cycle/stop`
+- `GET /api/v1/experiments/yolo-demo/status`
+- `GET /api/v1/experiments/yolo-demo/events`
+- `POST /api/v1/experiments/yolo-demo/start`
+- `POST /api/v1/experiments/yolo-demo/stop`
+- `POST /api/v1/experiments/yolo-demo/fan-mode/{mode}`
 
 ## Current Validated Behavior
 
@@ -56,6 +69,38 @@
 - external nodes telemetry 缺失時，不再強制補成 `0.0`
 - dashboard 端目前會把 external nodes 的 telemetry 缺失解讀成 `OFFLINE`
 
+### `/api/v1/workloads`
+
+`2026-06-25` 新增 workload-centric 路由，用來承接 `vLLM` serving metrics，而不污染既有 node schema。
+
+第一版目前支援：
+
+- namespace 預設 `ai-serving`
+- `Pod -> ReplicaSet -> Deployment` workload identity 解析
+- 由 VictoriaMetrics 查詢 `vllm:*` 指標並聚合成統一 schema
+- per-replica `pod_phase` / `ready_condition`
+- `metrics_observed_ts` / `freshness_seconds`
+- deployment `container image` 回填成 `runtime_image`
+
+核心 aggregation 規則：
+
+- generation TPS: `sum`
+- prompt TPS: `sum`
+- waiting requests: `sum`
+- KV cache usage: `max`
+
+狀態語意：
+
+- `ready`
+- `not_ready`
+- `metrics_unavailable`
+
+目前這組欄位是為了 dashboard 的 `objective observation only` 視圖設計：
+
+- 顯示客觀 workload state
+- 不在 API 內輸出 capacity score 或 scheduler recommendation
+- 由前端自行把 `Workload Discovered`、`Metrics Sample`、`Pod Phase`、`Ready Condition` 映射成可驗證畫面欄位
+
 ## Runtime Dependencies
 
 此 API 依賴以下端點：
@@ -78,6 +123,57 @@
 - `NETDATA_CHILD_URL=http://140.113.179.9:32163`
 - `NETDATA_PARENT_BASE_URL=http://140.113.179.9:32163`
 - `KSM_URL=http://140.113.179.9:32080`
+
+若要啟用 `Fan-Cycle Experiment` 與 `YOLO demo` control，還需要以下 experiment runtime env：
+
+- `PRE6G_EXPERIMENT_NAMESPACE`
+- `PRE6G_EXPERIMENT_NODE_NAME`
+- `PRE6G_EXPERIMENT_NODE_SSH`
+- `PRE6G_EXPERIMENT_FOCUS_DEPLOY`
+- `PRE6G_EXPERIMENT_BG_DEPLOY`
+- `PRE6G_EXPERIMENT_MEAS_SVC_NAME`
+- `PRE6G_EXPERIMENT_TARGET_MODE`
+- `PRE6G_EXPERIMENT_WORKER_REPO`
+- `PRE6G_EXPERIMENT_WORKER_VENV`
+- `PRE6G_EXPERIMENT_CC_PASSWORD`
+- `PRE6G_EXPERIMENT_*` 的 cycle / timeout / bgload 參數
+
+這些欄位的公開模板已加入：
+
+- [autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example](../../01-monitoring-layer/systemd/autoscale-api.env.example)
+
+目前建議把真實值放在：
+
+- host-side runtime：`autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env`
+- private runtime 入口：`config/private-runtime/api/autoscale-api.env`
+
+若要啟用 workload-centric `vLLM` API，另外建議設定：
+
+- `PRE6G_WORKLOAD_NAMESPACE=ai-serving`
+- `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS=60`
+
+其中 `60s` 是目前 live cluster 第一版較穩定的設定，能降低短 burst request 在 `10s` 視窗下頻繁顯示 `0 TPS` 的情況。
+
+## Fan-Cycle Rebuild Status
+
+截至 `2026-06-24`，已完成：
+
+- 修正 experiment service 的 repo/root path 對齊問題
+- 新增 `fan-cycle` run `status/start/stop` API
+- 將 YOLO demo 與 fan-cycle runner 的拓樸、SSH、worker repo、coolercontrol 密碼抽成 runtime env
+- dashboard 可在沒有 completed run 的情況下仍正常載入 experiment control 畫面
+
+目前仍建議優先使用：
+
+- host-side `run_local_api.sh`
+- 或使用者層 systemd 的 `pre6g-autoscale-api.service`
+
+原因是完整 experiment control 仍需要：
+
+- `kubectl`
+- `ssh`
+- worker-side credential / SSH config
+- 對 `icclz1` 的 `gpu-tempctl-lab` 存取
 
 ## Start Locally
 
@@ -164,7 +260,19 @@ docker build \
 - `KSM_URL`
 - `AUTOSCALE_API_TOKEN`
 
-API Pod 另外需要讀取 `nodes` 的 RBAC，否則 `/api/v1/nodes` 會失敗。
+若要讓 workload API 正常解析 Deployment owner，cluster 內 RBAC 也必須包含：
+
+- `apps/replicasets` `get/list/watch`
+
+API Pod 若要支援 experiment control，RBAC 不只要能讀 `nodes`，還需要：
+
+- `pods`
+- `services`
+- `events`
+- `deployments`
+- `deployments/scale`
+
+本 repo 的 `autoscale-api-rbac.yaml` 已在 `2026-06-24` 補上這些權限。
 
 ## Health Check
 
@@ -253,8 +361,12 @@ export AUTOSCALE_API_CORS_ORIGINS="http://<dashboard-host>:<port>,http://<anothe
 - `Cluster Monitor` 會顯示 `rfsoc4x2-pynq`
 - `Cluster Monitor` 會顯示 `openwrt_ap`
 - host-side `run_local_api.sh` 可在目前環境直接啟動 API
+- `Fan-Cycle Experiment` 的 host-side API / frontend wiring 已重建完成
+- `cluster-dashboard` 可在 Node 22 成功 build，包含新的 experiment control UI
 
-未列入本次驗收：
+本次未在此 turn 自動做 live experiment rerun 驗證：
 
-- `Fan-Cycle Experiment` 頁面
-- `02-experiment-layer` 的 workflow
+- 完整 `fan-cycle start -> worker thermal cycle -> completed run` 實跑
+- `k3s` Pod 內 experiment control 的 end-to-end 驗證
+
+原因是這兩項都會直接影響目前實驗室 workload / GPU worker 狀態。
