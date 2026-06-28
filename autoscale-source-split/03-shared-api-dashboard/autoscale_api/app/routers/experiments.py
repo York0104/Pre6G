@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.experiment import (
+    FanCycleExecutionStatusResponse,
     FanCycleLatestResponse,
     FanCycleLiveResponse,
     YoloDemoEventsResponse,
@@ -8,12 +9,14 @@ from app.schemas.experiment import (
 )
 from app.services.cache_service import SimpleTTLCache
 from app.services.fan_cycle_experiment_service import FanCycleExperimentService
+from app.services.fan_cycle_run_service import FanCycleRunService
 from app.services.yolo_demo_service import YoloDemoService
 
 router = APIRouter(prefix="/api/v1/experiments", tags=["experiments"])
 
 cache = SimpleTTLCache()
 fan_cycle_service = FanCycleExperimentService(cache=cache)
+fan_cycle_run_service = FanCycleRunService()
 yolo_demo_service = YoloDemoService()
 
 
@@ -31,6 +34,27 @@ def get_live_fan_cycle_metrics() -> FanCycleLiveResponse:
         return fan_cycle_service.get_live()
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/fan-cycle/status", response_model=FanCycleExecutionStatusResponse)
+def get_fan_cycle_status() -> FanCycleExecutionStatusResponse:
+    return fan_cycle_run_service.get_status()
+
+
+@router.post("/fan-cycle/start", response_model=FanCycleExecutionStatusResponse)
+def start_fan_cycle() -> FanCycleExecutionStatusResponse:
+    try:
+        return fan_cycle_run_service.start()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/fan-cycle/stop", response_model=FanCycleExecutionStatusResponse)
+def stop_fan_cycle() -> FanCycleExecutionStatusResponse:
+    try:
+        return fan_cycle_run_service.stop()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/yolo-demo/status", response_model=YoloDemoStatusResponse)

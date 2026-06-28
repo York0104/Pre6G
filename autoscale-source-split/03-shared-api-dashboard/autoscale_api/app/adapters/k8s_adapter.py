@@ -24,8 +24,18 @@ class K8sAdapter:
             result = self.core_api.list_pod_for_all_namespaces().to_dict()
         return result["items"]
 
+    def list_services_raw(self, namespace: str | None = None) -> List[Dict[str, Any]]:
+        if namespace:
+            result = self.core_api.list_namespaced_service(namespace).to_dict()
+        else:
+            result = self.core_api.list_service_for_all_namespaces().to_dict()
+        return result["items"]
+
     def get_pod_raw(self, namespace: str, pod_name: str) -> Dict[str, Any]:
         return self.core_api.read_namespaced_pod(name=pod_name, namespace=namespace).to_dict()
+
+    def get_service_raw(self, namespace: str, name: str) -> Dict[str, Any]:
+        return self.core_api.read_namespaced_service(name=name, namespace=namespace).to_dict()
 
     def list_deployments_raw(self, namespace: str | None = None) -> List[Dict[str, Any]]:
         if namespace:

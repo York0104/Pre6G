@@ -59,6 +59,6 @@ Target workload: `Gemma 4 vLLM`
 
 1. 第一次 cold start 仍會花較長時間下載與編譯模型
 2. 單 GPU node 更新時應避免 rolling update
-3. live `autoscale_api` 目前以 `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS=60` 運行，避免低流量 burst 被 `10s` 視窗過度壓成 `0`
+3. live `autoscale_api` 目前以 `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS=10` 運行，讓 `LLM Serving Lab` 更容易觀察單次 inference 與短時間 benchmark 的 throughput 變化
 4. `benchmark-job.yaml` 目前預設排到 `icclz2`，以縮短 image pull 與啟動等待
 5. dashboard 視覺化仍保留後續討論空間，這一輪先完成 backend/live integration

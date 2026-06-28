@@ -26,6 +26,8 @@
 - `GET /api/v1/workloads`
 - `GET /api/v1/workloads/{namespace}/{workload}/status`
 - `GET /api/v1/nodes/{node_name}/workloads`
+- `POST /api/v1/llm-lab/inference`
+- `POST /api/v1/llm-lab/benchmarks/smoke`
 - `GET /api/v1/experiments/fan-cycle/latest`
 - `GET /api/v1/experiments/fan-cycle/live`
 - `GET /api/v1/experiments/fan-cycle/status`
@@ -101,6 +103,59 @@
 - 不在 API 內輸出 capacity score 或 scheduler recommendation
 - 由前端自行把 `Workload Discovered`、`Metrics Sample`、`Pod Phase`、`Ready Condition` 映射成可驗證畫面欄位
 
+### `/api/v1/llm-lab/inference`
+
+`2026-06-27` 新增最小版 `Single Inference` API，供 `LLM Serving Lab` 送出單次受控 request。
+
+request body:
+
+- `namespace`
+- `workload`
+- `prompt`
+- `max_tokens`
+- `temperature`
+
+response:
+
+- `http_status`
+- `latency_seconds`
+- `prompt_tokens`
+- `completion_tokens`
+- `total_tokens`
+- `finish_reason`
+- `response_text`
+
+目前設計原則：
+
+- 由 `autoscale_api` 代送到目標 vLLM Service
+- 不讓瀏覽器直接打 cluster 內部 Service
+- 只允許已發現的 workload
+- workload 未 ready 時回 `409`
+- service timeout 時回 `504`
+
+### `/api/v1/llm-lab/benchmarks/smoke`
+
+`2026-06-27` 新增固定 profile 的最小 benchmark API。
+
+目前 profile 固定為：
+
+- prompt: fixed short prompt
+- max output tokens: `64`
+- temperature: `0.0`
+- concurrency: `1`
+- request count: `20`
+
+response summary:
+
+- `run_id`
+- `status`
+- `completed_requests`
+- `failed_requests`
+- `mean_latency_seconds`
+- `mean_prompt_tokens`
+- `mean_completion_tokens`
+- `mean_total_tokens`
+
 ## Runtime Dependencies
 
 此 API 依賴以下端點：
@@ -150,9 +205,9 @@
 若要啟用 workload-centric `vLLM` API，另外建議設定：
 
 - `PRE6G_WORKLOAD_NAMESPACE=ai-serving`
-- `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS=60`
+- `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS=10`
 
-其中 `60s` 是目前 live cluster 第一版較穩定的設定，能降低短 burst request 在 `10s` 視窗下頻繁顯示 `0 TPS` 的情況。
+其中 `10s` 是目前 `LLM Serving Lab` 第一版的預設設定，較適合觀察單次 inference 與短時間 benchmark 的 throughput 變化。
 
 ## Fan-Cycle Rebuild Status
 

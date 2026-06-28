@@ -89,7 +89,7 @@ class VllmWorkloadAdapter:
         elif env_window:
             self.query_window_seconds = max(5, int(env_window))
         else:
-            self.query_window_seconds = 60
+            self.query_window_seconds = 10
 
     def _vm_query(self, promql: str) -> list[dict]:
         url = f"{self.vm_url}/api/v1/query?" + urllib.parse.urlencode({"query": promql})

@@ -182,6 +182,54 @@ type WorkloadStatusResponse = {
   aggregate: WorkloadAggregateMetrics;
 };
 
+type LlmInferenceRequest = {
+  namespace: string;
+  workload: string;
+  prompt: string;
+  max_tokens: number;
+  temperature: number;
+};
+
+type LlmInferenceResponse = {
+  schema: string;
+  ts: number;
+  namespace: string;
+  workload: string;
+  target_url: string;
+  model?: string | null;
+  http_status: number;
+  latency_seconds: number;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+  finish_reason?: string | null;
+  response_text?: string | null;
+};
+
+type LlmSmokeBenchmarkRequest = {
+  namespace: string;
+  workload: string;
+};
+
+type LlmSmokeBenchmarkResponse = {
+  schema: string;
+  ts: number;
+  run_id: string;
+  namespace: string;
+  workload: string;
+  profile: string;
+  request_count: number;
+  max_tokens: number;
+  temperature: number;
+  status: string;
+  completed_requests: number;
+  failed_requests: number;
+  mean_latency_seconds?: number | null;
+  mean_prompt_tokens?: number | null;
+  mean_completion_tokens?: number | null;
+  mean_total_tokens?: number | null;
+};
+
 type Health = "healthy" | "degraded" | "offline";
 type ActiveTab = "monitor" | "fan-experiment" | "llm-serving";
 type FanMode =
@@ -399,6 +447,30 @@ async function fetchJson<T>(path: string): Promise<T> {
       );
     }
     throw new Error(`${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+async function postJsonBody<T>(path: string, body: unknown, method = "POST"): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const payload = await res.json();
+      if (payload?.detail) {
+        detail = `${res.status} ${payload.detail}`;
+      }
+    } catch {
+      // Keep fallback status text when the response body is not JSON.
+    }
+    throw new Error(detail);
   }
   return res.json();
 }
@@ -905,6 +977,15 @@ function LlmServingLabPage({
   workloads: WorkloadListItem[];
   workloadDetails: Record<string, WorkloadStatusResponse>;
 }) {
+  const [prompt, setPrompt] = useState("Explain CPU, RAM, and GPU VRAM in three bullet points.");
+  const [maxTokens, setMaxTokens] = useState(128);
+  const [temperature, setTemperature] = useState(0);
+  const [inferenceLoading, setInferenceLoading] = useState(false);
+  const [inferenceError, setInferenceError] = useState("");
+  const [inferenceResult, setInferenceResult] = useState<LlmInferenceResponse | null>(null);
+  const [smokeLoading, setSmokeLoading] = useState(false);
+  const [smokeError, setSmokeError] = useState("");
+  const [smokeResult, setSmokeResult] = useState<LlmSmokeBenchmarkResponse | null>(null);
   const sortedWorkloads = [...workloads].sort((a, b) => {
     const left = `${a.namespace}/${a.workload}`;
     const right = `${b.namespace}/${b.workload}`;
@@ -920,10 +1001,56 @@ function LlmServingLabPage({
   const metricsSamplePresent =
     !!primaryDetail && replicas.some((replica) => replica.metrics_observed_ts);
 
+  async function runInference() {
+    if (!primaryWorkload) return;
+    setInferenceLoading(true);
+    setInferenceError("");
+    try {
+      const response = await postJsonBody<LlmInferenceResponse>(
+        "/api/v1/llm-lab/inference",
+        {
+          namespace: primaryWorkload.namespace,
+          workload: primaryWorkload.workload,
+          prompt,
+          max_tokens: maxTokens,
+          temperature,
+        } satisfies LlmInferenceRequest,
+      );
+      setInferenceResult(response);
+    } catch (error) {
+      setInferenceError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setInferenceLoading(false);
+    }
+  }
+
+  async function runSmokeBenchmark() {
+    if (!primaryWorkload) return;
+    setSmokeLoading(true);
+    setSmokeError("");
+    try {
+      const response = await postJsonBody<LlmSmokeBenchmarkResponse>(
+        "/api/v1/llm-lab/benchmarks/smoke",
+        {
+          namespace: primaryWorkload.namespace,
+          workload: primaryWorkload.workload,
+        } satisfies LlmSmokeBenchmarkRequest,
+      );
+      setSmokeResult(response);
+    } catch (error) {
+      setSmokeError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSmokeLoading(false);
+    }
+  }
+
   return (
     <section className="space-y-6">
-      <SectionCard title="LLM Serving Lab">
-        <div className="text-sm text-slate-400">vLLM service observation</div>
+      <div>
+        <h2 className="text-xl font-semibold text-slate-100">LLM Serving Lab</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          vLLM workload-level observation
+        </p>
         {sortedWorkloads.length > 1 && primaryWorkload && (
           <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-sm text-amber-100">
             Multiple vLLM workloads detected; showing{" "}
@@ -933,7 +1060,7 @@ function LlmServingLabPage({
             .
           </div>
         )}
-      </SectionCard>
+      </div>
 
       <SectionCard title="Service Overview">
         {!primaryWorkload ? (
@@ -968,9 +1095,14 @@ function LlmServingLabPage({
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
               <div className="space-y-2">
-                {observationLine("Ready Replicas", String(primaryDetail?.replica_summary.ready ?? primaryWorkload.ready_replicas))}
-                {observationLine("Workload Discovered", "True")}
-                {observationLine("Metrics Sample", metricsSamplePresent ? "Present" : "No recent sample")}
+                {observationLine(
+                  "Ready Replicas",
+                  String(primaryDetail?.replica_summary.ready ?? primaryWorkload.ready_replicas),
+                )}
+                {observationLine(
+                  "Metrics Sample",
+                  metricsSamplePresent ? "Present" : "No recent sample",
+                )}
                 {observationLine(
                   "Metrics Freshness",
                   formatFreshness(primaryDetail?.freshness_seconds ?? null),
@@ -1036,12 +1168,15 @@ function LlmServingLabPage({
 
                 <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
                   <div className="space-y-2">
-                    {observationLine("Query Window", `${primaryDetail.query_window_seconds} sec`)}
+                    {observationLine("Rate Window", `${primaryDetail.query_window_seconds} sec`)}
                     {observationLine(
-                      "Metrics Observed At",
+                      "Observed At",
                       formatObservedTimestamp(primaryDetail.metrics_observed_ts),
                     )}
-                    {observationLine("Metrics Freshness", formatFreshness(primaryDetail.freshness_seconds))}
+                    {observationLine(
+                      "Freshness",
+                      formatFreshness(primaryDetail.freshness_seconds),
+                    )}
                   </div>
                 </div>
               </div>
@@ -1054,57 +1189,256 @@ function LlmServingLabPage({
                 No replica detail available.
               </div>
             ) : (
-              <div className="space-y-4">
-                {primaryDetail.replicas.map((replica) => (
-                  <div
-                    key={`${primaryDetail.identity.namespace}/${primaryDetail.identity.workload}/${replica.pod}`}
-                    className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm"
-                  >
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        {observationLine("Pod", replica.pod)}
-                        {observationLine("Node", replica.node_name || "N/A")}
-                        {observationLine("Pod Phase", replica.pod_phase || "Unknown")}
-                        {observationLine(
-                          "Ready Condition",
-                          formatReadyCondition(replica.ready_condition),
-                        )}
-                        {observationLine(
-                          "Last Metrics Timestamp",
-                          formatObservedTimestamp(replica.metrics_observed_ts),
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        {observationLine(
-                          "Metrics Freshness",
-                          formatFreshness(replica.metrics_freshness_seconds),
-                        )}
-                        {observationLine(
-                          "Generation TPS",
-                          formatWorkloadMetric(replica.generation_tokens_per_second, 1, " tok/s"),
-                        )}
-                        {observationLine(
-                          "Prompt TPS",
-                          formatWorkloadMetric(replica.prompt_tokens_per_second, 1, " tok/s"),
-                        )}
-                        {observationLine(
-                          "Waiting Requests",
-                          formatWorkloadMetric(replica.waiting_requests, 0),
-                        )}
-                        <div className="pt-1">
-                          <MetricBar
-                            label="KV Cache Usage"
-                            value={replica.kv_cache_usage_percent}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/45">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-950/60 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-3 text-left font-medium">Pod</th>
+                      <th className="px-3 py-3 text-left font-medium">Node</th>
+                      <th className="px-3 py-3 text-left font-medium">Phase</th>
+                      <th className="px-3 py-3 text-left font-medium">Ready</th>
+                      <th className="px-3 py-3 text-left font-medium">Freshness</th>
+                      <th className="px-3 py-3 text-left font-medium">Gen TPS</th>
+                      <th className="px-3 py-3 text-left font-medium">Prompt TPS</th>
+                      <th className="px-3 py-3 text-left font-medium">Waiting</th>
+                      <th className="px-3 py-3 text-left font-medium">KV Cache</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {primaryDetail.replicas.map((replica) => (
+                      <tr
+                        key={`${primaryDetail.identity.namespace}/${primaryDetail.identity.workload}/${replica.pod}`}
+                        className="border-t border-slate-800 text-slate-200"
+                      >
+                        <td className="px-3 py-3 font-mono text-xs">{replica.pod}</td>
+                        <td className="px-3 py-3">{replica.node_name || "N/A"}</td>
+                        <td className="px-3 py-3">{replica.pod_phase || "Unknown"}</td>
+                        <td className="px-3 py-3">{formatReadyCondition(replica.ready_condition)}</td>
+                        <td className="px-3 py-3">{formatFreshness(replica.metrics_freshness_seconds)}</td>
+                        <td className="px-3 py-3">
+                          {formatWorkloadMetric(replica.generation_tokens_per_second, 1, " tok/s")}
+                        </td>
+                        <td className="px-3 py-3">
+                          {formatWorkloadMetric(replica.prompt_tokens_per_second, 1, " tok/s")}
+                        </td>
+                        <td className="px-3 py-3">
+                          {formatWorkloadMetric(replica.waiting_requests, 0)}
+                        </td>
+                        <td className="px-3 py-3">
+                          {formatWorkloadMetric(replica.kv_cache_usage_percent, 1, "%")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </SectionCard>
         </div>
+      )}
+
+      {primaryWorkload && (
+        <SectionCard title="Single Inference">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            <div className="space-y-4">
+              <label className="block text-sm text-slate-300">
+                <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+                  Prompt
+                </div>
+                <textarea
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  rows={7}
+                  maxLength={8192}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-sm text-slate-100 outline-none transition focus:border-sky-500/60"
+                />
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm text-slate-300">
+                  <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+                    Max Output Tokens
+                  </div>
+                  <input
+                    type="number"
+                    min={1}
+                    max={512}
+                    value={maxTokens}
+                    onChange={(event) => setMaxTokens(Number(event.target.value) || 1)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none transition focus:border-sky-500/60"
+                  />
+                </label>
+
+                <label className="block text-sm text-slate-300">
+                  <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+                    Temperature
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={2}
+                    step={0.1}
+                    value={temperature}
+                    onChange={(event) => setTemperature(Number(event.target.value) || 0)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none transition focus:border-sky-500/60"
+                  />
+                </label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    runInference().catch(() => undefined);
+                  }}
+                  disabled={
+                    inferenceLoading ||
+                    !primaryDetail ||
+                    primaryDetail.replica_summary.ready <= 0 ||
+                    prompt.trim().length === 0
+                  }
+                  className={`rounded-xl border px-4 py-2.5 text-sm font-medium transition ${
+                    inferenceLoading
+                      ? "border-slate-700 bg-slate-900/60 text-slate-500"
+                      : "border-sky-500/40 bg-sky-500/15 text-sky-100 hover:border-sky-400"
+                  }`}
+                >
+                  {inferenceLoading ? "Running..." : "Run Inference"}
+                </button>
+                <div className="text-xs text-slate-500">
+                  Sends one controlled request through `autoscale_api`.
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+              {!inferenceResult && !inferenceError ? (
+                <div className="text-slate-400">
+                  Run a single inference request to capture token usage, latency,
+                  and finish reason.
+                </div>
+              ) : inferenceError ? (
+                <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-3 text-red-200">
+                  {inferenceError}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    {observationLine("HTTP Status", String(inferenceResult?.http_status ?? "N/A"))}
+                    {observationLine(
+                      "Prompt Tokens",
+                      inferenceResult?.prompt_tokens?.toString() || "N/A",
+                    )}
+                    {observationLine(
+                      "Completion Tokens",
+                      inferenceResult?.completion_tokens?.toString() || "N/A",
+                    )}
+                    {observationLine(
+                      "Total Tokens",
+                      inferenceResult?.total_tokens?.toString() || "N/A",
+                    )}
+                    {observationLine(
+                      "End-to-End Time",
+                      inferenceResult ? `${inferenceResult.latency_seconds.toFixed(3)} sec` : "N/A",
+                    )}
+                    {observationLine(
+                      "Finish Reason",
+                      inferenceResult?.finish_reason || "N/A",
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                    <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+                      Response Text
+                    </div>
+                    <div className="whitespace-pre-wrap text-sm text-slate-200">
+                      {inferenceResult?.response_text || "N/A"}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </SectionCard>
+      )}
+
+      {primaryWorkload && (
+        <SectionCard title="Smoke Benchmark">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <div className="space-y-4">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+                <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">
+                  Fixed Profile
+                </div>
+                <div className="space-y-2">
+                  {observationLine("Profile", "Smoke")}
+                  {observationLine("Prompt Source", "Fixed short prompt")}
+                  {observationLine("Max Output Tokens", "64")}
+                  {observationLine("Temperature", "0.0")}
+                  {observationLine("Concurrency", "1")}
+                  {observationLine("Request Count", "20")}
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  runSmokeBenchmark().catch(() => undefined);
+                }}
+                disabled={smokeLoading || !primaryDetail || primaryDetail.replica_summary.ready <= 0}
+                className={`rounded-xl border px-4 py-2.5 text-sm font-medium transition ${
+                  smokeLoading
+                    ? "border-slate-700 bg-slate-900/60 text-slate-500"
+                    : "border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:border-emerald-400"
+                }`}
+              >
+                {smokeLoading ? "Running Smoke Benchmark..." : "Start Smoke Benchmark"}
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+              {!smokeResult && !smokeError ? (
+                <div className="text-slate-400">
+                  Run the fixed Smoke profile to capture a small, repeatable throughput baseline.
+                </div>
+              ) : smokeError ? (
+                <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-3 text-red-200">
+                  {smokeError}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {observationLine("Run ID", smokeResult?.run_id || "N/A")}
+                  {observationLine("Status", smokeResult?.status || "N/A")}
+                  {observationLine(
+                    "Completed Requests",
+                    smokeResult?.completed_requests?.toString() || "0",
+                  )}
+                  {observationLine(
+                    "Failed Requests",
+                    smokeResult?.failed_requests?.toString() || "0",
+                  )}
+                  {observationLine(
+                    "Mean Latency",
+                    smokeResult?.mean_latency_seconds !== undefined &&
+                      smokeResult?.mean_latency_seconds !== null
+                      ? `${smokeResult.mean_latency_seconds.toFixed(3)} sec`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "Mean Prompt Tokens",
+                    smokeResult?.mean_prompt_tokens?.toFixed(1) || "N/A",
+                  )}
+                  {observationLine(
+                    "Mean Completion Tokens",
+                    smokeResult?.mean_completion_tokens?.toFixed(1) || "N/A",
+                  )}
+                  {observationLine(
+                    "Mean Total Tokens",
+                    smokeResult?.mean_total_tokens?.toFixed(1) || "N/A",
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </SectionCard>
       )}
     </section>
   );

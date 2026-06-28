@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers.full_metrics import router as full_metrics_router
 from app.routers.experiments import router as experiments_router
+from app.routers.llm_lab import router as llm_lab_router
 from app.routers.nodes import router as nodes_router
 from app.routers.workloads import router as workloads_router
 from app.security import token_auth_middleware, validate_runtime_configuration
@@ -49,6 +50,7 @@ app.include_router(nodes_router)
 app.include_router(full_metrics_router)
 app.include_router(experiments_router)
 app.include_router(workloads_router)
+app.include_router(llm_lab_router)
 
 
 @app.get("/")

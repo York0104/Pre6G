@@ -54,6 +54,10 @@ config/
 - 哪些環境變數需要配置
 - 新機重建時的模板
 
+補充：
+
+- `autoscale-api.env.example` 已於 `2026-06-24` 補上 `PRE6G_EXPERIMENT_*`，供 `Fan-Cycle Experiment` / `YOLO demo` runtime 使用
+
 ### `dashboard/`
 
 放 dashboard 相關公開設定範例入口。
@@ -162,6 +166,10 @@ config/
 - `private-runtime/systemd-user/pre6g-cluster-dashboard.service`
 - `private-runtime/harbor/assets`
 - `private-runtime/k3s/config`
+
+其中：
+
+- `private-runtime/api/autoscale-api.env` 也是目前 `Fan-Cycle Experiment` 真實 runtime 值的建議入口
 
 ## 存放形式
 

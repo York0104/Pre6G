@@ -16,17 +16,12 @@ from app.schemas.experiment import (
     FanCycleTimeseriesPoint,
 )
 from app.services.cache_service import SimpleTTLCache
+from app.services.experiment_runtime import load_experiment_runtime_config
 from app.services.yolo_demo_service import RUNS_ROOT as YOLO_DEMO_RUNS_ROOT
 from app.services.yolo_demo_service import YoloDemoService
 
-AUTOSCALE_ROOT = Path(__file__).resolve().parents[3]
-RESULTS_ROOT = (
-    AUTOSCALE_ROOT
-    / "experiments"
-    / "experiments_yolo"
-    / "results"
-    / "single_pod_bgload_fan_cycle"
-)
+CONFIG = load_experiment_runtime_config()
+RESULTS_ROOT = CONFIG.fan_cycle_results_root
 def _to_int(value: str | None, default: int = 0) -> int:
     if value is None or value == "":
         return default
@@ -144,28 +139,45 @@ class FanCycleExperimentService:
         except Exception:
             return None
 
+    def _gpu_probe_targets(self, node_name: str, node_ip: str | None) -> list[str]:
+        targets: list[str] = []
+        if CONFIG.node_ssh:
+            targets.append(CONFIG.node_ssh)
+        if node_ip:
+            targets.append(f"{node_name}@{node_ip}")
+        targets.append(node_name)
+
+        unique_targets: list[str] = []
+        seen: set[str] = set()
+        for target in targets:
+            if target and target not in seen:
+                unique_targets.append(target)
+                seen.add(target)
+        return unique_targets
+
     def _probe_gpu_live_metrics(self, node_name: str, node_ip: str | None) -> dict[str, float]:
-        ssh_target = f"{node_name}@{node_ip}" if node_ip else node_name
         query = (
             "nvidia-smi "
             "--query-gpu=temperature.gpu,utilization.gpu,fan.speed,clocks.sm "
             "--format=csv,noheader,nounits"
         )
-        try:
-            output = _run_command(
-                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", ssh_target, query],
-                timeout=8.0,
-            )
-            line = output.splitlines()[0]
-            parts = [p.strip().rstrip(" %") for p in line.split(",")]
-            return {
-                "gpu_temp_c": _to_float(parts[0]),
-                "gpu_util_pct": _to_float(parts[1]),
-                "fan_pct": _to_float(parts[2]),
-                "sm_clock_mhz": _to_float(parts[3]),
-            }
-        except Exception:
-            return {}
+        for ssh_target in self._gpu_probe_targets(node_name, node_ip):
+            try:
+                output = _run_command(
+                    ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", ssh_target, query],
+                    timeout=8.0,
+                )
+                line = output.splitlines()[0]
+                parts = [p.strip().rstrip(" %") for p in line.split(",")]
+                return {
+                    "gpu_temp_c": _to_float(parts[0]),
+                    "gpu_util_pct": _to_float(parts[1]),
+                    "fan_pct": _to_float(parts[2]),
+                    "sm_clock_mhz": _to_float(parts[3]),
+                }
+            except Exception:
+                continue
+        return {}
 
     def _probe_latency_live_metrics(self, run_id: str) -> dict[str, float]:
         if not run_id:

@@ -98,6 +98,24 @@ class FanCycleLiveResponse(BaseModel):
     current: FanCycleCurrentMetrics
 
 
+class FanCycleExecutionStatusResponse(BaseModel):
+    schema_name: str
+    generated_at: int
+    status: Literal["idle", "starting", "running", "stopping", "stopped", "error"]
+    run_id: str
+    pid: int
+    started_at: int
+    result_run_dir: str
+    stdout_log: str
+    stderr_log: str
+    namespace: str
+    focus_deploy: str
+    bg_deploy: str
+    node_name: str
+    message: str
+    last_exit_code: int | None = None
+
+
 class YoloDemoStatusResponse(BaseModel):
     schema_name: str
     generated_at: int
@@ -113,6 +131,8 @@ class YoloDemoStatusResponse(BaseModel):
     measurement_pid: int
     bgload_pid: int
     fan_mode: Literal["GPU_DEFAULT", "FIXED_5", "FIXED_15", "FIXED_20", "FIXED_25"]
+    fan_control_available: bool
+    fan_control_message: str
     started_at: int
     message: str
 

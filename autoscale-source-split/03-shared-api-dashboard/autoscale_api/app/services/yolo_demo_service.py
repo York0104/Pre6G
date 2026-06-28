@@ -3,7 +3,6 @@ import os
 import signal
 import subprocess
 import time
-from pathlib import Path
 from typing import Literal
 
 from app.schemas.experiment import (
@@ -11,33 +10,32 @@ from app.schemas.experiment import (
     YoloDemoEventsResponse,
     YoloDemoStatusResponse,
 )
+from app.services.experiment_runtime import REPO_ROOT
+from app.services.experiment_runtime import load_experiment_runtime_config
 
-AUTOSCALE_ROOT = Path(__file__).resolve().parents[3]
-YOLO_DEMO_ROOT = AUTOSCALE_ROOT / "experiments" / "experiments_yolo" / "yolo_demo"
-RUNTIME_ROOT = YOLO_DEMO_ROOT / "runtime"
+CONFIG = load_experiment_runtime_config()
+RUNTIME_ROOT = CONFIG.yolo_demo_runtime_root
 RUNS_ROOT = RUNTIME_ROOT / "runs"
 STATE_PATH = RUNTIME_ROOT / "state.json"
 EVENTS_PATH = RUNTIME_ROOT / "events.jsonl"
-REQUEST_CLIENT = (
-    AUTOSCALE_ROOT / "experiments" / "experiments_yolo" / "common" / "request_client_serial.py"
-)
-SANITY_IMAGE = AUTOSCALE_ROOT / "experiments" / "yolo26_workload" / "test_images" / "sanity_input.png"
+REQUEST_CLIENT = CONFIG.request_client
+SANITY_IMAGE = CONFIG.sanity_image
 
-NAMESPACE = "intent-lab"
-FOCUS_DEPLOY = "yolo26n-task3-focus"
-BG_DEPLOY = "yolo26n-task3-bg"
-MEAS_SVC_NAME = "yolo26n-task3"
-NODE_NAME = "icclz1"
-NODE_SSH = "icclz1@100.105.48.97"
-WORKER_REPO = "/home/icclz1/gpu-tempctl-lab"
-WORKER_VENV = "/home/icclz1/gpu-tempctl-1080ti/bin/activate"
-DEFAULT_REPEAT = 10
-DEFAULT_TIMEOUT_SEC = 30
-DEFAULT_DURATION_SEC = 86400
-DEFAULT_BG_SIZE = 4096
-DEFAULT_BG_DUTY = 1.0
-DEFAULT_BG_PERIOD_MS = 100
-CC_PASSWORD = os.getenv("YOLO_DEMO_CC_PASSWORD", "")
+NAMESPACE = CONFIG.namespace
+FOCUS_DEPLOY = CONFIG.focus_deploy
+BG_DEPLOY = CONFIG.bg_deploy
+MEAS_SVC_NAME = CONFIG.meas_svc_name
+NODE_NAME = CONFIG.node_name
+NODE_SSH = CONFIG.node_ssh
+WORKER_REPO = CONFIG.worker_repo
+WORKER_VENV = CONFIG.worker_venv
+DEFAULT_REPEAT = CONFIG.default_repeat
+DEFAULT_TIMEOUT_SEC = CONFIG.default_timeout_sec
+DEFAULT_DURATION_SEC = CONFIG.default_duration_sec
+DEFAULT_BG_SIZE = CONFIG.default_bg_size
+DEFAULT_BG_DUTY = CONFIG.default_bg_duty
+DEFAULT_BG_PERIOD_MS = CONFIG.default_bg_period_ms
+CC_PASSWORD = CONFIG.cc_password
 STARTUP_GRACE_SECONDS = 20
 
 FanMode = Literal["GPU_DEFAULT", "FIXED_5", "FIXED_15", "FIXED_20", "FIXED_25"]
@@ -48,6 +46,15 @@ VALID_FAN_MODES: tuple[FanMode, ...] = (
     "FIXED_20",
     "FIXED_25",
 )
+
+
+def _fan_control_status() -> tuple[bool, str]:
+    if CONFIG.cc_password:
+        return True, "Fixed fan override is available."
+    return (
+        False,
+        "Fixed fan override is unavailable: PRE6G_EXPERIMENT_CC_PASSWORD is not configured on autoscale_api.",
+    )
 
 
 def _run_command(args: list[str], timeout: float = 30.0) -> str:
@@ -161,6 +168,7 @@ class YoloDemoService:
         return state
 
     def _state_response(self, state: dict) -> YoloDemoStatusResponse:
+        fan_control_available, fan_control_message = _fan_control_status()
         return YoloDemoStatusResponse(
             schema_name="pre6g.experiments.yolo_demo.status.v1",
             generated_at=_now_epoch(),
@@ -176,6 +184,8 @@ class YoloDemoService:
             measurement_pid=int(state.get("measurement_pid", 0)),
             bgload_pid=int(state.get("bgload_pid", 0)),
             fan_mode=state.get("fan_mode", "GPU_DEFAULT"),
+            fan_control_available=fan_control_available,
+            fan_control_message=fan_control_message,
             started_at=int(state.get("started_at", 0)),
             message=state.get("message", ""),
         )
@@ -209,6 +219,7 @@ class YoloDemoService:
                 "pod",
                 "-l",
                 "app=yolo26n,role=focus",
+                "--field-selector=status.phase=Running",
                 "-o",
                 "jsonpath={.items[0].metadata.name}",
             ],
@@ -223,25 +234,31 @@ class YoloDemoService:
                 "pod",
                 "-l",
                 "app=yolo26n,role=focus",
+                "--field-selector=status.phase=Running",
                 "-o",
                 "jsonpath={.items[0].status.podIP}",
             ],
             timeout=10.0,
         )
-        meas_svc_ip = _run_command(
-            [
-                "kubectl",
-                "-n",
-                NAMESPACE,
-                "get",
-                "svc",
-                MEAS_SVC_NAME,
-                "-o",
-                "jsonpath={.spec.clusterIP}",
-            ],
-            timeout=10.0,
-        )
-        if meas_svc_ip:
+        meas_svc_ip = ""
+        if MEAS_SVC_NAME:
+            try:
+                meas_svc_ip = _run_command(
+                    [
+                        "kubectl",
+                        "-n",
+                        NAMESPACE,
+                        "get",
+                        "svc",
+                        MEAS_SVC_NAME,
+                        "-o",
+                        "jsonpath={.spec.clusterIP}",
+                    ],
+                    timeout=10.0,
+                )
+            except Exception:
+                meas_svc_ip = ""
+        if CONFIG.target_mode == "service" and meas_svc_ip:
             return focus_pod, f"http://{meas_svc_ip}:18080/infer?repeat={DEFAULT_REPEAT}", "service"
         return focus_pod, f"http://{focus_ip}:18080/infer?repeat={DEFAULT_REPEAT}", "pod"
 
@@ -365,6 +382,9 @@ PY'"""
     def apply_fan_mode(self, mode: FanMode) -> YoloDemoStatusResponse:
         if mode not in VALID_FAN_MODES:
             raise ValueError(f"Unsupported fan mode: {mode}")
+        fan_control_available, fan_control_message = _fan_control_status()
+        if mode != "GPU_DEFAULT" and not fan_control_available:
+            raise ValueError(fan_control_message)
         self._apply_fan_mode_remote(mode)
         state = _read_state()
         state["fan_mode"] = mode
@@ -425,7 +445,7 @@ PY'"""
                 "bash",
                 "-lc",
                 (
-                    f"cd {AUTOSCALE_ROOT} && "
+                    f"cd {REPO_ROOT} && "
                     "source iccl/bin/activate && "
                     f"python3 {REQUEST_CLIENT} "
                     "--role measurement "
@@ -440,7 +460,7 @@ PY'"""
                 measurement_cmd,
                 stdout=measurement_stdout,
                 stderr=measurement_stderr,
-                cwd=AUTOSCALE_ROOT,
+                cwd=REPO_ROOT,
                 start_new_session=True,
             )
             _append_event("info", "serial_client_started", f"Started serial request client pid={measurement_proc.pid}")

@@ -11,6 +11,7 @@
 | `vmagent-config-gpu-1s.yaml` | GPU 1 秒 scrape interval 參考。 |
 | `vmagent-config-with-rfsoc4x2.yaml` | 含 RFSoC scrape target 的 vmagent config。 |
 | `vmagent-config-before-rfsoc4x2-lab.yaml` | RFSoC 加入前/過渡版本參考。 |
+| `LLM_WORKLOAD_MONITORING_REBUILD.md` | Gemma 4 vLLM workload 監控第一版重建與落地紀錄。 |
 | `monitoring-rebuild/` | 新 `k3s` 環境實際落地版；應優先使用。 |
 
 ## Legacy Note
@@ -27,3 +28,11 @@
 - vmagent `/targets` 應包含 `node-exporter`、`kubelet-cadvisor`、`dcgm-exporter`、`rfsoc4x2-node-exporter`。
 - VictoriaMetrics 應接受 remote write：`http://vm-victoria-metrics-single-server.monitoring.svc:8428/api/v1/write`。
 - PromQL 應可查詢 `node_cpu_seconds_total`、`container_cpu_usage_seconds_total`、`DCGM_FI_DEV_GPU_TEMP`。
+
+若已啟用 LLM workload 監控，還應可看到：
+
+- vmagent `vllm-serving-pods` target
+- `vllm:generation_tokens_total`
+- `vllm:prompt_tokens_total`
+- `vllm:num_requests_waiting`
+- `vllm:kv_cache_usage_perc`

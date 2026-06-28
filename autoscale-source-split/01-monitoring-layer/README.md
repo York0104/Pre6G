@@ -36,6 +36,7 @@
 | `docs/full-metrics-handoff.md` | full metrics API/collector 交接說明。 |
 | `docs/api-dashboard-bootstrap.md` | AutoScale API 與 dashboard 接線/驗證說明。 |
 | `docs/vm-aggregators-reference.md` | 各 aggregator schema、欄位與資料來源比較。 |
+| `docs/LLM_WORKLOAD_MONITORING_IMPLEMENTATION_LOG.md` | Gemma 4 vLLM workload 監控第一版實作與 live 落地紀錄。 |
 
 ## Exposure
 

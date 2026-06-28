@@ -36,6 +36,8 @@
 - `Service Overview`
 - `Live Serving Observation`
 - `Replica / Kubernetes Observation`
+- `Single Inference`
+- `Smoke Benchmark`
 
 這次 external nodes 進 dashboard 的方式是擴充 API 層，不是重寫 React 卡片元件；因此 API 更新完成後，前端重新整理頁面即可看到新節點。
 
@@ -129,7 +131,6 @@ http://<CONTROL_PLANE_IP>:4174
 
 `LLM Serving Lab` 應能顯示：
 
-- `Workload Discovered`
 - `Runtime Image`
 - `Metrics Sample`
 - `Metrics Freshness`
@@ -137,12 +138,14 @@ http://<CONTROL_PLANE_IP>:4174
 - `Prompt TPS`
 - `Waiting Requests`
 - `KV Cache Usage`
-- `Query Window`
+- `Rate Window`
 - `Pod`
 - `Node`
 - `Pod Phase`
 - `Ready Condition`
 - `Last Metrics Timestamp`
+- `Single Inference` result
+- `Smoke Benchmark` result
 
 若 `Gemma 4 vLLM` 已部署且 metrics 可抓取，table 內應可看到：
 

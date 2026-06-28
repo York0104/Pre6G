@@ -8,6 +8,7 @@ WORKDIR /opt/pre6g
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 COPY autoscale-source-split/03-shared-api-dashboard/requirements.txt /tmp/requirements.txt

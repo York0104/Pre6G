@@ -1,6 +1,6 @@
 # Project Status
 
-Date: 2026-06-13  
+Date: 2026-06-24  
 Workspace: `/home/icclz2/Pre6G`  
 Primary host: `icclz2`  
 Control plane IP: `140.113.179.9`
@@ -60,8 +60,16 @@ Control plane IP: `140.113.179.9`
 - `Cluster Monitor` dashboard
 - host-side Python venv / Node runtime
 - user-level systemd 常駐啟動
+- `Fan-Cycle Experiment` host-side rebuild
+- `Gemma 4 vLLM` workload monitoring 第一版 source 實作
 
-目前 API / dashboard 已可服務一般 `k3s` nodes 與 external nodes inventory/status。
+目前 API / dashboard 已可服務一般 `k3s` nodes 與 external nodes inventory/status；`Fan-Cycle Experiment` 也已重建為目前實驗室環境可操作的 host-side console。
+
+另外已新增 workload-centric 第一版能力：
+
+- `vLLM` 原生 Prometheus metrics 接入既有 `vmagent -> VictoriaMetrics`
+- `autoscale_api` workload API 與 vLLM adapter
+- dashboard `LLM Workloads` 區塊
 
 ### 4. Experiment layer
 
@@ -112,6 +120,35 @@ Control plane IP: `140.113.179.9`
 - `~/pre6g-private/`：私有 live 設定入口
 
 但系統 live 路徑尚未全面重構成正式 symlink 管理架構；目前是先完成入口整理，不主動搬動正在運作的 live 路徑。
+
+### 3. Fan-Cycle Experiment productization
+
+目前已完成：
+
+- dashboard UI wiring
+- API `status/start/stop`
+- runtime env contract
+- 與 `02-experiment-layer` single-pod fan-cycle workflow 對齊
+
+但尚未完成：
+
+- 一般化 `k3s` Pod 內 end-to-end 驗證
+- 不依賴 host-side SSH / worker private runtime 的完整產品化封裝
+
+### 4. LLM workload monitoring rollout
+
+目前已完成：
+
+- `Gemma 4 vLLM` manifest
+- vmagent workload scrape job
+- workload API / dashboard source 實作
+- live Pod `/metrics` 與 VictoriaMetrics metric existence 驗證
+
+目前尚待補齊：
+
+- cluster 內正式重建 `autoscale_api` / dashboard image
+- benchmark job 正式結果
+- 新 workload API 的 live HTTP smoke test 再跑一次
 
 ## Not Yet Completed
 

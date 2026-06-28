@@ -1,6 +1,6 @@
 # Monitoring Rebuild Progress
 
-Date: 2026-06-03
+Date: 2026-06-24
 Workspace: `/home/icclz2/Pre6G`
 Host: `icclz2`
 Control plane IP: `140.113.179.9`
@@ -16,6 +16,16 @@ Control plane IP: `140.113.179.9`
 - `cluster-dashboard` 可在本機以 Node 22 啟動與 build
 - `autoscale_api` 與 dashboard 已可由 user-level systemd 常駐啟動
 - dashboard 已可顯示一般 `k3s` nodes 與 external nodes
+- `2026-06-24` 已完成 `Fan-Cycle Experiment` host-side rebuild：
+  - 修正 experiment path/root 對齊
+  - 新增 API `fan-cycle` run `status/start/stop`
+  - 將 YOLO demo / fan-cycle runtime 參數抽成 `PRE6G_EXPERIMENT_*`
+  - dashboard 頁面可在無 completed run 時仍顯示控制區塊
+- `2026-06-25` 已完成 `Gemma 4 vLLM` workload monitoring 第一版：
+  - `vmagent` 新增 `ai-serving` pod auto-discovery scrape job
+  - `autoscale_api` 新增 workload schema / adapter / router
+  - dashboard 新增 `LLM Workloads` 區塊
+  - live Pod `/metrics` 與 VictoriaMetrics 中的 `vllm:*` 指標已確認存在
 
 目前仍未完成的是 external node 的真實 telemetry 恢復：
 
@@ -129,6 +139,25 @@ Control plane IP: `140.113.179.9`
   - `pre6g-cluster-dashboard.service`
 - `http://127.0.0.1:8000/` 可回應
 - `http://127.0.0.1:4174/` 可回應
+- `cluster-dashboard` 已以 Node 22 成功重新 build，包含新 fan-cycle control UI
+- `cluster-dashboard` 已新增 `LLM Workloads` table，顯示 workload-centric serving 指標
+
+### 4.1 LLM workload monitoring notes
+
+目前第一版 `vLLM` workload monitoring 採雙層資料模型：
+
+- node layer:
+  - 維持原本 `NodeStatusService`
+  - 保留 CPU / RAM / GPU util / VRAM / power / temperature
+- workload layer:
+  - 新增 `GET /api/v1/workloads`
+  - 聚合 `generation TPS` / `prompt TPS` / `waiting requests` / `KV cache`
+
+本輪 live deployment 另外確認：
+
+- single-GPU vLLM Pod 需要 `runtimeClassName: nvidia`
+- Gemma 4 cold start 需要 `startupProbe`
+- 單 GPU node 更新策略宜用 `Recreate`
 
 ### 5. External node integration status
 
@@ -202,6 +231,10 @@ Control plane IP: `140.113.179.9`
   - `icclz2` 與 `icclz1` 皆已安裝 Harbor CA 並寫入 k3s registry 設定
   - `icclz1` 上 `sudo k3s ctr images pull --user ... harbor.iccl.local:8088/pre6g/yolo26n:0.1` 已成功
   - 配合 `imagePullPolicy: IfNotPresent`，刪除舊 pod 後，registry 版三實例已全部回到 `Running`
+- `03-shared-api-dashboard` 的 `Fan-Cycle Experiment` 目前也已與這條 single-pod workflow 對齊：
+  - 預設 `focus=yolo26n-focus`
+  - 預設 `bg=yolo26n-bg-1`
+  - 預設 `TARGET_MODE=pod`
 
 ## Current Runtime Snapshot
 

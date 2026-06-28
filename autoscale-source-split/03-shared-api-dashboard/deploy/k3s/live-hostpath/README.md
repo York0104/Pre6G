@@ -119,4 +119,5 @@ kubectl -n pre6g-dashboard rollout restart deploy/autoscale-api
 注意：
 
 - `openwrt_ap` 是否有完整 telemetry，仍取決於其 producer / upstream metrics 是否存在
-- `Fan-Cycle Experiment` 頁籤目前仍可能持續打到 `404` 路徑，這不影響 `Cluster Monitor` 主線可用性
+- `Fan-Cycle Experiment` 頁籤的 API wiring 已於 `2026-06-24` 重建，不應再因舊的路徑對齊錯誤而固定停在 `404`
+- 但若目前使用的是 `k3s` live-hostpath API Pod，仍需另外確認該 Pod 內是否具備 experiment control 所需的 `ssh` 與 private runtime 資產；若沒有，請優先改用 host-side `run_local_api.sh` / user-level systemd 驗證 experiment 頁面
