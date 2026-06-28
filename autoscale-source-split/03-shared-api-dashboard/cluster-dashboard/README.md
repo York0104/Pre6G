@@ -38,6 +38,8 @@
 - `Replica / Kubernetes Observation`
 - `Single Inference`
 - `Smoke Benchmark`
+- fixed benchmark profiles (`Smoke` / `Steady` / `Long Context`)
+- `Run History` with filterable recent events
 
 這次 external nodes 進 dashboard 的方式是擴充 API 層，不是重寫 React 卡片元件；因此 API 更新完成後，前端重新整理頁面即可看到新節點。
 
@@ -146,6 +148,7 @@ http://<CONTROL_PLANE_IP>:4174
 - `Last Metrics Timestamp`
 - `Single Inference` result
 - `Smoke Benchmark` result
+- recent `Run History`
 
 若 `Gemma 4 vLLM` 已部署且 metrics 可抓取，table 內應可看到：
 

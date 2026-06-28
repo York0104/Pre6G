@@ -28,6 +28,8 @@
 - `GET /api/v1/nodes/{node_name}/workloads`
 - `POST /api/v1/llm-lab/inference`
 - `POST /api/v1/llm-lab/benchmarks/smoke`
+- `POST /api/v1/llm-lab/benchmarks/{profile}`
+- `GET /api/v1/llm-lab/history`
 - `GET /api/v1/experiments/fan-cycle/latest`
 - `GET /api/v1/experiments/fan-cycle/live`
 - `GET /api/v1/experiments/fan-cycle/status`
@@ -155,6 +157,44 @@ response summary:
 - `mean_prompt_tokens`
 - `mean_completion_tokens`
 - `mean_total_tokens`
+
+### `/api/v1/llm-lab/benchmarks/{profile}`
+
+`Benchmark Profiles v2` 目前支援多個固定 profile：
+
+- `smoke`
+- `steady`
+- `long-context`
+
+目前仍採同步 request loop，不是 background job runner。
+
+用途：
+
+- 在固定條件下比較不同 prompt/output profile
+- 建立初步 serving baseline
+- 讓 `Run History` 能保留不同 profile 的摘要
+
+### `/api/v1/llm-lab/history`
+
+`Run History v2` 會把 `Single Inference` 與 benchmark profile 摘要 append 到本機 `jsonl`，並提供最近紀錄查詢。
+
+query params:
+
+- `namespace`
+- `workload`
+- `limit` default `20`, max `100`
+
+用途：
+
+- 顯示近期 LLM Lab 操作紀錄
+- 區分 `single_inference` 與 `smoke_benchmark`
+- 區分不同 benchmark profile
+- 回傳最近的 latency / token summary
+
+限制：
+
+- 這是輕量 runtime history，不是長期研究資料庫
+- 詳細長期時序仍建議走 `VictoriaMetrics` / `Grafana`
 
 ## Runtime Dependencies
 

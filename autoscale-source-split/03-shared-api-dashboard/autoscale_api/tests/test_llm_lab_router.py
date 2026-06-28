@@ -80,6 +80,31 @@ class LlmLabRouterTests(unittest.TestCase):
         self.assertEqual(response.status, "succeeded")
         self.assertEqual(response.completed_requests, 20)
 
+    def test_get_run_history_route_returns_payload(self) -> None:
+        payload = {
+            "schema": "pre6g.llm_run_history.v1",
+            "ts": 1710000003,
+            "count": 1,
+            "items": [
+                {
+                    "ts": 1710000002,
+                    "event_type": "smoke_benchmark",
+                    "namespace": "ai-serving",
+                    "workload": "gemma4-e2b-vllm",
+                    "status": "succeeded",
+                    "run_id": "smoke-20260627T073638Z",
+                }
+            ],
+        }
+        with patch.object(llm_lab_router.llm_lab_service, "get_history", return_value=payload):
+            response = llm_lab_router.get_run_history(
+                namespace="ai-serving",
+                workload="gemma4-e2b-vllm",
+                limit=20,
+            )
+        self.assertEqual(response.count, 1)
+        self.assertEqual(response.items[0].event_type, "smoke_benchmark")
+
 
 if __name__ == "__main__":
     unittest.main()

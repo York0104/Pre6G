@@ -1,6 +1,8 @@
 import os
 import time
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 import requests
@@ -16,13 +18,50 @@ class LlmInferenceError(Exception):
         self.detail = detail
 
 
+class _BenchmarkProfile(dict):
+    pass
+
+
 class LlmLabService:
-    SMOKE_PROMPT = (
-        "Explain CPU RAM and GPU VRAM in three short bullet points."
+    SHORT_PROMPT = "Explain CPU RAM and GPU VRAM in three short bullet points."
+    MEDIUM_PROMPT = (
+        "Summarize how CPU RAM, GPU VRAM, and storage differ for AI workloads. "
+        "Include one practical example for inference serving."
     )
-    SMOKE_MAX_TOKENS = 64
-    SMOKE_TEMPERATURE = 0.0
-    SMOKE_REQUEST_COUNT = 20
+    LONG_CONTEXT_PROMPT = (
+        "You are given a repeated systems note. Summarize the main bottlenecks for LLM serving.\n\n"
+        + ("CPU schedules data movement. GPU VRAM stores model weights and KV cache. "
+           "Long context increases prompt processing cost and KV cache pressure. " * 80)
+    )
+    BENCHMARK_PROFILES: dict[str, dict[str, Any]] = {
+        "smoke": {
+            "display_name": "Smoke",
+            "prompt": SHORT_PROMPT,
+            "max_tokens": 64,
+            "temperature": 0.0,
+            "concurrency": 1,
+            "request_count": 20,
+            "description": "Minimal fixed profile for control-path and TPS visibility checks.",
+        },
+        "steady": {
+            "display_name": "Steady",
+            "prompt": MEDIUM_PROMPT,
+            "max_tokens": 128,
+            "temperature": 0.0,
+            "concurrency": 1,
+            "request_count": 30,
+            "description": "Medium prompt/output profile for short steady-state observation.",
+        },
+        "long-context": {
+            "display_name": "Long Context",
+            "prompt": LONG_CONTEXT_PROMPT,
+            "max_tokens": 64,
+            "temperature": 0.0,
+            "concurrency": 1,
+            "request_count": 8,
+            "description": "Long prompt profile to exercise prompt TPS and context pressure.",
+        },
+    }
 
     def __init__(
         self,
@@ -34,6 +73,9 @@ class LlmLabService:
         self.request_timeout_seconds = float(
             (os.getenv("PRE6G_LLM_INFERENCE_TIMEOUT_SECONDS", "120").strip() or "120")
         )
+        runtime_root = Path(__file__).resolve().parents[1] / "runtime" / "llm_lab"
+        runtime_root.mkdir(parents=True, exist_ok=True)
+        self.history_path = runtime_root / "history.jsonl"
 
     @staticmethod
     def _selector_match(labels: dict[str, Any], selector: dict[str, Any]) -> bool:
@@ -96,6 +138,7 @@ class LlmLabService:
         prompt: str,
         max_tokens: int,
         temperature: float,
+        record_history: bool = True,
     ) -> dict[str, Any]:
         workload_status = self.workloads.get_workload_status(namespace=namespace, workload=workload)
         if workload_status.replica_summary.ready <= 0:
@@ -143,7 +186,7 @@ class LlmLabService:
             )
 
         usage = response_payload.get("usage") or {}
-        return {
+        result = {
             "schema": "pre6g.llm_inference.v1",
             "ts": int(time.time()),
             "namespace": namespace,
@@ -158,6 +201,24 @@ class LlmLabService:
             "finish_reason": self._extract_finish_reason(response_payload),
             "response_text": self._extract_response_text(response_payload),
         }
+        if record_history:
+            self._append_history(
+                {
+                    "ts": result["ts"],
+                    "event_type": "single_inference",
+                    "namespace": namespace,
+                    "workload": workload,
+                    "status": "succeeded",
+                    "model": model_name,
+                    "latency_seconds": result["latency_seconds"],
+                    "prompt_tokens": result["prompt_tokens"],
+                    "completion_tokens": result["completion_tokens"],
+                    "total_tokens": result["total_tokens"],
+                    "finish_reason": result["finish_reason"],
+                    "prompt_preview": prompt[:160],
+                }
+            )
+        return result
 
     @staticmethod
     def _mean(values: list[Optional[float]]) -> Optional[float]:
@@ -166,8 +227,12 @@ class LlmLabService:
             return None
         return round(sum(filtered) / len(filtered), 3)
 
-    def run_smoke_benchmark(self, *, namespace: str, workload: str) -> dict[str, Any]:
-        run_id = "smoke-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    def run_benchmark_profile(self, *, namespace: str, workload: str, profile: str) -> dict[str, Any]:
+        profile_config = self.BENCHMARK_PROFILES.get(profile)
+        if not profile_config:
+            raise LlmInferenceError(404, f"unknown benchmark profile: {profile}")
+
+        run_id = f"{profile}-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         completed = 0
         failed = 0
         latencies: list[Optional[float]] = []
@@ -175,14 +240,15 @@ class LlmLabService:
         completion_tokens: list[Optional[float]] = []
         total_tokens: list[Optional[float]] = []
 
-        for _ in range(self.SMOKE_REQUEST_COUNT):
+        for _ in range(int(profile_config["request_count"])):
             try:
                 result = self.run_inference(
                     namespace=namespace,
                     workload=workload,
-                    prompt=self.SMOKE_PROMPT,
-                    max_tokens=self.SMOKE_MAX_TOKENS,
-                    temperature=self.SMOKE_TEMPERATURE,
+                    prompt=str(profile_config["prompt"]),
+                    max_tokens=int(profile_config["max_tokens"]),
+                    temperature=float(profile_config["temperature"]),
+                    record_history=False,
                 )
                 completed += 1
                 latencies.append(result.get("latency_seconds"))
@@ -194,16 +260,18 @@ class LlmLabService:
                 if completed == 0:
                     raise exc
 
-        return {
-            "schema": "pre6g.llm_smoke_benchmark.v1",
+        result = {
+            "schema": "pre6g.llm_benchmark.v1",
             "ts": int(time.time()),
             "run_id": run_id,
             "namespace": namespace,
             "workload": workload,
-            "profile": "Smoke",
-            "request_count": self.SMOKE_REQUEST_COUNT,
-            "max_tokens": self.SMOKE_MAX_TOKENS,
-            "temperature": self.SMOKE_TEMPERATURE,
+            "profile": str(profile_config["display_name"]),
+            "profile_id": profile,
+            "request_count": int(profile_config["request_count"]),
+            "max_tokens": int(profile_config["max_tokens"]),
+            "temperature": float(profile_config["temperature"]),
+            "concurrency": int(profile_config["concurrency"]),
             "status": "succeeded" if failed == 0 else "completed_with_errors",
             "completed_requests": completed,
             "failed_requests": failed,
@@ -211,4 +279,65 @@ class LlmLabService:
             "mean_prompt_tokens": self._mean(prompt_tokens),
             "mean_completion_tokens": self._mean(completion_tokens),
             "mean_total_tokens": self._mean(total_tokens),
+        }
+        self._append_history(
+            {
+                "ts": result["ts"],
+                "event_type": "smoke_benchmark",
+                "namespace": namespace,
+                "workload": workload,
+                "status": result["status"],
+                "run_id": run_id,
+                "profile": result["profile"],
+                "profile_id": profile,
+                "request_count": result["request_count"],
+                "concurrency": result["concurrency"],
+                "completed_requests": result["completed_requests"],
+                "failed_requests": result["failed_requests"],
+                "mean_latency_seconds": result["mean_latency_seconds"],
+                "mean_prompt_tokens": result["mean_prompt_tokens"],
+                "mean_completion_tokens": result["mean_completion_tokens"],
+                "mean_total_tokens": result["mean_total_tokens"],
+            }
+        )
+        return result
+
+    def run_smoke_benchmark(self, *, namespace: str, workload: str) -> dict[str, Any]:
+        return self.run_benchmark_profile(namespace=namespace, workload=workload, profile="smoke")
+
+    def _append_history(self, item: dict[str, Any]) -> None:
+        with self.history_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(item, ensure_ascii=True) + "\n")
+
+    def get_history(
+        self,
+        *,
+        namespace: str | None = None,
+        workload: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        items: list[dict[str, Any]] = []
+        if self.history_path.exists():
+            with self.history_path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        item = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if namespace and item.get("namespace") != namespace:
+                        continue
+                    if workload and item.get("workload") != workload:
+                        continue
+                    items.append(item)
+
+        items.sort(key=lambda item: int(item.get("ts") or 0), reverse=True)
+        trimmed = items[: max(1, min(limit, 100))]
+        return {
+            "schema": "pre6g.llm_run_history.v1",
+            "ts": int(time.time()),
+            "count": len(trimmed),
+            "items": trimmed,
         }

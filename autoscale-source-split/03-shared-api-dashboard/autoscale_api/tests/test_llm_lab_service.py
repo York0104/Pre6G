@@ -1,5 +1,7 @@
 import unittest
 from unittest.mock import patch
+from pathlib import Path
+import tempfile
 
 import requests
 
@@ -202,6 +204,35 @@ class LlmLabServiceTests(unittest.TestCase):
                     workload="gemma4-e2b-vllm",
                 )
         self.assertEqual(ctx.exception.status_code, 502)
+
+    def test_get_history_returns_recent_items(self) -> None:
+        service = LlmLabService(
+            workload_status_service=FakeWorkloadStatusService(),
+            k8s_adapter=FakeK8sAdapter(),
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service.history_path = Path(tmpdir) / "history.jsonl"
+            service._append_history(
+                {
+                    "ts": 1710000001,
+                    "event_type": "single_inference",
+                    "namespace": "ai-serving",
+                    "workload": "gemma4-e2b-vllm",
+                    "status": "succeeded",
+                }
+            )
+            service._append_history(
+                {
+                    "ts": 1710000002,
+                    "event_type": "smoke_benchmark",
+                    "namespace": "ai-serving",
+                    "workload": "gemma4-e2b-vllm",
+                    "status": "succeeded",
+                }
+            )
+            history = service.get_history(namespace="ai-serving", workload="gemma4-e2b-vllm", limit=10)
+        self.assertEqual(history["count"], 2)
+        self.assertEqual(history["items"][0]["event_type"], "smoke_benchmark")
 
 
 if __name__ == "__main__":

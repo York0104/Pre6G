@@ -218,9 +218,11 @@ type LlmSmokeBenchmarkResponse = {
   namespace: string;
   workload: string;
   profile: string;
+  profile_id?: string | null;
   request_count: number;
   max_tokens: number;
   temperature: number;
+  concurrency?: number | null;
   status: string;
   completed_requests: number;
   failed_requests: number;
@@ -229,6 +231,69 @@ type LlmSmokeBenchmarkResponse = {
   mean_completion_tokens?: number | null;
   mean_total_tokens?: number | null;
 };
+
+type LlmRunHistoryItem = {
+  ts: number;
+  event_type: string;
+  namespace: string;
+  workload: string;
+  status: string;
+  run_id?: string | null;
+  profile?: string | null;
+  profile_id?: string | null;
+  model?: string | null;
+  latency_seconds?: number | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+  finish_reason?: string | null;
+  prompt_preview?: string | null;
+  request_count?: number | null;
+  concurrency?: number | null;
+  completed_requests?: number | null;
+  failed_requests?: number | null;
+  mean_latency_seconds?: number | null;
+  mean_prompt_tokens?: number | null;
+  mean_completion_tokens?: number | null;
+  mean_total_tokens?: number | null;
+};
+
+type LlmRunHistoryResponse = {
+  schema: string;
+  ts: number;
+  count: number;
+  items: LlmRunHistoryItem[];
+};
+
+const BENCHMARK_PROFILES = [
+  {
+    id: "smoke",
+    label: "Smoke",
+    promptSource: "Fixed short prompt",
+    maxTokens: 64,
+    temperature: 0.0,
+    concurrency: 1,
+    requestCount: 20,
+  },
+  {
+    id: "steady",
+    label: "Steady",
+    promptSource: "Fixed medium prompt",
+    maxTokens: 128,
+    temperature: 0.0,
+    concurrency: 1,
+    requestCount: 30,
+  },
+  {
+    id: "long-context",
+    label: "Long Context",
+    promptSource: "Fixed long-context prompt",
+    maxTokens: 64,
+    temperature: 0.0,
+    concurrency: 1,
+    requestCount: 8,
+  },
+] as const;
 
 type Health = "healthy" | "degraded" | "offline";
 type ActiveTab = "monitor" | "fan-experiment" | "llm-serving";
@@ -986,6 +1051,11 @@ function LlmServingLabPage({
   const [smokeLoading, setSmokeLoading] = useState(false);
   const [smokeError, setSmokeError] = useState("");
   const [smokeResult, setSmokeResult] = useState<LlmSmokeBenchmarkResponse | null>(null);
+  const [benchmarkProfileId, setBenchmarkProfileId] = useState<(typeof BENCHMARK_PROFILES)[number]["id"]>("smoke");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [runHistory, setRunHistory] = useState<LlmRunHistoryItem[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<"all" | "single_inference" | "smoke_benchmark">("all");
   const sortedWorkloads = [...workloads].sort((a, b) => {
     const left = `${a.namespace}/${a.workload}`;
     const right = `${b.namespace}/${b.workload}`;
@@ -1000,6 +1070,16 @@ function LlmServingLabPage({
   const replicas = primaryDetail?.replicas || [];
   const metricsSamplePresent =
     !!primaryDetail && replicas.some((replica) => replica.metrics_observed_ts);
+  const selectedBenchmarkProfile =
+    BENCHMARK_PROFILES.find((profile) => profile.id === benchmarkProfileId) || BENCHMARK_PROFILES[0];
+  const filteredRunHistory = runHistory.filter((item) =>
+    historyFilter === "all" ? true : item.event_type === historyFilter,
+  );
+  const historySummary = {
+    total: filteredRunHistory.length,
+    inferenceCount: filteredRunHistory.filter((item) => item.event_type === "single_inference").length,
+    benchmarkCount: filteredRunHistory.filter((item) => item.event_type !== "single_inference").length,
+  };
 
   async function runInference() {
     if (!primaryWorkload) return;
@@ -1017,6 +1097,7 @@ function LlmServingLabPage({
         } satisfies LlmInferenceRequest,
       );
       setInferenceResult(response);
+      await loadRunHistory(primaryWorkload.namespace, primaryWorkload.workload);
     } catch (error) {
       setInferenceError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1030,19 +1111,43 @@ function LlmServingLabPage({
     setSmokeError("");
     try {
       const response = await postJsonBody<LlmSmokeBenchmarkResponse>(
-        "/api/v1/llm-lab/benchmarks/smoke",
+        `/api/v1/llm-lab/benchmarks/${benchmarkProfileId}`,
         {
           namespace: primaryWorkload.namespace,
           workload: primaryWorkload.workload,
         } satisfies LlmSmokeBenchmarkRequest,
       );
       setSmokeResult(response);
+      await loadRunHistory(primaryWorkload.namespace, primaryWorkload.workload);
     } catch (error) {
       setSmokeError(error instanceof Error ? error.message : String(error));
     } finally {
       setSmokeLoading(false);
     }
   }
+
+  async function loadRunHistory(namespace: string, workload: string) {
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const response = await fetchJson<LlmRunHistoryResponse>(
+        `/api/v1/llm-lab/history?namespace=${encodeURIComponent(namespace)}&workload=${encodeURIComponent(workload)}&limit=12`,
+      );
+      setRunHistory(response.items || []);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!primaryWorkload) {
+      setRunHistory([]);
+      return;
+    }
+    loadRunHistory(primaryWorkload.namespace, primaryWorkload.workload).catch(() => undefined);
+  }, [primaryKey]);
 
   return (
     <section className="space-y-6">
@@ -1362,20 +1467,41 @@ function LlmServingLabPage({
       )}
 
       {primaryWorkload && (
-        <SectionCard title="Smoke Benchmark">
+        <SectionCard title="Benchmark Profiles">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <div className="space-y-4">
+              <label className="block text-sm text-slate-300">
+                <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+                  Benchmark Profile
+                </div>
+                <select
+                  value={benchmarkProfileId}
+                  onChange={(event) =>
+                    setBenchmarkProfileId(
+                      event.target.value as (typeof BENCHMARK_PROFILES)[number]["id"],
+                    )
+                  }
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none transition focus:border-sky-500/60"
+                >
+                  {BENCHMARK_PROFILES.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
                 <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">
-                  Fixed Profile
+                  Selected Profile
                 </div>
                 <div className="space-y-2">
-                  {observationLine("Profile", "Smoke")}
-                  {observationLine("Prompt Source", "Fixed short prompt")}
-                  {observationLine("Max Output Tokens", "64")}
-                  {observationLine("Temperature", "0.0")}
-                  {observationLine("Concurrency", "1")}
-                  {observationLine("Request Count", "20")}
+                  {observationLine("Profile", selectedBenchmarkProfile.label)}
+                  {observationLine("Prompt Source", selectedBenchmarkProfile.promptSource)}
+                  {observationLine("Max Output Tokens", String(selectedBenchmarkProfile.maxTokens))}
+                  {observationLine("Temperature", selectedBenchmarkProfile.temperature.toFixed(1))}
+                  {observationLine("Concurrency", String(selectedBenchmarkProfile.concurrency))}
+                  {observationLine("Request Count", String(selectedBenchmarkProfile.requestCount))}
                 </div>
               </div>
 
@@ -1390,7 +1516,7 @@ function LlmServingLabPage({
                     : "border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:border-emerald-400"
                 }`}
               >
-                {smokeLoading ? "Running Smoke Benchmark..." : "Start Smoke Benchmark"}
+                {smokeLoading ? "Running Benchmark..." : "Start Benchmark"}
               </button>
             </div>
 
@@ -1405,6 +1531,7 @@ function LlmServingLabPage({
                 </div>
               ) : (
                 <div className="space-y-2">
+                  {observationLine("Profile", smokeResult?.profile || "N/A")}
                   {observationLine("Run ID", smokeResult?.run_id || "N/A")}
                   {observationLine("Status", smokeResult?.status || "N/A")}
                   {observationLine(
@@ -1414,6 +1541,10 @@ function LlmServingLabPage({
                   {observationLine(
                     "Failed Requests",
                     smokeResult?.failed_requests?.toString() || "0",
+                  )}
+                  {observationLine(
+                    "Concurrency",
+                    smokeResult?.concurrency?.toString() || "N/A",
                   )}
                   {observationLine(
                     "Mean Latency",
@@ -1438,6 +1569,181 @@ function LlmServingLabPage({
               )}
             </div>
           </div>
+        </SectionCard>
+      )}
+
+      {primaryWorkload && (
+        <SectionCard title="Run History">
+          <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <SummaryCard label="Visible Entries" value={historySummary.total.toString()} tone="blue" />
+              <SummaryCard label="Inferences" value={historySummary.inferenceCount.toString()} tone="green" />
+              <SummaryCard label="Benchmarks" value={historySummary.benchmarkCount.toString()} tone="orange" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/45 p-3">
+              {[
+                { id: "all", label: "All Events" },
+                { id: "single_inference", label: "Inference Only" },
+                { id: "smoke_benchmark", label: "Benchmarks Only" },
+              ].map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() =>
+                    setHistoryFilter(option.id as "all" | "single_inference" | "smoke_benchmark")
+                  }
+                  className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                    historyFilter === option.id
+                      ? "border-sky-500/40 bg-sky-500/20 text-sky-200"
+                      : "border-slate-700 bg-slate-950/60 text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {historyLoading && runHistory.length === 0 ? (
+            <div className="text-sm text-slate-400">Loading run history...</div>
+          ) : historyError ? (
+            <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-3 text-red-200">
+              {historyError}
+            </div>
+          ) : filteredRunHistory.length === 0 ? (
+            <div className="text-sm text-slate-400">
+              No history entries match the current filter.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredRunHistory.map((item) => (
+                <div
+                  key={`${item.ts}-${item.event_type}-${item.run_id || item.prompt_preview || "entry"}`}
+                  className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[11px] uppercase tracking-wide ${
+                          item.event_type === "single_inference"
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                            : "border-orange-500/30 bg-orange-500/10 text-orange-200"
+                        }`}
+                      >
+                        {item.event_type === "single_inference" ? "Inference" : "Benchmark"}
+                      </span>
+                      <div className="font-medium text-slate-100">
+                        {item.event_type === "single_inference" ? "Single Inference" : item.profile || "Benchmark"}
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {new Date(item.ts * 1000).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/55 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Status</div>
+                      <div className="mt-1 text-sm text-slate-100">{item.status}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/55 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                        {item.event_type === "single_inference" ? "Latency" : "Mean Latency"}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-100">
+                        {item.event_type === "single_inference"
+                          ? item.latency_seconds !== undefined && item.latency_seconds !== null
+                            ? `${item.latency_seconds.toFixed(3)} sec`
+                            : "N/A"
+                          : item.mean_latency_seconds !== undefined && item.mean_latency_seconds !== null
+                            ? `${item.mean_latency_seconds.toFixed(3)} sec`
+                            : "N/A"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/55 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                        {item.event_type === "single_inference" ? "Tokens" : "Requests"}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-100">
+                        {item.event_type === "single_inference"
+                          ? `${item.total_tokens ?? "N/A"} total`
+                          : `${item.completed_requests ?? 0}/${item.request_count ?? 0}`}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/55 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                        {item.event_type === "single_inference" ? "Finish Reason" : "Profile"}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-100">
+                        {item.event_type === "single_inference"
+                          ? item.finish_reason || "N/A"
+                          : item.profile || "N/A"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      {observationLine("Workload", `${item.namespace}/${item.workload}`)}
+                      {item.run_id ? observationLine("Run ID", item.run_id) : null}
+                      {item.event_type === "single_inference"
+                        ? observationLine(
+                            "Latency",
+                            item.latency_seconds !== undefined && item.latency_seconds !== null
+                              ? `${item.latency_seconds.toFixed(3)} sec`
+                              : "N/A",
+                          )
+                        : observationLine(
+                            "Profile ID",
+                            item.profile_id || "N/A",
+                          )}
+                    </div>
+                    <div className="space-y-2">
+                      {item.event_type === "single_inference" ? (
+                        <>
+                          {observationLine("Prompt Tokens", item.prompt_tokens?.toString() || "N/A")}
+                          {observationLine("Completion Tokens", item.completion_tokens?.toString() || "N/A")}
+                          {observationLine("Finish Reason", item.finish_reason || "N/A")}
+                        </>
+                      ) : (
+                        <>
+                          {observationLine(
+                            "Completed / Failed",
+                            `${item.completed_requests ?? 0} / ${item.failed_requests ?? 0}`,
+                          )}
+                          {observationLine(
+                            "Concurrency",
+                            item.concurrency?.toString() || "N/A",
+                          )}
+                          {observationLine(
+                            "Mean Prompt Tokens",
+                            item.mean_prompt_tokens !== undefined && item.mean_prompt_tokens !== null
+                              ? item.mean_prompt_tokens.toFixed(1)
+                              : "N/A",
+                          )}
+                          {observationLine(
+                            "Mean Completion Tokens",
+                            item.mean_completion_tokens !== undefined &&
+                              item.mean_completion_tokens !== null
+                              ? item.mean_completion_tokens.toFixed(1)
+                              : "N/A",
+                          )}
+                          {observationLine(
+                            "Mean Total Tokens",
+                            item.mean_total_tokens !== undefined && item.mean_total_tokens !== null
+                              ? item.mean_total_tokens.toFixed(1)
+                              : "N/A",
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {item.prompt_preview ? (
+                    <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300">
+                      {item.prompt_preview}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
         </SectionCard>
       )}
     </section>
