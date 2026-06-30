@@ -46,7 +46,7 @@ Use:
 ## Files To Recheck Before Formal Rebuild
 
 - [monitoring-rebuild/10-victoria-metrics.yaml](10-victoria-metrics.yaml)
-  - VictoriaMetrics 單機版監控資料庫與 NodePort 暴露設定，重建時主要確認 storage、service type 與對外 port 是否符合新環境。
+  - VictoriaMetrics 單機版監控資料庫與 NodePort 暴露設定，重建時主要確認 storage、service type、對外 port，以及 `--search.latencyOffset=3s` 是否保留。
 - [monitoring-rebuild/20-vmagent.yaml](20-vmagent.yaml)
   - 中央 `vmagent` 與 node-local `vmagent` 設定，負責 scrape `kube-state-metrics`、`dcgm-exporter`、`node-exporter`、cadvisor proxy，並將資料 remote write 到 VictoriaMetrics。
 - [monitoring-rebuild/45-nvidia-device-plugin.yaml](45-nvidia-device-plugin.yaml)
@@ -67,6 +67,9 @@ Use:
 - `55-netdata.yaml` 是目前 live `k3s` 環境抽出的完整 Netdata stack；`60-netdata-child-stream-config.yaml` 必須在它之後再套一次，確保 child stream 目的地是已驗證可用的 NodePort。
 - host-side `vm_aggregator` 與 autoscale API 建議共用同一組 host env，避免兩邊端點不一致。
 - in-cluster `vm_aggregator` 建議優先走 service DNS，不依賴 NodePort。
+- `VictoriaMetrics` 目前正式建議保留 `search.latencyOffset=3s`：
+  - 相較預設 `30s`，可大幅改善 `vLLM` / `DCGM` 類即時監控的觀測延遲
+  - 相較 `0s`，較不容易在最新 sample 邊界出現明顯抖動
 - 本輪 `icclz2` 重建時，`10-victoria-metrics.yaml`、`20-vmagent.yaml`、`40-kube-state-metrics.yaml` 內原先綁定舊 central node `iccl-cluster-z2` 的 selector 已改成 `icclz2`；正式切換到新主機時，除了 IP / port，也要一起檢查 node selector。
 - `20-vmagent.yaml` 目前已包含 `rfsoc4x2-node-exporter` 的 static scrape job，target 為 `100.91.37.32:9100`；若 RFSoC 改走其他可達路徑，需同步修改該段 labels 與 target。
 - external nodes 目前能被 API / dashboard 納入 inventory，不代表現場 telemetry 一定已恢復；若缺少 `~/.ssh/id_ed25519_rfsoc`、`~/.ssh/openwrt_ap_ed25519` 或 producer service，dashboard 會顯示 `OFFLINE`。

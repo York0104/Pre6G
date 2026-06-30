@@ -105,6 +105,9 @@ systemctl --user status pre6g-cluster-dashboard.service
 - `cluster-dashboard` 使用 `nginx:1.29-alpine`
 - frontend 直接讀取 host 上 `cluster-dashboard/dist`
 - API Pod 直接掛入 host 上的 `/usr/local/bin/kubectl`
+- monitoring stack 目前建議保留 `VictoriaMetrics --search.latencyOffset=3s`
+  - 比原先 `30s` 的查詢保守值更適合 `LLM Serving Lab`
+  - 又比 `0s` 更穩定
 
 目前檢查方式：
 
