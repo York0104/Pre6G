@@ -195,7 +195,7 @@ type LlmInferenceResponse = {
   ts: number;
   namespace: string;
   workload: string;
-  target_url: string;
+  target_service: string;
   model?: string | null;
   http_status: number;
   latency_seconds: number;
@@ -206,9 +206,10 @@ type LlmInferenceResponse = {
   response_text?: string | null;
 };
 
-type LlmSmokeBenchmarkRequest = {
+type LlmBenchmarkRunRequest = {
   namespace: string;
   workload: string;
+  profile_id: string;
 };
 
 type LlmSmokeBenchmarkResponse = {
@@ -226,10 +227,78 @@ type LlmSmokeBenchmarkResponse = {
   status: string;
   completed_requests: number;
   failed_requests: number;
+  run_elapsed_seconds?: number | null;
+  request_throughput_rps?: number | null;
+  aggregate_prompt_tps?: number | null;
+  aggregate_generation_tps?: number | null;
+  aggregate_total_tps?: number | null;
+  latency_p50_seconds?: number | null;
+  latency_p95_seconds?: number | null;
   mean_latency_seconds?: number | null;
   mean_prompt_tokens?: number | null;
   mean_completion_tokens?: number | null;
   mean_total_tokens?: number | null;
+};
+
+type LlmBenchmarkProgressBucket = {
+  second: number;
+  completed_requests: number;
+  failed_requests: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+};
+
+type LlmBenchmarkProgressSnapshot = {
+  elapsed_seconds: number;
+  completed_requests: number;
+  failed_requests: number;
+  prompt_tokens_so_far: number;
+  completion_tokens_so_far: number;
+  total_tokens_so_far: number;
+  current_request_throughput_rps: number;
+  current_prompt_tps: number;
+  current_generation_tps: number;
+  current_total_tps: number;
+  buckets: LlmBenchmarkProgressBucket[];
+};
+
+type LlmBenchmarkRunStartResponse = {
+  schema: string;
+  ts: number;
+  run_id: string;
+  namespace: string;
+  workload: string;
+  profile: string;
+  profile_id: string;
+  status: string;
+};
+
+type LlmBenchmarkRunStatusResponse = {
+  schema: string;
+  ts: number;
+  run_id: string;
+  namespace: string;
+  workload: string;
+  profile: string;
+  profile_id: string;
+  status: string;
+  request_count: number;
+  concurrency: number;
+  max_tokens: number;
+  temperature: number;
+  started_ts: number;
+  finished_ts?: number | null;
+  progress: LlmBenchmarkProgressSnapshot;
+  result?: LlmSmokeBenchmarkResponse | null;
+  error?: string | null;
+};
+
+type LlmBenchmarkRunCancelResponse = {
+  schema: string;
+  ts: number;
+  run_id: string;
+  status: string;
 };
 
 type LlmRunHistoryItem = {
@@ -243,15 +312,23 @@ type LlmRunHistoryItem = {
   profile_id?: string | null;
   model?: string | null;
   latency_seconds?: number | null;
+  prompt_char_count?: number | null;
+  prompt_sha256?: string | null;
   prompt_tokens?: number | null;
   completion_tokens?: number | null;
   total_tokens?: number | null;
   finish_reason?: string | null;
-  prompt_preview?: string | null;
   request_count?: number | null;
   concurrency?: number | null;
   completed_requests?: number | null;
   failed_requests?: number | null;
+  run_elapsed_seconds?: number | null;
+  request_throughput_rps?: number | null;
+  aggregate_prompt_tps?: number | null;
+  aggregate_generation_tps?: number | null;
+  aggregate_total_tps?: number | null;
+  latency_p50_seconds?: number | null;
+  latency_p95_seconds?: number | null;
   mean_latency_seconds?: number | null;
   mean_prompt_tokens?: number | null;
   mean_completion_tokens?: number | null;
@@ -281,7 +358,7 @@ const BENCHMARK_PROFILES = [
     promptSource: "Fixed medium prompt",
     maxTokens: 128,
     temperature: 0.0,
-    concurrency: 1,
+    concurrency: 4,
     requestCount: 30,
   },
   {
@@ -290,7 +367,7 @@ const BENCHMARK_PROFILES = [
     promptSource: "Fixed long-context prompt",
     maxTokens: 64,
     temperature: 0.0,
-    concurrency: 1,
+    concurrency: 2,
     requestCount: 8,
   },
 ] as const;
@@ -1038,9 +1115,11 @@ function NodeDetail({
 function LlmServingLabPage({
   workloads,
   workloadDetails,
+  onRefreshWorkloads,
 }: {
   workloads: WorkloadListItem[];
   workloadDetails: Record<string, WorkloadStatusResponse>;
+  onRefreshWorkloads: () => Promise<void>;
 }) {
   const [prompt, setPrompt] = useState("Explain CPU, RAM, and GPU VRAM in three bullet points.");
   const [maxTokens, setMaxTokens] = useState(128);
@@ -1048,14 +1127,17 @@ function LlmServingLabPage({
   const [inferenceLoading, setInferenceLoading] = useState(false);
   const [inferenceError, setInferenceError] = useState("");
   const [inferenceResult, setInferenceResult] = useState<LlmInferenceResponse | null>(null);
+  const [inferenceStartedAt, setInferenceStartedAt] = useState<number | null>(null);
   const [smokeLoading, setSmokeLoading] = useState(false);
   const [smokeError, setSmokeError] = useState("");
   const [smokeResult, setSmokeResult] = useState<LlmSmokeBenchmarkResponse | null>(null);
+  const [activeBenchmarkRun, setActiveBenchmarkRun] = useState<LlmBenchmarkRunStatusResponse | null>(null);
+  const [activeBenchmarkRunId, setActiveBenchmarkRunId] = useState("");
   const [benchmarkProfileId, setBenchmarkProfileId] = useState<(typeof BENCHMARK_PROFILES)[number]["id"]>("smoke");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [runHistory, setRunHistory] = useState<LlmRunHistoryItem[]>([]);
-  const [historyFilter, setHistoryFilter] = useState<"all" | "single_inference" | "smoke_benchmark">("all");
+  const [historyFilter, setHistoryFilter] = useState<"all" | "single_inference" | "controlled_batch">("all");
   const sortedWorkloads = [...workloads].sort((a, b) => {
     const left = `${a.namespace}/${a.workload}`;
     const right = `${b.namespace}/${b.workload}`;
@@ -1072,9 +1154,11 @@ function LlmServingLabPage({
     !!primaryDetail && replicas.some((replica) => replica.metrics_observed_ts);
   const selectedBenchmarkProfile =
     BENCHMARK_PROFILES.find((profile) => profile.id === benchmarkProfileId) || BENCHMARK_PROFILES[0];
-  const filteredRunHistory = runHistory.filter((item) =>
-    historyFilter === "all" ? true : item.event_type === historyFilter,
-  );
+  const filteredRunHistory = runHistory.filter((item) => {
+    if (historyFilter === "all") return true;
+    if (historyFilter === "single_inference") return item.event_type === "single_inference";
+    return item.event_type !== "single_inference";
+  });
   const historySummary = {
     total: filteredRunHistory.length,
     inferenceCount: filteredRunHistory.filter((item) => item.event_type === "single_inference").length,
@@ -1085,6 +1169,9 @@ function LlmServingLabPage({
     if (!primaryWorkload) return;
     setInferenceLoading(true);
     setInferenceError("");
+    setInferenceResult(null);
+    setInferenceStartedAt(Date.now());
+    onRefreshWorkloads().catch(() => undefined);
     try {
       const response = await postJsonBody<LlmInferenceResponse>(
         "/api/v1/llm-lab/inference",
@@ -1097,6 +1184,7 @@ function LlmServingLabPage({
         } satisfies LlmInferenceRequest,
       );
       setInferenceResult(response);
+      await onRefreshWorkloads();
       await loadRunHistory(primaryWorkload.namespace, primaryWorkload.workload);
     } catch (error) {
       setInferenceError(error instanceof Error ? error.message : String(error));
@@ -1105,24 +1193,56 @@ function LlmServingLabPage({
     }
   }
 
+  async function loadBenchmarkRun(runId: string) {
+    const response = await fetchJson<LlmBenchmarkRunStatusResponse>(
+      `/api/v1/llm-lab/benchmarks/runs/${encodeURIComponent(runId)}`,
+    );
+    setActiveBenchmarkRun(response);
+    if (response.result) {
+      setSmokeResult(response.result);
+    }
+    if (response.status !== "queued" && response.status !== "running" && response.status !== "cancelling") {
+      setActiveBenchmarkRunId("");
+      await loadRunHistory(response.namespace, response.workload);
+    }
+    return response;
+  }
+
   async function runSmokeBenchmark() {
     if (!primaryWorkload) return;
     setSmokeLoading(true);
     setSmokeError("");
+    setSmokeResult(null);
+    setActiveBenchmarkRun(null);
     try {
-      const response = await postJsonBody<LlmSmokeBenchmarkResponse>(
-        `/api/v1/llm-lab/benchmarks/${benchmarkProfileId}`,
+      const response = await postJsonBody<LlmBenchmarkRunStartResponse>(
+        "/api/v1/llm-lab/benchmarks/runs",
         {
           namespace: primaryWorkload.namespace,
           workload: primaryWorkload.workload,
-        } satisfies LlmSmokeBenchmarkRequest,
+          profile_id: benchmarkProfileId,
+        } satisfies LlmBenchmarkRunRequest,
       );
-      setSmokeResult(response);
-      await loadRunHistory(primaryWorkload.namespace, primaryWorkload.workload);
+      setActiveBenchmarkRunId(response.run_id);
+      await loadBenchmarkRun(response.run_id);
     } catch (error) {
       setSmokeError(error instanceof Error ? error.message : String(error));
     } finally {
       setSmokeLoading(false);
+    }
+  }
+
+  async function cancelBenchmarkRun() {
+    if (!activeBenchmarkRunId) return;
+    setSmokeError("");
+    try {
+      await postJsonBody<LlmBenchmarkRunCancelResponse>(
+        `/api/v1/llm-lab/benchmarks/runs/${encodeURIComponent(activeBenchmarkRunId)}/cancel`,
+        {},
+      );
+      await loadBenchmarkRun(activeBenchmarkRunId);
+    } catch (error) {
+      setSmokeError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -1149,6 +1269,15 @@ function LlmServingLabPage({
     loadRunHistory(primaryWorkload.namespace, primaryWorkload.workload).catch(() => undefined);
   }, [primaryKey]);
 
+  useEffect(() => {
+    if (!activeBenchmarkRunId) return;
+    const timer = window.setInterval(() => {
+      loadBenchmarkRun(activeBenchmarkRunId).catch(() => undefined);
+    }, 2000);
+    loadBenchmarkRun(activeBenchmarkRunId).catch(() => undefined);
+    return () => window.clearInterval(timer);
+  }, [activeBenchmarkRunId]);
+
   return (
     <section className="space-y-6">
       <div>
@@ -1165,6 +1294,17 @@ function LlmServingLabPage({
             .
           </div>
         )}
+      </div>
+
+      <div className="space-y-2">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-200">
+            Observation
+          </h3>
+          <p className="mt-1 text-sm text-slate-400">
+            Service identity, live serving metrics, and per-pod Kubernetes observation.
+          </p>
+        </div>
       </div>
 
       <SectionCard title="Service Overview">
@@ -1283,6 +1423,11 @@ function LlmServingLabPage({
                       formatFreshness(primaryDetail.freshness_seconds),
                     )}
                   </div>
+                  <div className="mt-3 text-xs text-slate-500">
+                    Service-wide TPS uses 1 sec scrape, 1 sec dashboard polling, a {primaryDetail.query_window_seconds} sec
+                    rate window, and a VictoriaMetrics search latency offset tuned to 3 sec for balanced freshness and
+                    stability.
+                  </div>
                 </div>
               </div>
             )}
@@ -1339,6 +1484,19 @@ function LlmServingLabPage({
               </div>
             )}
           </SectionCard>
+        </div>
+      )}
+
+      {primaryWorkload && (
+        <div className="space-y-2 pt-2">
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-200">
+              Tasks & Runs
+            </h3>
+            <p className="mt-1 text-sm text-slate-400">
+              Controlled requests and recent runtime records for this vLLM workload.
+            </p>
+          </div>
         </div>
       )}
 
@@ -1416,7 +1574,17 @@ function LlmServingLabPage({
             </div>
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-              {!inferenceResult && !inferenceError ? (
+              {inferenceLoading ? (
+                <div className="rounded-xl border border-sky-500/30 bg-sky-950/20 p-4 text-sky-100">
+                  <div className="font-medium">Inference request in progress</div>
+                  <div className="mt-2 text-sm text-sky-200/80">
+                    Request sent through `autoscale_api`. The result panel will refresh when the response returns.
+                  </div>
+                  <div className="mt-3 text-xs text-sky-200/70">
+                    Started: {inferenceStartedAt ? new Date(inferenceStartedAt).toLocaleTimeString() : "now"}
+                  </div>
+                </div>
+              ) : !inferenceResult && !inferenceError ? (
                 <div className="text-slate-400">
                   Run a single inference request to capture token usage, latency,
                   and finish reason.
@@ -1449,6 +1617,10 @@ function LlmServingLabPage({
                       "Finish Reason",
                       inferenceResult?.finish_reason || "N/A",
                     )}
+                    {observationLine(
+                      "Target Service",
+                      inferenceResult?.target_service || "N/A",
+                    )}
                   </div>
 
                   <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
@@ -1467,7 +1639,7 @@ function LlmServingLabPage({
       )}
 
       {primaryWorkload && (
-        <SectionCard title="Benchmark Profiles">
+        <SectionCard title="Controlled Request Batch">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <div className="space-y-4">
               <label className="block text-sm text-slate-300">
@@ -1509,28 +1681,145 @@ function LlmServingLabPage({
                 onClick={() => {
                   runSmokeBenchmark().catch(() => undefined);
                 }}
-                disabled={smokeLoading || !primaryDetail || primaryDetail.replica_summary.ready <= 0}
+                disabled={
+                  smokeLoading ||
+                  !!activeBenchmarkRunId ||
+                  !primaryDetail ||
+                  primaryDetail.replica_summary.ready <= 0
+                }
                 className={`rounded-xl border px-4 py-2.5 text-sm font-medium transition ${
                   smokeLoading
                     ? "border-slate-700 bg-slate-900/60 text-slate-500"
                     : "border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:border-emerald-400"
                 }`}
               >
-                {smokeLoading ? "Running Benchmark..." : "Start Benchmark"}
+                {smokeLoading ? "Running Batch..." : "Start Batch Run"}
               </button>
+              {activeBenchmarkRunId ? (
+                <button
+                  onClick={() => {
+                    cancelBenchmarkRun().catch(() => undefined);
+                  }}
+                  className="ml-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2.5 text-sm font-medium text-rose-100 transition hover:border-rose-400"
+                >
+                  Cancel Run
+                </button>
+              ) : null}
             </div>
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-              {!smokeResult && !smokeError ? (
+              {!activeBenchmarkRun && !smokeResult && !smokeError ? (
                 <div className="text-slate-400">
-                  Run the fixed Smoke profile to capture a small, repeatable throughput baseline.
+                  Runs a fixed concurrent request batch for throughput, token usage, and latency verification.
                 </div>
               ) : smokeError ? (
                 <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-3 text-red-200">
                   {smokeError}
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-4">
+                  {activeBenchmarkRun ? (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
+                      <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">
+                        Live Run Progress
+                      </div>
+                      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <SummaryCard
+                          label="Status"
+                          value={activeBenchmarkRun.status}
+                          tone={
+                            activeBenchmarkRun.status === "running"
+                              ? "green"
+                              : activeBenchmarkRun.status === "cancelled"
+                                ? "orange"
+                                : "blue"
+                          }
+                        />
+                        <SummaryCard
+                          label="Current Prompt TPS"
+                          value={`${activeBenchmarkRun.progress.current_prompt_tps.toFixed(1)} tok/s`}
+                          tone="blue"
+                        />
+                        <SummaryCard
+                          label="Current Gen TPS"
+                          value={`${activeBenchmarkRun.progress.current_generation_tps.toFixed(1)} tok/s`}
+                          tone="blue"
+                        />
+                        <SummaryCard
+                          label="Current Total TPS"
+                          value={`${activeBenchmarkRun.progress.current_total_tps.toFixed(1)} tok/s`}
+                          tone="green"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        {observationLine("Active Run ID", activeBenchmarkRun.run_id)}
+                        {observationLine(
+                          "Elapsed",
+                          `${activeBenchmarkRun.progress.elapsed_seconds.toFixed(1)} sec`,
+                        )}
+                        {observationLine(
+                          "Completed Requests",
+                          activeBenchmarkRun.progress.completed_requests.toString(),
+                        )}
+                        {observationLine(
+                          "Failed Requests",
+                          activeBenchmarkRun.progress.failed_requests.toString(),
+                        )}
+                        {observationLine(
+                          "Prompt Tokens So Far",
+                          activeBenchmarkRun.progress.prompt_tokens_so_far.toFixed(1),
+                        )}
+                        {observationLine(
+                          "Completion Tokens So Far",
+                          activeBenchmarkRun.progress.completion_tokens_so_far.toFixed(1),
+                        )}
+                        {observationLine(
+                          "Total Tokens So Far",
+                          activeBenchmarkRun.progress.total_tokens_so_far.toFixed(1),
+                        )}
+                        {observationLine(
+                          "Current Request Throughput",
+                          `${activeBenchmarkRun.progress.current_request_throughput_rps.toFixed(2)} req/s`,
+                        )}
+                      </div>
+                      <div className="mt-4 h-64 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={activeBenchmarkRun.progress.buckets}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                            <XAxis dataKey="second" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                            <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                            <Tooltip />
+                            <Line
+                              type="monotone"
+                              dataKey="prompt_tokens"
+                              stroke="#38bdf8"
+                              strokeWidth={2}
+                              dot={false}
+                              name="Prompt Tokens/s"
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="completion_tokens"
+                              stroke="#34d399"
+                              strokeWidth={2}
+                              dot={false}
+                              name="Completion Tokens/s"
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="total_tokens"
+                              stroke="#f59e0b"
+                              strokeWidth={2}
+                              dot={false}
+                              name="Total Tokens/s"
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-2">
                   {observationLine("Profile", smokeResult?.profile || "N/A")}
                   {observationLine("Run ID", smokeResult?.run_id || "N/A")}
                   {observationLine("Status", smokeResult?.status || "N/A")}
@@ -1545,6 +1834,55 @@ function LlmServingLabPage({
                   {observationLine(
                     "Concurrency",
                     smokeResult?.concurrency?.toString() || "N/A",
+                  )}
+                  {observationLine(
+                    "Run Elapsed",
+                    smokeResult?.run_elapsed_seconds !== undefined &&
+                      smokeResult?.run_elapsed_seconds !== null
+                      ? `${smokeResult.run_elapsed_seconds.toFixed(3)} sec`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "Request Throughput",
+                    smokeResult?.request_throughput_rps !== undefined &&
+                      smokeResult?.request_throughput_rps !== null
+                      ? `${smokeResult.request_throughput_rps.toFixed(3)} req/s`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "Aggregate Prompt Throughput",
+                    smokeResult?.aggregate_prompt_tps !== undefined &&
+                      smokeResult?.aggregate_prompt_tps !== null
+                      ? `${smokeResult.aggregate_prompt_tps.toFixed(3)} tok/s`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "Aggregate Generation Throughput",
+                    smokeResult?.aggregate_generation_tps !== undefined &&
+                      smokeResult?.aggregate_generation_tps !== null
+                      ? `${smokeResult.aggregate_generation_tps.toFixed(3)} tok/s`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "Aggregate Total Throughput",
+                    smokeResult?.aggregate_total_tps !== undefined &&
+                      smokeResult?.aggregate_total_tps !== null
+                      ? `${smokeResult.aggregate_total_tps.toFixed(3)} tok/s`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "Latency P50",
+                    smokeResult?.latency_p50_seconds !== undefined &&
+                      smokeResult?.latency_p50_seconds !== null
+                      ? `${smokeResult.latency_p50_seconds.toFixed(3)} sec`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "Latency P95",
+                    smokeResult?.latency_p95_seconds !== undefined &&
+                      smokeResult?.latency_p95_seconds !== null
+                      ? `${smokeResult.latency_p95_seconds.toFixed(3)} sec`
+                      : "N/A",
                   )}
                   {observationLine(
                     "Mean Latency",
@@ -1566,6 +1904,7 @@ function LlmServingLabPage({
                     smokeResult?.mean_total_tokens?.toFixed(1) || "N/A",
                   )}
                 </div>
+                </div>
               )}
             </div>
           </div>
@@ -1573,23 +1912,23 @@ function LlmServingLabPage({
       )}
 
       {primaryWorkload && (
-        <SectionCard title="Run History">
+        <SectionCard title="Recent Runtime History">
           <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
             <div className="grid gap-3 sm:grid-cols-3">
               <SummaryCard label="Visible Entries" value={historySummary.total.toString()} tone="blue" />
               <SummaryCard label="Inferences" value={historySummary.inferenceCount.toString()} tone="green" />
-              <SummaryCard label="Benchmarks" value={historySummary.benchmarkCount.toString()} tone="orange" />
+              <SummaryCard label="Batch Runs" value={historySummary.benchmarkCount.toString()} tone="orange" />
             </div>
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/45 p-3">
               {[
                 { id: "all", label: "All Events" },
                 { id: "single_inference", label: "Inference Only" },
-                { id: "smoke_benchmark", label: "Benchmarks Only" },
+                { id: "controlled_batch", label: "Batch Runs Only" },
               ].map((option) => (
                 <button
                   key={option.id}
                   onClick={() =>
-                    setHistoryFilter(option.id as "all" | "single_inference" | "smoke_benchmark")
+                    setHistoryFilter(option.id as "all" | "single_inference" | "controlled_batch")
                   }
                   className={`rounded-full border px-3 py-1.5 text-xs transition ${
                     historyFilter === option.id
@@ -1617,7 +1956,7 @@ function LlmServingLabPage({
             <div className="space-y-3">
               {filteredRunHistory.map((item) => (
                 <div
-                  key={`${item.ts}-${item.event_type}-${item.run_id || item.prompt_preview || "entry"}`}
+                  key={`${item.ts}-${item.event_type}-${item.run_id || item.prompt_sha256 || "entry"}`}
                   className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm"
                 >
                   <div className="mb-2 flex items-center justify-between gap-3">
@@ -1629,10 +1968,12 @@ function LlmServingLabPage({
                             : "border-orange-500/30 bg-orange-500/10 text-orange-200"
                         }`}
                       >
-                        {item.event_type === "single_inference" ? "Inference" : "Benchmark"}
+                        {item.event_type === "single_inference" ? "Inference" : "Batch"}
                       </span>
                       <div className="font-medium text-slate-100">
-                        {item.event_type === "single_inference" ? "Single Inference" : item.profile || "Benchmark"}
+                        {item.event_type === "single_inference"
+                          ? "Single Inference"
+                          : item.profile || "Controlled Request Batch"}
                       </div>
                     </div>
                     <div className="text-xs text-slate-500">
@@ -1698,6 +2039,14 @@ function LlmServingLabPage({
                     <div className="space-y-2">
                       {item.event_type === "single_inference" ? (
                         <>
+                          {observationLine(
+                            "Prompt Chars",
+                            item.prompt_char_count?.toString() || "N/A",
+                          )}
+                          {observationLine(
+                            "Prompt SHA-256",
+                            item.prompt_sha256 || "N/A",
+                          )}
                           {observationLine("Prompt Tokens", item.prompt_tokens?.toString() || "N/A")}
                           {observationLine("Completion Tokens", item.completion_tokens?.toString() || "N/A")}
                           {observationLine("Finish Reason", item.finish_reason || "N/A")}
@@ -1711,6 +2060,50 @@ function LlmServingLabPage({
                           {observationLine(
                             "Concurrency",
                             item.concurrency?.toString() || "N/A",
+                          )}
+                          {observationLine(
+                            "Elapsed",
+                            item.run_elapsed_seconds !== undefined &&
+                              item.run_elapsed_seconds !== null
+                              ? `${item.run_elapsed_seconds.toFixed(3)} sec`
+                              : "N/A",
+                          )}
+                          {observationLine(
+                            "Request Throughput",
+                            item.request_throughput_rps !== undefined &&
+                              item.request_throughput_rps !== null
+                              ? `${item.request_throughput_rps.toFixed(3)} req/s`
+                              : "N/A",
+                          )}
+                          {observationLine(
+                            "Prompt Throughput",
+                            item.aggregate_prompt_tps !== undefined &&
+                              item.aggregate_prompt_tps !== null
+                              ? `${item.aggregate_prompt_tps.toFixed(3)} tok/s`
+                              : "N/A",
+                          )}
+                          {observationLine(
+                            "Generation Throughput",
+                            item.aggregate_generation_tps !== undefined &&
+                              item.aggregate_generation_tps !== null
+                              ? `${item.aggregate_generation_tps.toFixed(3)} tok/s`
+                              : "N/A",
+                          )}
+                          {observationLine(
+                            "Total Throughput",
+                            item.aggregate_total_tps !== undefined &&
+                              item.aggregate_total_tps !== null
+                              ? `${item.aggregate_total_tps.toFixed(3)} tok/s`
+                              : "N/A",
+                          )}
+                          {observationLine(
+                            "Latency P50 / P95",
+                            item.latency_p50_seconds !== undefined &&
+                              item.latency_p50_seconds !== null &&
+                              item.latency_p95_seconds !== undefined &&
+                              item.latency_p95_seconds !== null
+                              ? `${item.latency_p50_seconds.toFixed(3)} / ${item.latency_p95_seconds.toFixed(3)} sec`
+                              : "N/A",
                           )}
                           {observationLine(
                             "Mean Prompt Tokens",
@@ -1735,11 +2128,6 @@ function LlmServingLabPage({
                       )}
                     </div>
                   </div>
-                  {item.prompt_preview ? (
-                    <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300">
-                      {item.prompt_preview}
-                    </div>
-                  ) : null}
                 </div>
               ))}
             </div>
@@ -2627,7 +3015,11 @@ export default function App() {
     loadFanExperiment();
 
     const statusTimer = window.setInterval(() => {
-      Promise.all([loadStatus(), loadWorkloads()])
+      const tasks =
+        activeTab === "llm-serving"
+          ? [loadStatus()]
+          : [loadStatus(), loadWorkloads()];
+      Promise.all(tasks)
         .then(() => setError(""))
         .catch((e) => setError(e instanceof Error ? e.message : String(e)));
     }, 3000);
@@ -2642,7 +3034,24 @@ export default function App() {
       window.clearInterval(statusTimer);
       window.clearInterval(inventoryTimer);
     };
-  }, []);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "llm-serving") {
+      return;
+    }
+
+    loadWorkloads().catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    const workloadTimer = window.setInterval(() => {
+      loadWorkloads()
+        .then(() => setError(""))
+        .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    }, 1000);
+
+    return () => {
+      window.clearInterval(workloadTimer);
+    };
+  }, [activeTab]);
 
   useEffect(() => {
     if (!fanCaptureRunning) {
@@ -2879,7 +3288,11 @@ export default function App() {
         )}
 
         {activeTab === "llm-serving" && (
-          <LlmServingLabPage workloads={workloads} workloadDetails={workloadDetails} />
+          <LlmServingLabPage
+            workloads={workloads}
+            workloadDetails={workloadDetails}
+            onRefreshWorkloads={loadWorkloads}
+          />
         )}
 
         {activeTab === "fan-experiment" && (

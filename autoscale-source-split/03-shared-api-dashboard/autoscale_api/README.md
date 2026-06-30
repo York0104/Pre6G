@@ -13,6 +13,12 @@
 
 整理成固定 JSON schema，供 `Cluster Monitor` 與 `LLM Serving Lab` dashboard 使用。
 
+目前 `autoscale_api` 不再只是純 read-only node/workload observation API，也承接受限的 `LLM Lab` request proxy：
+
+- read-only observation：node / workload / experiment status
+- controlled side effects：single inference、fixed concurrent batch
+- lightweight runtime history：近期操作紀錄查詢
+
 本 README 以目前已驗證的 `monitoring + cluster monitor` 主線為主，並補充 `2026-06-24` 完成的 `Fan-Cycle Experiment` host-side rebuild 狀態。
 
 ## Main Endpoints
@@ -28,6 +34,9 @@
 - `GET /api/v1/nodes/{node_name}/workloads`
 - `POST /api/v1/llm-lab/inference`
 - `POST /api/v1/llm-lab/benchmarks/smoke`
+- `POST /api/v1/llm-lab/benchmarks/runs`
+- `GET /api/v1/llm-lab/benchmarks/runs/{run_id}`
+- `POST /api/v1/llm-lab/benchmarks/runs/{run_id}/cancel`
 - `POST /api/v1/llm-lab/benchmarks/{profile}`
 - `GET /api/v1/llm-lab/history`
 - `GET /api/v1/experiments/fan-cycle/latest`
@@ -126,6 +135,7 @@ response:
 - `total_tokens`
 - `finish_reason`
 - `response_text`
+- `target_service`
 
 目前設計原則：
 
@@ -138,6 +148,13 @@ response:
 ### `/api/v1/llm-lab/benchmarks/smoke`
 
 `2026-06-27` 新增固定 profile 的最小 benchmark API。
+
+目前更精確的語意是：
+
+- `Controlled Request Batch`
+- fixed profile
+- concurrency-limited request runner
+- synchronous response path，非 background job
 
 目前 profile 固定為：
 
@@ -153,6 +170,13 @@ response summary:
 - `status`
 - `completed_requests`
 - `failed_requests`
+- `run_elapsed_seconds`
+- `request_throughput_rps`
+- `aggregate_prompt_tps`
+- `aggregate_generation_tps`
+- `aggregate_total_tps`
+- `latency_p50_seconds`
+- `latency_p95_seconds`
 - `mean_latency_seconds`
 - `mean_prompt_tokens`
 - `mean_completion_tokens`
@@ -166,7 +190,50 @@ response summary:
 - `steady`
 - `long-context`
 
-目前仍採同步 request loop，不是 background job runner。
+目前採同步回結果的 concurrent runner：
+
+- 使用固定 profile
+- 使用 `ThreadPoolExecutor` 依 profile `concurrency` 送出 request
+- 同一個 API call 會等待整批完成後回 summary
+- 還不是可取消的 background job runner
+
+### `/api/v1/llm-lab/benchmarks/runs`
+
+`2026-06-30` 新增 benchmark background run v2。
+
+用途：
+
+- 建立一個 background benchmark run
+- 立刻回 `run_id`
+- 由 dashboard 輪詢 run progress
+
+對應路徑：
+
+- `POST /api/v1/llm-lab/benchmarks/runs`
+- `GET /api/v1/llm-lab/benchmarks/runs/{run_id}`
+- `POST /api/v1/llm-lab/benchmarks/runs/{run_id}/cancel`
+
+目前 run progress 會保存：
+
+- `completed_requests`
+- `failed_requests`
+- `prompt_tokens_so_far`
+- `completion_tokens_so_far`
+- `total_tokens_so_far`
+- `current_request_throughput_rps`
+- `current_prompt_tps`
+- `current_generation_tps`
+- `current_total_tps`
+- `buckets`
+
+其中 `buckets` 是 run-local per-second token usage：
+
+- `second`
+- `prompt_tokens`
+- `completion_tokens`
+- `total_tokens`
+- `completed_requests`
+- `failed_requests`
 
 用途：
 
@@ -176,7 +243,7 @@ response summary:
 
 ### `/api/v1/llm-lab/history`
 
-`Run History v2` 會把 `Single Inference` 與 benchmark profile 摘要 append 到本機 `jsonl`，並提供最近紀錄查詢。
+`Run History v2` 會把 `Single Inference` 與 fixed concurrent batch 摘要 append 到本機 `jsonl`，並提供最近紀錄查詢。
 
 query params:
 
@@ -187,9 +254,16 @@ query params:
 用途：
 
 - 顯示近期 LLM Lab 操作紀錄
-- 區分 `single_inference` 與 `smoke_benchmark`
+- 區分 `single_inference` 與 `controlled_batch`
 - 區分不同 benchmark profile
-- 回傳最近的 latency / token summary
+- 回傳最近的 latency / token / throughput summary
+
+隱私與資料保存規則：
+
+- 不保存 `prompt_preview`
+- 只保存 `prompt_char_count`
+- 只保存 `prompt_sha256`
+- history 目前位於 container/runtime filesystem，不保證 pod 重建後持久存在
 
 限制：
 
@@ -245,9 +319,15 @@ query params:
 若要啟用 workload-centric `vLLM` API，另外建議設定：
 
 - `PRE6G_WORKLOAD_NAMESPACE=ai-serving`
-- `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS=10`
+- `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS=3`
 
-其中 `10s` 是目前 `LLM Serving Lab` 第一版的預設設定，較適合觀察單次 inference 與短時間 benchmark 的 throughput 變化。
+其中 `3s` 是目前 `LLM Serving Lab` live observation 的預設設定；它比 `10s` 更靈敏，較適合單次 inference 與短時間 batch run 的服務側觀測。
+
+另外，目前 live VictoriaMetrics 建議搭配：
+
+- `search.latencyOffset=3s`
+
+這個值比原本偏保守的 `30s` 明顯更適合即時 workload 觀測，同時又比 `0s` 或 `1s` 更穩定，較不容易在最新 sample 邊界出現明顯抖動。
 
 ## Fan-Cycle Rebuild Status
 

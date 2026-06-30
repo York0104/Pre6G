@@ -16,7 +16,7 @@ class LlmInferenceResponse(BaseModel):
     ts: int
     namespace: str
     workload: str
-    target_url: str
+    target_service: str
     model: Optional[str] = None
     http_status: int
     latency_seconds: float
@@ -37,6 +37,12 @@ class LlmBenchmarkRequest(BaseModel):
     workload: str
 
 
+class LlmBenchmarkRunRequest(BaseModel):
+    namespace: str
+    workload: str
+    profile_id: str
+
+
 class LlmBenchmarkResponse(BaseModel):
     schema: str
     ts: int
@@ -52,6 +58,13 @@ class LlmBenchmarkResponse(BaseModel):
     status: str
     completed_requests: int
     failed_requests: int
+    run_elapsed_seconds: Optional[float] = None
+    request_throughput_rps: Optional[float] = None
+    aggregate_prompt_tps: Optional[float] = None
+    aggregate_generation_tps: Optional[float] = None
+    aggregate_total_tps: Optional[float] = None
+    latency_p50_seconds: Optional[float] = None
+    latency_p95_seconds: Optional[float] = None
     mean_latency_seconds: Optional[float] = None
     mean_prompt_tokens: Optional[float] = None
     mean_completion_tokens: Optional[float] = None
@@ -69,15 +82,23 @@ class LlmRunHistoryItem(BaseModel):
     profile_id: Optional[str] = None
     model: Optional[str] = None
     latency_seconds: Optional[float] = None
+    prompt_char_count: Optional[int] = None
+    prompt_sha256: Optional[str] = None
     prompt_tokens: Optional[float] = None
     completion_tokens: Optional[float] = None
     total_tokens: Optional[float] = None
     finish_reason: Optional[str] = None
-    prompt_preview: Optional[str] = None
     request_count: Optional[int] = None
     concurrency: Optional[int] = None
     completed_requests: Optional[int] = None
     failed_requests: Optional[int] = None
+    run_elapsed_seconds: Optional[float] = None
+    request_throughput_rps: Optional[float] = None
+    aggregate_prompt_tps: Optional[float] = None
+    aggregate_generation_tps: Optional[float] = None
+    aggregate_total_tps: Optional[float] = None
+    latency_p50_seconds: Optional[float] = None
+    latency_p95_seconds: Optional[float] = None
     mean_latency_seconds: Optional[float] = None
     mean_prompt_tokens: Optional[float] = None
     mean_completion_tokens: Optional[float] = None
@@ -92,3 +113,64 @@ class LlmRunHistoryResponse(BaseModel):
 
 
 LlmSmokeBenchmarkResponse = LlmBenchmarkResponse
+
+
+class LlmBenchmarkProgressBucket(BaseModel):
+    second: int
+    completed_requests: int = 0
+    failed_requests: int = 0
+    prompt_tokens: float = 0.0
+    completion_tokens: float = 0.0
+    total_tokens: float = 0.0
+
+
+class LlmBenchmarkProgressSnapshot(BaseModel):
+    elapsed_seconds: float
+    completed_requests: int
+    failed_requests: int
+    prompt_tokens_so_far: float
+    completion_tokens_so_far: float
+    total_tokens_so_far: float
+    current_request_throughput_rps: float
+    current_prompt_tps: float
+    current_generation_tps: float
+    current_total_tps: float
+    buckets: list[LlmBenchmarkProgressBucket]
+
+
+class LlmBenchmarkRunStatusResponse(BaseModel):
+    schema: str
+    ts: int
+    run_id: str
+    namespace: str
+    workload: str
+    profile: str
+    profile_id: str
+    status: str
+    request_count: int
+    concurrency: int
+    max_tokens: int
+    temperature: float
+    started_ts: int
+    finished_ts: Optional[int] = None
+    progress: LlmBenchmarkProgressSnapshot
+    result: Optional[LlmBenchmarkResponse] = None
+    error: Optional[str] = None
+
+
+class LlmBenchmarkRunStartResponse(BaseModel):
+    schema: str
+    ts: int
+    run_id: str
+    namespace: str
+    workload: str
+    profile: str
+    profile_id: str
+    status: str
+
+
+class LlmBenchmarkRunCancelResponse(BaseModel):
+    schema: str
+    ts: int
+    run_id: str
+    status: str

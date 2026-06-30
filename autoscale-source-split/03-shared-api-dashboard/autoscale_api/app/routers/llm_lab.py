@@ -2,6 +2,10 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas.llm_lab import (
     LlmBenchmarkRequest,
+    LlmBenchmarkRunCancelResponse,
+    LlmBenchmarkRunRequest,
+    LlmBenchmarkRunStartResponse,
+    LlmBenchmarkRunStatusResponse,
     LlmBenchmarkResponse,
     LlmInferenceRequest,
     LlmInferenceResponse,
@@ -55,6 +59,39 @@ def run_smoke_benchmark(request: LlmSmokeBenchmarkRequest) -> LlmSmokeBenchmarkR
         raise HTTPException(status_code=404, detail=str(exc))
     except LlmInferenceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+@router.post("/benchmarks/runs", response_model=LlmBenchmarkRunStartResponse)
+def start_benchmark_run(request: LlmBenchmarkRunRequest) -> LlmBenchmarkRunStartResponse:
+    try:
+        payload = llm_lab_service.start_benchmark_run(
+            namespace=request.namespace,
+            workload=request.workload,
+            profile=request.profile_id,
+        )
+        return LlmBenchmarkRunStartResponse(**payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except LlmInferenceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+@router.get("/benchmarks/runs/{run_id}", response_model=LlmBenchmarkRunStatusResponse)
+def get_benchmark_run(run_id: str) -> LlmBenchmarkRunStatusResponse:
+    try:
+        payload = llm_lab_service.get_benchmark_run(run_id=run_id)
+        return LlmBenchmarkRunStatusResponse(**payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"unknown benchmark run: {run_id}")
+
+
+@router.post("/benchmarks/runs/{run_id}/cancel", response_model=LlmBenchmarkRunCancelResponse)
+def cancel_benchmark_run(run_id: str) -> LlmBenchmarkRunCancelResponse:
+    try:
+        payload = llm_lab_service.cancel_benchmark_run(run_id=run_id)
+        return LlmBenchmarkRunCancelResponse(**payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"unknown benchmark run: {run_id}")
 
 
 @router.post("/benchmarks/{profile}", response_model=LlmBenchmarkResponse)

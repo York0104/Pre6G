@@ -113,7 +113,27 @@ Feature: `Gemma 4 vLLM Serving Workload Monitoring`
 - model: `unsloth/gemma-4-E2B-it-qat-w4a16`
 - served model name: `gemma4-e2b-w4a16`
 - service port name: `http-metrics`
-- live workload query window: `60s`
+- live workload query window: `3s`
+
+### VictoriaMetrics live-query tuning
+
+針對 `LLM Serving Lab` 上方的 service-wide live observation，後續又實際比較了：
+
+- `search.latencyOffset=30s`
+- `search.latencyOffset=3s`
+- `search.latencyOffset=1s`
+- `search.latencyOffset=0s`
+
+實測結論：
+
+- `30s` 會讓所有經 `VictoriaMetrics` 查詢最新值的 workload / GPU 觀測明顯落後，不適合即時 serving observation
+- `0s` 雖可進一步縮短最新 sample lag，但在 `vLLM` 與 `cAdvisor` 類指標上較容易出現邊界抖動
+- `3s` 是目前較平衡的 live 預設值
+
+因此目前建議：
+
+- `VictoriaMetrics search.latencyOffset = 3s`
+- `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS = 3`
 
 ### Cold-start fixes found during live deploy
 
@@ -160,11 +180,22 @@ Feature: `Gemma 4 vLLM Serving Workload Monitoring`
 在成功送出多個 `chat/completions` request 後，已實際觀察到：
 
 - Pod 內 counter 從 `prompt=54 / generation=240` 增加到 `prompt=139 / generation=840`
-- VictoriaMetrics `rate(vllm:generation_tokens_total[60s]) = 10`
-- VictoriaMetrics `rate(vllm:prompt_tokens_total[60s]) = 1.4166666666666667`
+- VictoriaMetrics `rate(vllm:generation_tokens_total[3s])` 可在數秒內反映最近一次 request 的 token 輸出
+- VictoriaMetrics `rate(vllm:prompt_tokens_total[3s])` 可在數秒內反映最近一次 request 的 prompt token 輸入
 - workload API 同步回傳：
-  - `generation_tokens_per_second = 10.0`
-  - `prompt_tokens_per_second = 1.4166666666666667`
+  - `generation_tokens_per_second`
+  - `prompt_tokens_per_second`
+
+並針對 live `search.latencyOffset=3s` 進行代表性抽樣：
+
+- `vLLM generation/prompt` 最新 sample lag 約 `3.3s ~ 5.4s`
+- `DCGM GPU util / FB used` 最新 sample lag 約 `3.2s ~ 5.2s`
+- `node_exporter / cAdvisor / kube-state-metrics` 則約 `7s ~ 13s`
+
+這組結果符合目前 monitoring layer 的混合特性：
+
+- `vLLM` / `DCGM` 適合用於秒級 workload / GPU live observation
+- `node_exporter` / `cAdvisor` / `kube-state-metrics` 仍較偏 node / cluster-level 監看，而非超短事件捕捉
 
 ## Tests
 

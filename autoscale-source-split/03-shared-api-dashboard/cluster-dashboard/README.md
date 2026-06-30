@@ -33,13 +33,23 @@
 
 另外 `2026-06-27` 起，`LLM Serving Lab` 會使用 `GET /api/v1/workloads` 與 per-workload status endpoint 顯示：
 
-- `Service Overview`
-- `Live Serving Observation`
-- `Replica / Kubernetes Observation`
-- `Single Inference`
-- `Smoke Benchmark`
+- `Observation`
+  - `Service Overview`
+  - `Live Serving Observation`
+  - `Replica / Kubernetes Observation`
+- `Tasks & Runs`
+  - `Single Inference`
+  - `Controlled Request Batch`
 - fixed benchmark profiles (`Smoke` / `Steady` / `Long Context`)
-- `Run History` with filterable recent events
+- `Recent Runtime History` with filterable recent events
+
+目前這一頁的語意邊界是：
+
+- `Single Inference`：功能驗證、token usage 驗證、單次 latency 觀測
+- `Controlled Request Batch`：固定 profile 的 concurrency-limited request batch
+- 目前同時支援：
+  - 同步 batch summary
+  - background run progress polling
 
 這次 external nodes 進 dashboard 的方式是擴充 API 層，不是重寫 React 卡片元件；因此 API 更新完成後，前端重新整理頁面即可看到新節點。
 
@@ -145,10 +155,40 @@ http://<CONTROL_PLANE_IP>:4174
 - `Node`
 - `Pod Phase`
 - `Ready Condition`
-- `Last Metrics Timestamp`
 - `Single Inference` result
-- `Smoke Benchmark` result
-- recent `Run History`
+- `Target Service`
+- `Controlled Request Batch` result
+- recent `Runtime History`
+
+batch result 目前應包含：
+
+- `Run Elapsed`
+- `Request Throughput`
+- `Aggregate Prompt Throughput`
+- `Aggregate Generation Throughput`
+- `Aggregate Total Throughput`
+- `Latency P50`
+- `Latency P95`
+
+若使用 background run，頁面還會顯示：
+
+- `Live Run Progress`
+
+目前 live `LLM Serving Lab` 的 service-wide observation 建議搭配：
+
+- `vLLM /metrics` scrape interval: `1s`
+- dashboard workload polling: `1s`
+- workload rate window: `3s`
+- VictoriaMetrics `search.latencyOffset`: `3s`
+
+這組設定是目前實測下較平衡的預設值；它比原先的 `30s` 查詢偏移即時許多，又比 `0s` 更穩定。
+- `Prompt Tokens So Far`
+- `Completion Tokens So Far`
+- `Total Tokens So Far`
+- `Current Prompt TPS`
+- `Current Gen TPS`
+- `Current Total TPS`
+- run-local per-second token chart
 
 若 `Gemma 4 vLLM` 已部署且 metrics 可抓取，table 內應可看到：
 
@@ -167,6 +207,7 @@ http://<CONTROL_PLANE_IP>:4174
 - 只顯示客觀觀測值
 - 不顯示 `AVAILABLE` / `SATURATED` / capacity score
 - 不對是否應接新任務做 dashboard 級推論
+- 不在 history 保存 prompt preview；只保留 prompt metadata
 
 若 `z590-aorus-xtreme` 顯示 error，這屬於該節點本身既有監控問題，不代表 dashboard 重建失敗。
 
