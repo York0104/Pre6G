@@ -39,16 +39,16 @@
   - `Replica / Kubernetes Observation`
 - `Tasks & Runs`
   - `Single Inference`
-  - `Controlled Request Batch`
+  - `Serving Benchmark`
 - fixed benchmark profiles (`Smoke` / `Steady` / `Long Context`)
 - `Recent Runtime History` with filterable recent events
 
 目前這一頁的語意邊界是：
 
 - `Single Inference`：功能驗證、token usage 驗證、單次 latency 觀測
-- `Controlled Request Batch`：固定 profile 的 concurrency-limited request batch
+- `Serving Benchmark`：固定 profile 的官方 `vllm bench serve` serving benchmark
 - 目前同時支援：
-  - 同步 batch summary
+  - 同步 benchmark summary
   - background run progress polling
 
 這次 external nodes 進 dashboard 的方式是擴充 API 層，不是重寫 React 卡片元件；因此 API 更新完成後，前端重新整理頁面即可看到新節點。
@@ -130,6 +130,20 @@ http://<CONTROL_PLANE_IP>:5174
 http://<CONTROL_PLANE_IP>:4174
 ```
 
+若 host 內建 `node` 太舊，可直接用 repo 目前已驗證可用的 `node22` preview 腳本：
+
+```bash
+cd /home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/cluster-dashboard
+bash run_local_dashboard_preview.sh
+```
+
+這條腳本會固定使用：
+
+- `/home/icclz2/.local/node22/bin/node`
+- `/home/icclz2/.local/node22/lib/node_modules/npm/bin/npm-cli.js`
+
+因此不依賴系統預設的舊版 `npm`。
+
 ## Expected Result
 
 `Cluster Monitor` 應能顯示：
@@ -157,10 +171,10 @@ http://<CONTROL_PLANE_IP>:4174
 - `Ready Condition`
 - `Single Inference` result
 - `Target Service`
-- `Controlled Request Batch` result
+- `Serving Benchmark` result
 - recent `Runtime History`
 
-batch result 目前應包含：
+benchmark result 目前應包含：
 
 - `Run Elapsed`
 - `Request Throughput`
@@ -169,6 +183,12 @@ batch result 目前應包含：
 - `Aggregate Total Throughput`
 - `Latency P50`
 - `Latency P95`
+- `Mean TTFT`
+- `P95 TTFT`
+- `Mean TPOT`
+- `P95 TPOT`
+- `Mean ITL`
+- `P95 ITL`
 
 若使用 background run，頁面還會顯示：
 

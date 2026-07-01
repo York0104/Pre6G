@@ -238,6 +238,12 @@ type LlmSmokeBenchmarkResponse = {
   mean_prompt_tokens?: number | null;
   mean_completion_tokens?: number | null;
   mean_total_tokens?: number | null;
+  mean_ttft_seconds?: number | null;
+  p95_ttft_seconds?: number | null;
+  mean_tpot_seconds?: number | null;
+  p95_tpot_seconds?: number | null;
+  mean_itl_seconds?: number | null;
+  p95_itl_seconds?: number | null;
 };
 
 type LlmBenchmarkProgressBucket = {
@@ -333,6 +339,12 @@ type LlmRunHistoryItem = {
   mean_prompt_tokens?: number | null;
   mean_completion_tokens?: number | null;
   mean_total_tokens?: number | null;
+  mean_ttft_seconds?: number | null;
+  p95_ttft_seconds?: number | null;
+  mean_tpot_seconds?: number | null;
+  p95_tpot_seconds?: number | null;
+  mean_itl_seconds?: number | null;
+  p95_itl_seconds?: number | null;
 };
 
 type LlmRunHistoryResponse = {
@@ -346,7 +358,7 @@ const BENCHMARK_PROFILES = [
   {
     id: "smoke",
     label: "Smoke",
-    promptSource: "Fixed short prompt",
+    promptSource: "vLLM random synthetic dataset",
     maxTokens: 64,
     temperature: 0.0,
     concurrency: 1,
@@ -355,7 +367,7 @@ const BENCHMARK_PROFILES = [
   {
     id: "steady",
     label: "Steady",
-    promptSource: "Fixed medium prompt",
+    promptSource: "vLLM random synthetic dataset",
     maxTokens: 128,
     temperature: 0.0,
     concurrency: 4,
@@ -364,7 +376,7 @@ const BENCHMARK_PROFILES = [
   {
     id: "long-context",
     label: "Long Context",
-    promptSource: "Fixed long-context prompt",
+    promptSource: "vLLM random synthetic dataset",
     maxTokens: 64,
     temperature: 0.0,
     concurrency: 2,
@@ -1137,7 +1149,7 @@ function LlmServingLabPage({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [runHistory, setRunHistory] = useState<LlmRunHistoryItem[]>([]);
-  const [historyFilter, setHistoryFilter] = useState<"all" | "single_inference" | "controlled_batch">("all");
+  const [historyFilter, setHistoryFilter] = useState<"all" | "single_inference" | "benchmark">("all");
   const sortedWorkloads = [...workloads].sort((a, b) => {
     const left = `${a.namespace}/${a.workload}`;
     const right = `${b.namespace}/${b.workload}`;
@@ -1157,7 +1169,7 @@ function LlmServingLabPage({
   const filteredRunHistory = runHistory.filter((item) => {
     if (historyFilter === "all") return true;
     if (historyFilter === "single_inference") return item.event_type === "single_inference";
-    return item.event_type !== "single_inference";
+    return item.event_type === "serving_benchmark" || item.event_type === "controlled_batch";
   });
   const historySummary = {
     total: filteredRunHistory.length,
@@ -1424,9 +1436,7 @@ function LlmServingLabPage({
                     )}
                   </div>
                   <div className="mt-3 text-xs text-slate-500">
-                    Service-wide TPS uses 1 sec scrape, 1 sec dashboard polling, a {primaryDetail.query_window_seconds} sec
-                    rate window, and a VictoriaMetrics search latency offset tuned to 3 sec for balanced freshness and
-                    stability.
+                    Service-wide metrics · 1s scrape · {primaryDetail.query_window_seconds}s rate window · 3s VM offset
                   </div>
                 </div>
               </div>
@@ -1639,7 +1649,7 @@ function LlmServingLabPage({
       )}
 
       {primaryWorkload && (
-        <SectionCard title="Controlled Request Batch">
+        <SectionCard title="Serving Benchmark">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <div className="space-y-4">
               <label className="block text-sm text-slate-300">
@@ -1669,6 +1679,7 @@ function LlmServingLabPage({
                 </div>
                 <div className="space-y-2">
                   {observationLine("Profile", selectedBenchmarkProfile.label)}
+                  {observationLine("Benchmark Engine", "vllm bench serve")}
                   {observationLine("Prompt Source", selectedBenchmarkProfile.promptSource)}
                   {observationLine("Max Output Tokens", String(selectedBenchmarkProfile.maxTokens))}
                   {observationLine("Temperature", selectedBenchmarkProfile.temperature.toFixed(1))}
@@ -1693,7 +1704,7 @@ function LlmServingLabPage({
                     : "border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:border-emerald-400"
                 }`}
               >
-                {smokeLoading ? "Running Batch..." : "Start Batch Run"}
+                {smokeLoading ? "Running Benchmark..." : "Start Benchmark"}
               </button>
               {activeBenchmarkRunId ? (
                 <button
@@ -1710,7 +1721,7 @@ function LlmServingLabPage({
             <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
               {!activeBenchmarkRun && !smokeResult && !smokeError ? (
                 <div className="text-slate-400">
-                  Runs a fixed concurrent request batch for throughput, token usage, and latency verification.
+                  Runs the official `vllm bench serve` benchmark against this live serving endpoint.
                 </div>
               ) : smokeError ? (
                 <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-3 text-red-200">
@@ -1903,6 +1914,48 @@ function LlmServingLabPage({
                     "Mean Total Tokens",
                     smokeResult?.mean_total_tokens?.toFixed(1) || "N/A",
                   )}
+                  {observationLine(
+                    "Mean TTFT",
+                    smokeResult?.mean_ttft_seconds !== undefined &&
+                      smokeResult?.mean_ttft_seconds !== null
+                      ? `${smokeResult.mean_ttft_seconds.toFixed(3)} sec`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "P95 TTFT",
+                    smokeResult?.p95_ttft_seconds !== undefined &&
+                      smokeResult?.p95_ttft_seconds !== null
+                      ? `${smokeResult.p95_ttft_seconds.toFixed(3)} sec`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "Mean TPOT",
+                    smokeResult?.mean_tpot_seconds !== undefined &&
+                      smokeResult?.mean_tpot_seconds !== null
+                      ? `${smokeResult.mean_tpot_seconds.toFixed(4)} sec`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "P95 TPOT",
+                    smokeResult?.p95_tpot_seconds !== undefined &&
+                      smokeResult?.p95_tpot_seconds !== null
+                      ? `${smokeResult.p95_tpot_seconds.toFixed(4)} sec`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "Mean ITL",
+                    smokeResult?.mean_itl_seconds !== undefined &&
+                      smokeResult?.mean_itl_seconds !== null
+                      ? `${smokeResult.mean_itl_seconds.toFixed(4)} sec`
+                      : "N/A",
+                  )}
+                  {observationLine(
+                    "P95 ITL",
+                    smokeResult?.p95_itl_seconds !== undefined &&
+                      smokeResult?.p95_itl_seconds !== null
+                      ? `${smokeResult.p95_itl_seconds.toFixed(4)} sec`
+                      : "N/A",
+                  )}
                 </div>
                 </div>
               )}
@@ -1917,19 +1970,17 @@ function LlmServingLabPage({
             <div className="grid gap-3 sm:grid-cols-3">
               <SummaryCard label="Visible Entries" value={historySummary.total.toString()} tone="blue" />
               <SummaryCard label="Inferences" value={historySummary.inferenceCount.toString()} tone="green" />
-              <SummaryCard label="Batch Runs" value={historySummary.benchmarkCount.toString()} tone="orange" />
+              <SummaryCard label="Benchmarks" value={historySummary.benchmarkCount.toString()} tone="orange" />
             </div>
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/45 p-3">
               {[
                 { id: "all", label: "All Events" },
                 { id: "single_inference", label: "Inference Only" },
-                { id: "controlled_batch", label: "Batch Runs Only" },
+                { id: "benchmark", label: "Benchmarks Only" },
               ].map((option) => (
                 <button
                   key={option.id}
-                  onClick={() =>
-                    setHistoryFilter(option.id as "all" | "single_inference" | "controlled_batch")
-                  }
+                  onClick={() => setHistoryFilter(option.id as "all" | "single_inference" | "benchmark")}
                   className={`rounded-full border px-3 py-1.5 text-xs transition ${
                     historyFilter === option.id
                       ? "border-sky-500/40 bg-sky-500/20 text-sky-200"
@@ -1968,12 +2019,12 @@ function LlmServingLabPage({
                             : "border-orange-500/30 bg-orange-500/10 text-orange-200"
                         }`}
                       >
-                        {item.event_type === "single_inference" ? "Inference" : "Batch"}
+                        {item.event_type === "single_inference" ? "Inference" : "Benchmark"}
                       </span>
                       <div className="font-medium text-slate-100">
                         {item.event_type === "single_inference"
                           ? "Single Inference"
-                          : item.profile || "Controlled Request Batch"}
+                          : item.profile || "Serving Benchmark"}
                       </div>
                     </div>
                     <div className="text-xs text-slate-500">

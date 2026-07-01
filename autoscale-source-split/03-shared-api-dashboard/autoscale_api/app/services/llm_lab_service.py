@@ -2,7 +2,7 @@ import os
 import time
 import json
 import hashlib
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event, Lock, Thread
@@ -26,43 +26,39 @@ class _BenchmarkProfile(dict):
 
 
 class LlmLabService:
-    SHORT_PROMPT = "Explain CPU RAM and GPU VRAM in three short bullet points."
-    MEDIUM_PROMPT = (
-        "Summarize how CPU RAM, GPU VRAM, and storage differ for AI workloads. "
-        "Include one practical example for inference serving."
-    )
-    LONG_CONTEXT_PROMPT = (
-        "You are given a repeated systems note. Summarize the main bottlenecks for LLM serving.\n\n"
-        + ("CPU schedules data movement. GPU VRAM stores model weights and KV cache. "
-           "Long context increases prompt processing cost and KV cache pressure. " * 80)
-    )
     BENCHMARK_PROFILES: dict[str, dict[str, Any]] = {
         "smoke": {
             "display_name": "Smoke",
-            "prompt": SHORT_PROMPT,
+            "model": "unsloth/gemma-4-E2B-it-qat-w4a16",
+            "served_model_name": "gemma4-e2b-w4a16",
+            "input_len": 128,
             "max_tokens": 64,
             "temperature": 0.0,
             "concurrency": 1,
             "request_count": 20,
-            "description": "Minimal fixed profile for control-path and TPS visibility checks.",
+            "description": "Minimal official vLLM serving benchmark for control-path and TPS visibility checks.",
         },
         "steady": {
             "display_name": "Steady",
-            "prompt": MEDIUM_PROMPT,
+            "model": "unsloth/gemma-4-E2B-it-qat-w4a16",
+            "served_model_name": "gemma4-e2b-w4a16",
+            "input_len": 512,
             "max_tokens": 128,
             "temperature": 0.0,
             "concurrency": 4,
             "request_count": 30,
-            "description": "Medium prompt/output profile with closed-loop concurrent workers.",
+            "description": "Official vLLM serving benchmark with sustained concurrent requests.",
         },
         "long-context": {
             "display_name": "Long Context",
-            "prompt": LONG_CONTEXT_PROMPT,
+            "model": "unsloth/gemma-4-E2B-it-qat-w4a16",
+            "served_model_name": "gemma4-e2b-w4a16",
+            "input_len": 4096,
             "max_tokens": 64,
             "temperature": 0.0,
             "concurrency": 2,
             "request_count": 8,
-            "description": "Long prompt profile with limited concurrency to exercise context pressure.",
+            "description": "Official vLLM serving benchmark with longer prompt context pressure.",
         },
     }
 
@@ -82,7 +78,11 @@ class LlmLabService:
         self.runs_root = runtime_root / "runs"
         self.runs_root.mkdir(parents=True, exist_ok=True)
         self._run_state_lock = Lock()
-        self._active_run_controls: dict[str, Event] = {}
+        self._active_run_controls: dict[str, dict[str, Any]] = {}
+        self.kubectl_bin = os.getenv("PRE6G_KUBECTL_BIN", "kubectl").strip() or "kubectl"
+        self.benchmark_timeout_seconds = float(
+            (os.getenv("PRE6G_LLM_BENCHMARK_TIMEOUT_SECONDS", "1800").strip() or "1800")
+        )
 
     @staticmethod
     def _selector_match(labels: dict[str, Any], selector: dict[str, Any]) -> bool:
@@ -262,6 +262,154 @@ class LlmLabService:
             "error": None,
         }
 
+    def _benchmark_result_paths(self, run_id: str) -> tuple[str, str]:
+        return f"/tmp/{run_id}.json", f"/tmp/{run_id}.log"
+
+    def _build_benchmark_exec_command(
+        self,
+        *,
+        namespace: str,
+        workload: str,
+        profile_config: dict[str, Any],
+        run_id: str,
+    ) -> list[str]:
+        result_path, log_path = self._benchmark_result_paths(run_id)
+        service_url, _ = self._resolve_ready_target(namespace=namespace, workload=workload)
+        base_url = service_url.rsplit("/v1/", 1)[0]
+        model = str(profile_config["model"])
+        served_model_name = str(profile_config.get("served_model_name") or model)
+        shell_cmd = (
+            f"rm -f {result_path} {log_path}; "
+            "vllm bench serve "
+            "--backend openai-chat "
+            f"--base-url {base_url} "
+            "--endpoint /v1/chat/completions "
+            "--dataset-name random "
+            f"--model {model} "
+            f"--served-model-name {served_model_name} "
+            f"--num-prompts {int(profile_config['request_count'])} "
+            f"--input-len {int(profile_config['input_len'])} "
+            f"--output-len {int(profile_config['max_tokens'])} "
+            f"--max-concurrency {int(profile_config['concurrency'])} "
+            f"--temperature {float(profile_config['temperature'])} "
+            "--save-result "
+            "--disable-tqdm "
+            "--metric-percentiles 50,95,99 "
+            "--percentile-metrics ttft,tpot,itl,e2el "
+            "--result-dir /tmp "
+            f"--result-filename {run_id}.json "
+            f">{log_path} 2>&1"
+        )
+        return [
+            self.kubectl_bin,
+            "-n",
+            namespace,
+            "exec",
+            f"deploy/{workload}",
+            "--",
+            "/bin/bash",
+            "-lc",
+            shell_cmd,
+        ]
+
+    def _read_benchmark_result_payload(self, *, namespace: str, workload: str, run_id: str) -> dict[str, Any]:
+        result_path, _ = self._benchmark_result_paths(run_id)
+        command = [
+            self.kubectl_bin,
+            "-n",
+            namespace,
+            "exec",
+            f"deploy/{workload}",
+            "--",
+            "/bin/bash",
+            "-lc",
+            f"cat {result_path}",
+        ]
+        completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
+        if completed.returncode != 0:
+            raise LlmInferenceError(
+                502,
+                f"failed to read vLLM benchmark result: {completed.stderr.strip() or completed.stdout.strip() or 'unknown error'}",
+            )
+        try:
+            return json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise LlmInferenceError(502, "vLLM benchmark result was not valid JSON") from exc
+
+    def _build_benchmark_result_from_vllm(
+        self,
+        *,
+        namespace: str,
+        workload: str,
+        profile: str,
+        profile_config: dict[str, Any],
+        run_id: str,
+        payload: dict[str, Any],
+        started_monotonic: float,
+    ) -> dict[str, Any]:
+        payload_duration = float(payload.get("duration") or 0.0)
+        elapsed = round(payload_duration if payload_duration > 0 else max(time.time() - started_monotonic, 0.001), 3)
+        total_input_tokens = float(payload.get("total_input_tokens") or 0.0)
+        total_output_tokens = float(payload.get("total_output_tokens") or 0.0)
+        completed_requests = int(payload.get("completed") or 0)
+        p95_e2el_ms = payload.get("p95_e2el_ms")
+        p95_ttft_ms = payload.get("p95_ttft_ms")
+        p95_tpot_ms = payload.get("p95_tpot_ms")
+        p95_itl_ms = payload.get("p95_itl_ms")
+        return {
+            "schema": "pre6g.llm_benchmark.v1",
+            "ts": int(time.time()),
+            "run_id": run_id,
+            "namespace": namespace,
+            "workload": workload,
+            "profile": str(profile_config["display_name"]),
+            "profile_id": profile,
+            "request_count": int(profile_config["request_count"]),
+            "max_tokens": int(profile_config["max_tokens"]),
+            "temperature": float(profile_config["temperature"]),
+            "concurrency": int(profile_config["concurrency"]),
+            "status": "succeeded" if int(payload.get("failed") or 0) == 0 else "completed_with_errors",
+            "completed_requests": completed_requests,
+            "failed_requests": int(payload.get("failed") or 0),
+            "run_elapsed_seconds": elapsed,
+            "request_throughput_rps": round(float(payload.get("request_throughput") or 0.0), 3),
+            "aggregate_prompt_tps": round(total_input_tokens / elapsed, 3) if elapsed > 0 and total_input_tokens > 0 else 0.0,
+            "aggregate_generation_tps": round(float(payload.get("output_throughput") or 0.0), 3),
+            "aggregate_total_tps": round(float(payload.get("total_token_throughput") or 0.0), 3),
+            "latency_p50_seconds": round(float(payload.get("median_e2el_ms") or 0.0) / 1000.0, 3)
+            if payload.get("median_e2el_ms") is not None
+            else None,
+            "latency_p95_seconds": round(float(p95_e2el_ms or 0.0) / 1000.0, 3)
+            if p95_e2el_ms is not None
+            else None,
+            "mean_latency_seconds": round(float(payload.get("mean_e2el_ms") or 0.0) / 1000.0, 3)
+            if payload.get("mean_e2el_ms") is not None
+            else None,
+            "mean_prompt_tokens": round(total_input_tokens / max(completed_requests, 1), 3) if total_input_tokens > 0 else 0.0,
+            "mean_completion_tokens": round(total_output_tokens / max(completed_requests, 1), 3) if total_output_tokens > 0 else 0.0,
+            "mean_total_tokens": round((total_input_tokens + total_output_tokens) / max(completed_requests, 1), 3)
+            if (total_input_tokens + total_output_tokens) > 0
+            else 0.0,
+            "mean_ttft_seconds": round(float(payload.get("mean_ttft_ms") or 0.0) / 1000.0, 3)
+            if payload.get("mean_ttft_ms") is not None
+            else None,
+            "p95_ttft_seconds": round(float((p95_ttft_ms if p95_ttft_ms is not None else payload.get("p99_ttft_ms")) or 0.0) / 1000.0, 3)
+            if p95_ttft_ms is not None or payload.get("p99_ttft_ms") is not None
+            else None,
+            "mean_tpot_seconds": round(float(payload.get("mean_tpot_ms") or 0.0) / 1000.0, 4)
+            if payload.get("mean_tpot_ms") is not None
+            else None,
+            "p95_tpot_seconds": round(float((p95_tpot_ms if p95_tpot_ms is not None else payload.get("p99_tpot_ms")) or 0.0) / 1000.0, 4)
+            if p95_tpot_ms is not None or payload.get("p99_tpot_ms") is not None
+            else None,
+            "mean_itl_seconds": round(float(payload.get("mean_itl_ms") or 0.0) / 1000.0, 4)
+            if payload.get("mean_itl_ms") is not None
+            else None,
+            "p95_itl_seconds": round(float((p95_itl_ms if p95_itl_ms is not None else payload.get("p99_itl_ms")) or 0.0) / 1000.0, 4)
+            if p95_itl_ms is not None or payload.get("p99_itl_ms") is not None
+            else None,
+        }
+
     def _finalize_run_result(
         self,
         *,
@@ -308,6 +456,12 @@ class LlmLabService:
             "mean_prompt_tokens": self._mean(prompt_tokens),
             "mean_completion_tokens": self._mean(completion_tokens),
             "mean_total_tokens": self._mean(total_tokens),
+            "mean_ttft_seconds": None,
+            "p95_ttft_seconds": None,
+            "mean_tpot_seconds": None,
+            "p95_tpot_seconds": None,
+            "mean_itl_seconds": None,
+            "p95_itl_seconds": None,
         }
 
     def _resolve_ready_target(self, namespace: str, workload: str) -> tuple[str, str]:
@@ -464,67 +618,44 @@ class LlmLabService:
         profile_config = self.BENCHMARK_PROFILES.get(profile)
         if not profile_config:
             raise LlmInferenceError(404, f"unknown benchmark profile: {profile}")
-
-        service_url, model_name = self._resolve_ready_target(namespace=namespace, workload=workload)
         run_id = f"{profile}-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        completed = 0
-        failed = 0
         started = time.time()
-        latencies: list[Optional[float]] = []
-        prompt_tokens: list[Optional[float]] = []
-        completion_tokens: list[Optional[float]] = []
-        total_tokens: list[Optional[float]] = []
-        first_error: LlmInferenceError | None = None
-        request_count = int(profile_config["request_count"])
-        concurrency = max(1, int(profile_config["concurrency"]))
-        prompt = str(profile_config["prompt"])
-        max_tokens = int(profile_config["max_tokens"])
-        temperature = float(profile_config["temperature"])
-
-        def worker(_: int) -> dict[str, Any]:
-            return self._execute_inference_request(
-                service_url=service_url,
-                model_name=model_name,
-                prompt=prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
+        command = self._build_benchmark_exec_command(
+            namespace=namespace,
+            workload=workload,
+            profile_config=profile_config,
+            run_id=run_id,
+        )
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=self.benchmark_timeout_seconds,
+        )
+        if completed.returncode != 0:
+            raise LlmInferenceError(
+                502,
+                f"vLLM bench serve failed: {completed.stderr.strip() or completed.stdout.strip() or f'exit code {completed.returncode}'}",
             )
-
-        with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            futures = [executor.submit(worker, index) for index in range(request_count)]
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    completed += 1
-                    latencies.append(result.get("latency_seconds"))
-                    prompt_tokens.append(result.get("prompt_tokens"))
-                    completion_tokens.append(result.get("completion_tokens"))
-                    total_tokens.append(result.get("total_tokens"))
-                except LlmInferenceError as exc:
-                    failed += 1
-                    if first_error is None:
-                        first_error = exc
-
-        if completed == 0 and first_error is not None:
-            raise first_error
-        result = self._finalize_run_result(
+        result_payload = self._read_benchmark_result_payload(
+            namespace=namespace,
+            workload=workload,
+            run_id=run_id,
+        )
+        result = self._build_benchmark_result_from_vllm(
             namespace=namespace,
             workload=workload,
             profile=profile,
             profile_config=profile_config,
             run_id=run_id,
-            completed=completed,
-            failed=failed,
+            payload=result_payload,
             started_monotonic=started,
-            latencies=latencies,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
         )
         self._append_history(
             {
                 "ts": result["ts"],
-                "event_type": "controlled_batch",
+                "event_type": "serving_benchmark",
                 "namespace": namespace,
                 "workload": workload,
                 "status": result["status"],
@@ -546,6 +677,12 @@ class LlmLabService:
                 "mean_prompt_tokens": result["mean_prompt_tokens"],
                 "mean_completion_tokens": result["mean_completion_tokens"],
                 "mean_total_tokens": result["mean_total_tokens"],
+                "mean_ttft_seconds": result["mean_ttft_seconds"],
+                "p95_ttft_seconds": result["p95_ttft_seconds"],
+                "mean_tpot_seconds": result["mean_tpot_seconds"],
+                "p95_tpot_seconds": result["p95_tpot_seconds"],
+                "mean_itl_seconds": result["mean_itl_seconds"],
+                "p95_itl_seconds": result["p95_itl_seconds"],
             }
         )
         return result
@@ -567,7 +704,7 @@ class LlmLabService:
         self._write_run_state(run_id, state)
         cancel_event = Event()
         with self._run_state_lock:
-            self._active_run_controls[run_id] = cancel_event
+            self._active_run_controls[run_id] = {"cancel_event": cancel_event, "process": None}
 
         thread = Thread(
             target=self._run_benchmark_background,
@@ -608,72 +745,71 @@ class LlmLabService:
         state["started_ts"] = int(time.time())
         self._write_run_state(run_id, state)
 
-        completed = 0
-        failed = 0
-        latencies: list[Optional[float]] = []
-        prompt_tokens: list[Optional[float]] = []
-        completion_tokens: list[Optional[float]] = []
-        total_tokens: list[Optional[float]] = []
-        first_error: LlmInferenceError | None = None
-
         try:
-            service_url, model_name = self._resolve_ready_target(namespace=namespace, workload=workload)
-            request_count = int(profile_config["request_count"])
-            concurrency = max(1, int(profile_config["concurrency"]))
-            prompt = str(profile_config["prompt"])
-            max_tokens = int(profile_config["max_tokens"])
-            temperature = float(profile_config["temperature"])
+            command = self._build_benchmark_exec_command(
+                namespace=namespace,
+                workload=workload,
+                profile_config=profile_config,
+                run_id=run_id,
+            )
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            with self._run_state_lock:
+                control = self._active_run_controls.get(run_id)
+                if control is not None:
+                    control["process"] = process
 
-            def worker(_: int) -> dict[str, Any]:
+            while True:
+                state = self._read_run_state(run_id)
                 if cancel_event.is_set():
-                    raise LlmInferenceError(499, "benchmark run cancelled")
-                return self._execute_inference_request(
-                    service_url=service_url,
-                    model_name=model_name,
-                    prompt=prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
-
-            with ThreadPoolExecutor(max_workers=concurrency) as executor:
-                futures = [executor.submit(worker, index) for index in range(request_count)]
-                for future in as_completed(futures):
-                    state = self._read_run_state(run_id)
-                    if cancel_event.is_set():
-                        state["status"] = "cancelled"
-                        state["finished_ts"] = int(time.time())
-                        self._update_run_progress(state=state, started_monotonic=started)
-                        self._write_run_state(run_id, state)
-                        return
-                    try:
-                        result = future.result()
-                        completed += 1
-                        prompt_value = float(result.get("prompt_tokens") or 0.0)
-                        completion_value = float(result.get("completion_tokens") or 0.0)
-                        total_value = float(result.get("total_tokens") or (prompt_value + completion_value))
-                        latencies.append(result.get("latency_seconds"))
-                        prompt_tokens.append(result.get("prompt_tokens"))
-                        completion_tokens.append(result.get("completion_tokens"))
-                        total_tokens.append(result.get("total_tokens"))
-                        self._update_run_progress(
-                            state=state,
-                            started_monotonic=started,
-                            completed_delta=1,
-                            prompt_tokens_delta=prompt_value,
-                            completion_tokens_delta=completion_value,
-                            total_tokens_delta=total_value,
-                        )
-                    except LlmInferenceError as exc:
-                        failed += 1
-                        if first_error is None and exc.status_code != 499:
-                            first_error = exc
-                        self._update_run_progress(
-                            state=state,
-                            started_monotonic=started,
-                            failed_delta=1,
-                        )
-                    state["ts"] = int(time.time())
+                    if process.poll() is None:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                    state["status"] = "cancelled"
+                    state["finished_ts"] = int(time.time())
+                    self._update_run_progress(state=state, started_monotonic=started)
                     self._write_run_state(run_id, state)
+                    return
+
+                workload_status = self.workloads.get_workload_status(namespace=namespace, workload=workload)
+                aggregate = workload_status.aggregate
+                self._update_run_progress(state=state, started_monotonic=started)
+                progress = state["progress"]
+                if progress["buckets"]:
+                    bucket = progress["buckets"][-1]
+                    bucket["prompt_tokens"] = self._round_metric(float(aggregate.prompt_tokens_per_second or 0.0))
+                    bucket["completion_tokens"] = self._round_metric(
+                        float(aggregate.generation_tokens_per_second or 0.0)
+                    )
+                    bucket["total_tokens"] = self._round_metric(
+                        float(aggregate.prompt_tokens_per_second or 0.0)
+                        + float(aggregate.generation_tokens_per_second or 0.0)
+                    )
+                    progress["current_prompt_tps"] = bucket["prompt_tokens"]
+                    progress["current_generation_tps"] = bucket["completion_tokens"]
+                    progress["current_total_tps"] = bucket["total_tokens"]
+                    progress["current_request_throughput_rps"] = self._round_metric(
+                        progress["completed_requests"] / max(progress["elapsed_seconds"], 1.0)
+                    )
+                state["ts"] = int(time.time())
+                self._write_run_state(run_id, state)
+
+                if process.poll() is not None:
+                    if process.returncode != 0:
+                        stderr_text = (process.stderr.read() or "").strip() if process.stderr else ""
+                        raise LlmInferenceError(
+                            502,
+                            f"vLLM bench serve failed: {stderr_text or f'exit code {process.returncode}'}",
+                        )
+                    break
+                time.sleep(1.0)
         except Exception as exc:
             state = self._read_run_state(run_id)
             state["status"] = "failed"
@@ -685,30 +821,19 @@ class LlmLabService:
                 self._active_run_controls.pop(run_id, None)
             return
 
-        if completed == 0 and first_error is not None:
-            state = self._read_run_state(run_id)
-            state["status"] = "failed"
-            state["finished_ts"] = int(time.time())
-            state["error"] = first_error.detail
-            self._update_run_progress(state=state, started_monotonic=started)
-            self._write_run_state(run_id, state)
-            with self._run_state_lock:
-                self._active_run_controls.pop(run_id, None)
-            return
-
-        result = self._finalize_run_result(
+        result_payload = self._read_benchmark_result_payload(
+            namespace=namespace,
+            workload=workload,
+            run_id=run_id,
+        )
+        result = self._build_benchmark_result_from_vllm(
             namespace=namespace,
             workload=workload,
             profile=profile,
             profile_config=profile_config,
             run_id=run_id,
-            completed=completed,
-            failed=failed,
+            payload=result_payload,
             started_monotonic=started,
-            latencies=latencies,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
         )
         state = self._read_run_state(run_id)
         state["status"] = result["status"]
@@ -716,12 +841,23 @@ class LlmLabService:
         state["result"] = result
         state["error"] = None
         self._update_run_progress(state=state, started_monotonic=started)
+        state["progress"]["completed_requests"] = int(result["completed_requests"])
+        state["progress"]["failed_requests"] = int(result["failed_requests"])
+        state["progress"]["prompt_tokens_so_far"] = self._round_metric(float(result_payload.get("total_input_tokens") or 0.0))
+        state["progress"]["completion_tokens_so_far"] = self._round_metric(float(result_payload.get("total_output_tokens") or 0.0))
+        state["progress"]["total_tokens_so_far"] = self._round_metric(
+            float(result_payload.get("total_input_tokens") or 0.0) + float(result_payload.get("total_output_tokens") or 0.0)
+        )
+        state["progress"]["current_request_throughput_rps"] = self._round_metric(float(result["request_throughput_rps"] or 0.0))
+        state["progress"]["current_prompt_tps"] = self._round_metric(float(result["aggregate_prompt_tps"] or 0.0))
+        state["progress"]["current_generation_tps"] = self._round_metric(float(result["aggregate_generation_tps"] or 0.0))
+        state["progress"]["current_total_tps"] = self._round_metric(float(result["aggregate_total_tps"] or 0.0))
         state["ts"] = int(time.time())
         self._write_run_state(run_id, state)
         self._append_history(
             {
                 "ts": result["ts"],
-                "event_type": "controlled_batch",
+                "event_type": "serving_benchmark",
                 "namespace": namespace,
                 "workload": workload,
                 "status": result["status"],
@@ -743,6 +879,12 @@ class LlmLabService:
                 "mean_prompt_tokens": result["mean_prompt_tokens"],
                 "mean_completion_tokens": result["mean_completion_tokens"],
                 "mean_total_tokens": result["mean_total_tokens"],
+                "mean_ttft_seconds": result["mean_ttft_seconds"],
+                "p95_ttft_seconds": result["p95_ttft_seconds"],
+                "mean_tpot_seconds": result["mean_tpot_seconds"],
+                "p95_tpot_seconds": result["p95_tpot_seconds"],
+                "mean_itl_seconds": result["mean_itl_seconds"],
+                "p95_itl_seconds": result["p95_itl_seconds"],
             }
         )
         with self._run_state_lock:
@@ -759,8 +901,8 @@ class LlmLabService:
 
     def cancel_benchmark_run(self, *, run_id: str) -> dict[str, Any]:
         with self._run_state_lock:
-            cancel_event = self._active_run_controls.get(run_id)
-        if cancel_event is None:
+            control = self._active_run_controls.get(run_id)
+        if control is None:
             state = self._read_run_state(run_id)
             return {
                 "schema": "pre6g.llm_benchmark_run_cancel.v1",
@@ -768,7 +910,12 @@ class LlmLabService:
                 "run_id": run_id,
                 "status": str(state.get("status") or "unknown"),
             }
-        cancel_event.set()
+        cancel_event = control.get("cancel_event")
+        if cancel_event is not None:
+            cancel_event.set()
+        process = control.get("process")
+        if process is not None and getattr(process, "poll", None) and process.poll() is None:
+            process.terminate()
         return {
             "schema": "pre6g.llm_benchmark_run_cancel.v1",
             "ts": int(time.time()),

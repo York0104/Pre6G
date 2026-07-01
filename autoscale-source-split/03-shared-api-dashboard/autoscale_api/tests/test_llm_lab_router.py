@@ -95,7 +95,7 @@ class LlmLabRouterTests(unittest.TestCase):
             "items": [
                 {
                     "ts": 1710000002,
-                    "event_type": "controlled_batch",
+                    "event_type": "serving_benchmark",
                     "namespace": "ai-serving",
                     "workload": "gemma4-e2b-vllm",
                     "status": "succeeded",
@@ -110,7 +110,7 @@ class LlmLabRouterTests(unittest.TestCase):
                 limit=20,
             )
         self.assertEqual(response.count, 1)
-        self.assertEqual(response.items[0].event_type, "controlled_batch")
+        self.assertEqual(response.items[0].event_type, "serving_benchmark")
 
     def test_start_benchmark_run_route_returns_payload(self) -> None:
         payload = {

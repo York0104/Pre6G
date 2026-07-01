@@ -16,7 +16,7 @@
 目前 `autoscale_api` 不再只是純 read-only node/workload observation API，也承接受限的 `LLM Lab` request proxy：
 
 - read-only observation：node / workload / experiment status
-- controlled side effects：single inference、fixed concurrent batch
+- controlled side effects：single inference、official serving benchmark trigger
 - lightweight runtime history：近期操作紀錄查詢
 
 本 README 以目前已驗證的 `monitoring + cluster monitor` 主線為主，並補充 `2026-06-24` 完成的 `Fan-Cycle Experiment` host-side rebuild 狀態。
@@ -147,21 +147,17 @@ response:
 
 ### `/api/v1/llm-lab/benchmarks/smoke`
 
-`2026-06-27` 新增固定 profile 的最小 benchmark API。
-
-目前更精確的語意是：
-
-- `Controlled Request Batch`
-- fixed profile
-- concurrency-limited request runner
-- synchronous response path，非 background job
+`2026-07-01` 起，這條路由已改為官方 `vllm bench serve` 的同步 benchmark proxy。
 
 目前 profile 固定為：
 
-- prompt: fixed short prompt
-- max output tokens: `64`
-- temperature: `0.0`
-- concurrency: `1`
+- benchmark engine: `vllm bench serve`
+- dataset: `random`
+- model: `unsloth/gemma-4-E2B-it-qat-w4a16`
+- served model name: `gemma4-e2b-w4a16`
+- input length: `128`
+- output length: `64`
+- max concurrency: `1`
 - request count: `20`
 
 response summary:
@@ -181,6 +177,12 @@ response summary:
 - `mean_prompt_tokens`
 - `mean_completion_tokens`
 - `mean_total_tokens`
+- `mean_ttft_seconds`
+- `p95_ttft_seconds`
+- `mean_tpot_seconds`
+- `p95_tpot_seconds`
+- `mean_itl_seconds`
+- `p95_itl_seconds`
 
 ### `/api/v1/llm-lab/benchmarks/{profile}`
 
@@ -190,12 +192,12 @@ response summary:
 - `steady`
 - `long-context`
 
-目前採同步回結果的 concurrent runner：
+目前採同步回結果的官方 serving benchmark：
 
 - 使用固定 profile
-- 使用 `ThreadPoolExecutor` 依 profile `concurrency` 送出 request
-- 同一個 API call 會等待整批完成後回 summary
-- 還不是可取消的 background job runner
+- 由 `autoscale_api` 透過 `kubectl exec` 在目標 vLLM deployment 內執行 `vllm bench serve`
+- 同一個 API call 會等待該 benchmark 完成後回 summary
+- 適合小型、固定 profile 的同步基線測試
 
 ### `/api/v1/llm-lab/benchmarks/runs`
 
@@ -226,7 +228,7 @@ response summary:
 - `current_total_tps`
 - `buckets`
 
-其中 `buckets` 是 run-local per-second token usage：
+其中 `buckets` 是 benchmark run-local per-second progress bucket：
 
 - `second`
 - `prompt_tokens`
@@ -237,13 +239,13 @@ response summary:
 
 用途：
 
-- 在固定條件下比較不同 prompt/output profile
+- 在固定條件下比較不同 serving benchmark profile
 - 建立初步 serving baseline
 - 讓 `Run History` 能保留不同 profile 的摘要
 
 ### `/api/v1/llm-lab/history`
 
-`Run History v2` 會把 `Single Inference` 與 fixed concurrent batch 摘要 append 到本機 `jsonl`，並提供最近紀錄查詢。
+`Run History v2` 會把 `Single Inference` 與 `Serving Benchmark` 摘要 append 到本機 `jsonl`，並提供最近紀錄查詢。
 
 query params:
 
@@ -254,7 +256,7 @@ query params:
 用途：
 
 - 顯示近期 LLM Lab 操作紀錄
-- 區分 `single_inference` 與 `controlled_batch`
+- 區分 `single_inference` 與 `serving_benchmark`
 - 區分不同 benchmark profile
 - 回傳最近的 latency / token / throughput summary
 

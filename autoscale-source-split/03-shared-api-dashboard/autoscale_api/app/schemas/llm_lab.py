@@ -69,6 +69,12 @@ class LlmBenchmarkResponse(BaseModel):
     mean_prompt_tokens: Optional[float] = None
     mean_completion_tokens: Optional[float] = None
     mean_total_tokens: Optional[float] = None
+    mean_ttft_seconds: Optional[float] = None
+    p95_ttft_seconds: Optional[float] = None
+    mean_tpot_seconds: Optional[float] = None
+    p95_tpot_seconds: Optional[float] = None
+    mean_itl_seconds: Optional[float] = None
+    p95_itl_seconds: Optional[float] = None
 
 
 class LlmRunHistoryItem(BaseModel):

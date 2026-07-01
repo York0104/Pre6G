@@ -5,16 +5,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-4174}"
 NODE22_BIN="${NODE22_BIN:-/home/icclz2/.local/node22/bin}"
+NODE22_ROOT="${NODE22_ROOT:-/home/icclz2/.local/node22}"
 
 export PATH="${NODE22_BIN}:$PATH"
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "[ERROR] node is not installed on this machine." >&2
+NODE_BIN="${NODE_BIN:-$NODE22_BIN/node}"
+NPM_CLI_JS="${NPM_CLI_JS:-$NODE22_ROOT/lib/node_modules/npm/bin/npm-cli.js}"
+
+npm_cmd() {
+  "$NODE_BIN" "$NPM_CLI_JS" "$@"
+}
+
+if [[ ! -x "$NODE_BIN" ]]; then
+  echo "[ERROR] node runtime not found: $NODE_BIN" >&2
   exit 1
 fi
 
-if ! command -v npm >/dev/null 2>&1; then
-  echo "[ERROR] npm is not installed on this machine." >&2
+if [[ ! -f "$NPM_CLI_JS" ]]; then
+  echo "[ERROR] npm cli not found: $NPM_CLI_JS" >&2
   exit 1
 fi
 
@@ -29,13 +37,11 @@ fi
 
 if [[ ! -d node_modules ]]; then
   echo "==> installing frontend dependencies"
-  npm install
+  npm_cmd install
 fi
 
-if [[ ! -d dist ]]; then
-  echo "==> building frontend"
-  npm run build
-fi
+echo "==> building frontend"
+npm_cmd run build
 
 cat > dist/env-config.js <<EOF
 window.__PRE6G_DASHBOARD_CONFIG__ = {
@@ -44,4 +50,4 @@ window.__PRE6G_DASHBOARD_CONFIG__ = {
 };
 EOF
 
-exec npm run preview -- --host "$HOST" --port "$PORT"
+exec "$NODE_BIN" "$NPM_CLI_JS" run preview -- --host "$HOST" --port "$PORT"

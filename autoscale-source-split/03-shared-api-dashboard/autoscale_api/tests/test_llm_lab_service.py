@@ -1,9 +1,9 @@
-import unittest
-from unittest.mock import patch
-from pathlib import Path
 import tempfile
 import threading
 import time
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 import requests
 
@@ -40,7 +40,7 @@ class FakeWorkloadStatusService:
             schema="pre6g.workload_status.v1",
             ts=1710000001,
             freshness_seconds=0.2,
-            query_window_seconds=10,
+            query_window_seconds=3,
             metrics_observed_ts=1710000001,
             scrape_source="vmagent -> VictoriaMetrics",
             status="ready" if self.ready > 0 else "not_ready",
@@ -69,15 +69,15 @@ class FakeWorkloadStatusService:
                     ready_condition=self.ready > 0,
                     metrics_observed_ts=1710000001,
                     metrics_freshness_seconds=0.2,
-                    generation_tokens_per_second=0.0,
-                    prompt_tokens_per_second=0.0,
+                    generation_tokens_per_second=32.0,
+                    prompt_tokens_per_second=8.0,
                     waiting_requests=0.0,
                     kv_cache_usage_percent=0.0,
                 )
             ],
             aggregate=WorkloadAggregateMetrics(
-                generation_tokens_per_second=0.0,
-                prompt_tokens_per_second=0.0,
+                generation_tokens_per_second=32.0,
+                prompt_tokens_per_second=8.0,
                 waiting_requests=0.0,
                 kv_cache_usage_percent_max=0.0,
             ),
@@ -167,49 +167,56 @@ class LlmLabServiceTests(unittest.TestCase):
 
     def test_run_smoke_benchmark_aggregates_summary(self) -> None:
         service = self._make_service()
-        with patch.object(
+        with patch.object(service, "_build_benchmark_exec_command", return_value=["kubectl", "exec", "fake"]), patch.object(
             service,
-            "_resolve_ready_target",
-            return_value=("http://10.43.227.115:8000/v1/chat/completions", "gemma4-e2b-w4a16"),
-        ), patch.object(
-            service,
-            "_execute_inference_request",
+            "_read_benchmark_result_payload",
             return_value={
-                "latency_seconds": 0.4,
-                "prompt_tokens": 20,
-                "completion_tokens": 64,
-                "total_tokens": 84,
+                "duration": 8.4,
+                "completed": 20,
+                "failed": 0,
+                "total_input_tokens": 400,
+                "total_output_tokens": 1280,
+                "request_throughput": 2.381,
+                "output_throughput": 152.381,
+                "total_token_throughput": 200.0,
+                "median_e2el_ms": 410,
+                "p95_e2el_ms": 440,
+                "mean_e2el_ms": 420,
+                "mean_ttft_ms": 150,
+                "p95_ttft_ms": 190,
+                "mean_tpot_ms": 12,
+                "p95_tpot_ms": 20,
+                "mean_itl_ms": 8,
+                "p95_itl_ms": 12,
             },
-        ):
+        ), patch("app.services.llm_lab_service.subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
             response = service.run_smoke_benchmark(
                 namespace="ai-serving",
                 workload="gemma4-e2b-vllm",
             )
+
         self.assertEqual(response["status"], "succeeded")
         self.assertEqual(response["completed_requests"], 20)
         self.assertEqual(response["failed_requests"], 0)
-        self.assertEqual(response["mean_latency_seconds"], 0.4)
+        self.assertEqual(response["mean_latency_seconds"], 0.42)
         self.assertEqual(response["mean_prompt_tokens"], 20.0)
         self.assertEqual(response["mean_completion_tokens"], 64.0)
-        self.assertGreater(response["run_elapsed_seconds"], 0)
-        self.assertGreater(response["request_throughput_rps"], 0)
-        self.assertEqual(response["aggregate_prompt_tps"] > 0, True)
-        self.assertEqual(response["aggregate_generation_tps"] > 0, True)
-        self.assertEqual(response["aggregate_total_tps"] > 0, True)
-        self.assertEqual(response["latency_p50_seconds"], 0.4)
-        self.assertEqual(response["latency_p95_seconds"], 0.4)
+        self.assertEqual(response["request_throughput_rps"], 2.381)
+        self.assertEqual(response["aggregate_prompt_tps"], 47.619)
+        self.assertEqual(response["aggregate_generation_tps"], 152.381)
+        self.assertEqual(response["aggregate_total_tps"], 200.0)
+        self.assertEqual(response["latency_p50_seconds"], 0.41)
+        self.assertEqual(response["latency_p95_seconds"], 0.44)
+        self.assertEqual(response["mean_ttft_seconds"], 0.15)
+        self.assertEqual(response["p95_ttft_seconds"], 0.19)
 
-    def test_run_smoke_benchmark_all_failures_raise_first_error(self) -> None:
+    def test_run_smoke_benchmark_failure_maps_subprocess_error(self) -> None:
         service = self._make_service()
-        with patch.object(
-            service,
-            "_resolve_ready_target",
-            return_value=("http://10.43.227.115:8000/v1/chat/completions", "gemma4-e2b-w4a16"),
-        ), patch.object(
-            service,
-            "_execute_inference_request",
-            side_effect=LlmInferenceError(502, "failed to reach vLLM"),
-        ):
+        with patch.object(service, "_build_benchmark_exec_command", return_value=["kubectl", "exec", "fake"]), patch(
+            "app.services.llm_lab_service.subprocess.run"
+        ) as mock_run:
+            mock_run.return_value = Mock(returncode=2, stdout="", stderr="bench failed")
             with self.assertRaises(LlmInferenceError) as ctx:
                 service.run_smoke_benchmark(
                     namespace="ai-serving",
@@ -217,12 +224,14 @@ class LlmLabServiceTests(unittest.TestCase):
                 )
         self.assertEqual(ctx.exception.status_code, 502)
 
-    def test_run_benchmark_profile_uses_real_concurrency(self) -> None:
+    def test_run_benchmark_profile_uses_vllm_bench_payload_mapping(self) -> None:
         service = self._make_service()
-        profile_id = "test-concurrent"
+        profile_id = "test-bench"
         service.BENCHMARK_PROFILES[profile_id] = {
-            "display_name": "Test Concurrent",
-            "prompt": "hello",
+            "display_name": "Test Bench",
+            "model": "example/model",
+            "served_model_name": "example-model",
+            "input_len": 256,
             "max_tokens": 16,
             "temperature": 0.0,
             "concurrency": 3,
@@ -230,38 +239,25 @@ class LlmLabServiceTests(unittest.TestCase):
             "description": "test profile",
         }
 
-        lock = threading.Lock()
-        active = 0
-        max_active = 0
-
-        def fake_execute_inference_request(**_: object) -> dict[str, object]:
-            nonlocal active, max_active
-            with lock:
-                active += 1
-                max_active = max(max_active, active)
-            time.sleep(0.03)
-            with lock:
-                active -= 1
-            return {
-                "http_status": 200,
-                "latency_seconds": 0.03,
-                "prompt_tokens": 10,
-                "completion_tokens": 16,
-                "total_tokens": 26,
-                "finish_reason": "stop",
-                "response_text": "ok",
-            }
-
         try:
-            with patch.object(
+            with patch.object(service, "_build_benchmark_exec_command", return_value=["kubectl", "exec", "fake"]), patch.object(
                 service,
-                "_resolve_ready_target",
-                return_value=("http://10.43.227.115:8000/v1/chat/completions", "gemma4-e2b-w4a16"),
-            ), patch.object(
-                service,
-                "_execute_inference_request",
-                side_effect=fake_execute_inference_request,
-            ):
+                "_read_benchmark_result_payload",
+                return_value={
+                    "duration": 4.0,
+                    "completed": 6,
+                    "failed": 1,
+                    "total_input_tokens": 600,
+                    "total_output_tokens": 96,
+                    "request_throughput": 1.5,
+                    "output_throughput": 24.0,
+                    "total_token_throughput": 174.0,
+                    "median_e2el_ms": 700,
+                    "p95_e2el_ms": 990,
+                    "mean_e2el_ms": 760,
+                },
+            ), patch("app.services.llm_lab_service.subprocess.run") as mock_run:
+                mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
                 response = service.run_benchmark_profile(
                     namespace="ai-serving",
                     workload="gemma4-e2b-vllm",
@@ -271,9 +267,10 @@ class LlmLabServiceTests(unittest.TestCase):
             del service.BENCHMARK_PROFILES[profile_id]
 
         self.assertEqual(response["completed_requests"], 6)
-        self.assertEqual(response["failed_requests"], 0)
+        self.assertEqual(response["failed_requests"], 1)
         self.assertEqual(response["concurrency"], 3)
-        self.assertGreaterEqual(max_active, 2)
+        self.assertEqual(response["status"], "completed_with_errors")
+        self.assertEqual(response["aggregate_prompt_tps"], 150.0)
 
     def test_get_history_returns_recent_items(self) -> None:
         service = self._make_service()
@@ -291,7 +288,7 @@ class LlmLabServiceTests(unittest.TestCase):
             service._append_history(
                 {
                     "ts": 1710000002,
-                    "event_type": "controlled_batch",
+                    "event_type": "serving_benchmark",
                     "namespace": "ai-serving",
                     "workload": "gemma4-e2b-vllm",
                     "status": "succeeded",
@@ -299,25 +296,30 @@ class LlmLabServiceTests(unittest.TestCase):
             )
             history = service.get_history(namespace="ai-serving", workload="gemma4-e2b-vllm", limit=10)
         self.assertEqual(history["count"], 2)
-        self.assertEqual(history["items"][0]["event_type"], "controlled_batch")
+        self.assertEqual(history["items"][0]["event_type"], "serving_benchmark")
 
     def test_start_benchmark_run_exposes_progress_and_result(self) -> None:
         service = self._make_service()
+        mock_process = Mock()
+        mock_process.poll.side_effect = [None, 0]
+        mock_process.returncode = 0
+        mock_process.stderr = None
         with patch.object(
             service,
             "_resolve_ready_target",
             return_value=("http://10.43.227.115:8000/v1/chat/completions", "gemma4-e2b-w4a16"),
-        ), patch.object(
+        ), patch("app.services.llm_lab_service.subprocess.Popen", return_value=mock_process), patch.object(
             service,
-            "_execute_inference_request",
+            "_read_benchmark_result_payload",
             return_value={
-                "http_status": 200,
-                "latency_seconds": 0.01,
-                "prompt_tokens": 10,
-                "completion_tokens": 16,
-                "total_tokens": 26,
-                "finish_reason": "stop",
-                "response_text": "ok",
+                "duration": 1.2,
+                "completed": 20,
+                "failed": 0,
+                "total_input_tokens": 400,
+                "total_output_tokens": 1280,
+                "request_throughput": 16.7,
+                "output_throughput": 1066.7,
+                "total_token_throughput": 1400.0,
             },
         ):
             started = service.start_benchmark_run(
@@ -335,7 +337,7 @@ class LlmLabServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["run_id"], run_id)
         self.assertIn(snapshot["status"], {"succeeded", "completed_with_errors"})
         self.assertIsNotNone(snapshot["result"])
-        self.assertGreaterEqual(snapshot["progress"]["completed_requests"], 1)
+        self.assertGreaterEqual(snapshot["progress"]["prompt_tokens_so_far"], 400.0)
 
     def test_cancel_benchmark_run_marks_cancelling(self) -> None:
         service = self._make_service()
@@ -349,11 +351,14 @@ class LlmLabServiceTests(unittest.TestCase):
         )
         service._write_run_state(run_id, state)
         cancel_event = threading.Event()
+        mock_process = Mock()
+        mock_process.poll.return_value = None
         with service._run_state_lock:
-            service._active_run_controls[run_id] = cancel_event
+            service._active_run_controls[run_id] = {"cancel_event": cancel_event, "process": mock_process}
         response = service.cancel_benchmark_run(run_id=run_id)
         self.assertEqual(response["status"], "cancelling")
         self.assertTrue(cancel_event.is_set())
+        mock_process.terminate.assert_called_once()
 
     def test_update_run_progress_fills_missing_seconds_with_zero_buckets(self) -> None:
         service = self._make_service()
