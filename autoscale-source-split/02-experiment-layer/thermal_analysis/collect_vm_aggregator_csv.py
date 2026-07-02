@@ -57,12 +57,39 @@ def run_aggregator(aggregator_path, env):
         return None, f"json_parse_error={e}; stdout_head={text[:500]}"
 
 
+def pop_vm_query_samples(data):
+    if not isinstance(data, dict):
+        return []
+    debug = data.get("_debug")
+    if not isinstance(debug, dict):
+        return []
+    samples = debug.pop("vm_query_samples", [])
+    return samples if isinstance(samples, list) else []
+
+
+def append_vm_query_samples(out_path, collector_row, samples):
+    if not samples:
+        return
+    item = {
+        "ts": collector_row["ts"],
+        "collector_elapsed_s": collector_row["collector_elapsed_s"],
+        "collector_ok": collector_row["collector_ok"],
+        "monitor_node": collector_row["monitor_node"],
+        "monitor_namespace": collector_row["monitor_namespace"],
+        "samples": samples,
+    }
+    with out_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(item, ensure_ascii=False, separators=(",", ":")))
+        f.write("\n")
+
+
 def write_rows(out_path, rows, all_fields):
     fixed_fields = [
         "ts",
         "collector_elapsed_s",
         "collector_ok",
         "collector_error",
+        "collector_extra_fields_dropped",
         "monitor_node",
         "monitor_namespace",
     ]
@@ -89,11 +116,23 @@ def main():
     ap.add_argument("--netdata-parent-base-url", default="")
     ap.add_argument("--node-exporter-instance", default="")
     ap.add_argument("--mode", default="fast")
+    ap.add_argument(
+        "--vm-query-samples-out",
+        default="",
+        help="optional JSONL sidecar for per-query VM sample timestamps/ages",
+    )
     args = ap.parse_args()
 
     aggregator_path = Path(args.aggregator).expanduser().resolve()
     out_path = Path(args.out).expanduser().resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    samples_out_path = (
+        Path(args.vm_query_samples_out).expanduser().resolve()
+        if args.vm_query_samples_out
+        else out_path.with_name(f"{out_path.stem}.vm_query_samples.jsonl")
+    )
+    samples_out_path.parent.mkdir(parents=True, exist_ok=True)
+    samples_out_path.write_text("", encoding="utf-8")
 
     env = os.environ.copy()
     env["NODE"] = args.node
@@ -112,49 +151,78 @@ def main():
         env["NODE_EXPORTER_INSTANCE"] = args.node_exporter_instance
 
     start = time.time()
-    rows = []
-    all_fields = set()
+    csv_fp = None
+    writer = None
+    fields = None
+    row_count = 0
 
     print("[INFO] collect vm aggregator")
     print(f"[INFO] aggregator={aggregator_path}")
     print(f"[INFO] out={out_path}")
+    print(f"[INFO] vm_query_samples_out={samples_out_path}")
     print(f"[INFO] seconds={args.seconds}, interval={args.interval}")
     print(
         f"[INFO] NODE={env.get('NODE')}, "
         f"NAMESPACE={env.get('NAMESPACE')}, VM_URL={env.get('VM_URL', '')}"
     )
 
-    while True:
-        t0 = time.time()
-        ts = now_iso()
+    try:
+        while True:
+            t0 = time.time()
+            ts = now_iso()
 
-        data, err = run_aggregator(aggregator_path, env)
+            data, err = run_aggregator(aggregator_path, env)
 
-        row = {
-            "ts": ts,
-            "collector_elapsed_s": round(t0 - start, 3),
-            "collector_ok": 1 if err is None else 0,
-            "collector_error": "" if err is None else err,
-            "monitor_node": args.node,
-            "monitor_namespace": args.namespace,
-        }
+            row = {
+                "ts": ts,
+                "collector_elapsed_s": round(t0 - start, 3),
+                "collector_ok": 1 if err is None else 0,
+                "collector_error": "" if err is None else err,
+                "collector_extra_fields_dropped": 0,
+                "monitor_node": args.node,
+                "monitor_namespace": args.namespace,
+            }
 
-        if data is not None:
-            flat = flatten(data)
-            for k, v in flat.items():
-                row[f"vmagg.{k}"] = v
+            if data is not None:
+                vm_query_samples = pop_vm_query_samples(data)
+                append_vm_query_samples(samples_out_path, row, vm_query_samples)
+                row["vmagg._debug.vm_query_samples_count"] = len(vm_query_samples)
+                row["vmagg._debug.vm_query_samples_sidecar"] = str(samples_out_path)
+                flat = flatten(data)
+                for k, v in flat.items():
+                    row[f"vmagg.{k}"] = v
 
-        rows.append(row)
-        all_fields.update(row.keys())
-        write_rows(out_path, rows, all_fields)
+            if writer is None:
+                fixed_fields = [
+                    "ts",
+                    "collector_elapsed_s",
+                    "collector_ok",
+                    "collector_error",
+                    "collector_extra_fields_dropped",
+                    "monitor_node",
+                    "monitor_namespace",
+                ]
+                fields = fixed_fields + sorted(k for k in row.keys() if k not in fixed_fields)
+                csv_fp = out_path.open("w", newline="", encoding="utf-8")
+                writer = csv.DictWriter(csv_fp, fieldnames=fields, extrasaction="ignore")
+                writer.writeheader()
 
-        if time.time() - start >= args.seconds:
-            break
+            extras = set(row.keys()) - set(fields)
+            row["collector_extra_fields_dropped"] = len(extras)
+            writer.writerow(row)
+            csv_fp.flush()
+            row_count += 1
 
-        sleep_s = max(0.0, args.interval - (time.time() - t0))
-        time.sleep(sleep_s)
+            if time.time() - start >= args.seconds:
+                break
 
-    print(f"[OK] wrote {len(rows)} rows to {out_path}")
+            sleep_s = max(0.0, args.interval - (time.time() - t0))
+            time.sleep(sleep_s)
+    finally:
+        if csv_fp is not None:
+            csv_fp.close()
+
+    print(f"[OK] wrote {row_count} rows to {out_path}")
 
 
 if __name__ == "__main__":

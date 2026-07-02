@@ -26,6 +26,34 @@ Control plane IP: `140.113.179.9`
   - `autoscale_api` 新增 workload schema / adapter / router
   - dashboard 新增 `LLM Workloads` 區塊
   - live Pod `/metrics` 與 VictoriaMetrics 中的 `vllm:*` 指標已確認存在
+  - live `autoscale-api` hostPath deployment 已重啟套用 workload API
+  - live `GET /api/v1/workloads` 與 `/api/v1/workloads/ai-serving/gemma4-e2b-vllm/status` 已驗證可用
+  - 成功送出 inference request 後，live workload API 已回傳非零 TPS
+- `2026-07-02` 已完成 `LLM Serving Lab` benchmark 路徑收斂：
+  - `Serving Benchmark` 正式定義為對 live `Gemma 4 vllm serve` 執行官方 `vllm bench serve`
+  - `Serving Benchmark` 對應 `Serving Capacity View`
+  - `Offline Throughput Benchmark` 正式定義為對 `icclz1` dedicated target 執行官方 `vllm bench throughput`
+  - `Offline Throughput Benchmark` 對應 `Hardware Capacity View`
+  - `icclz1` dedicated target 第一版模型已收斂為 `Qwen/Qwen2.5-1.5B-Instruct`
+  - `autoscale_api` 與 `k3s` 文檔已補齊 offline benchmark target env / RBAC / manifest
+  - dedicated target pod 已實際部署到 `icclz1`
+  - host-side `autoscale_api` / dashboard 已重啟套用新配置
+  - live `POST /api/v1/llm-lab/offline-throughput` 已實測打通 control path
+  - 目前 benchmark 真正執行仍被 `vllm/vllm-openai:v0.23.0` 對 `GTX 1080 Ti` 的 CUDA forward-compatibility 問題阻塞
+  - 因此 `GTX 1080 Ti (CC 6.1)` 已被正式排除為目前平台下的受支援 offline throughput target
+  - 後續正式路徑建議改為 `RTX 4090 dedicated benchmark target`，代價是單卡環境下 live serving 與 offline throughput 必須分時切換
+- `2026-07-02` 已完成 `KPI-A2-1 GPU thermal/load forecasting offline analysis` 第一版：
+  - `vm_aggregator` 已補上 VM instant query result sample timestamp / age audit 欄位
+  - `collect_vm_aggregator_csv.py` 已將 per-query VM sample metadata 拆到 `vm_aggregator_timeseries.vm_query_samples.jsonl` sidecar，避免主 CSV 過大
+  - 新版 fan-cycle sanity runs 已確認 `vmagg._debug.vm_query_sample_age_summary.*` 與 sidecar 正常落盤
+  - 已新增 thermal / clock / latency forecasting-first 離線分析腳本
+  - 已新增 VM 主要負載預測腳本，目標為 GPU util、VRAM usage、CPU usage、RAM usage
+  - 已新增 load residual 接續 thermal degradation early-warning bridge 實驗
+  - 目前 bridge 結論：`load_residual_only` 尚不足以 early-warning，主要可用訊號仍是 thermal / clock；`thermal_plus_load_residual` 可作為下一輪比較，但尚不能宣稱未知根因泛化
+  - 主要輸出目錄：
+    - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/offline_forecasting_analysis/`
+    - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/vm_load_forecasting_analysis/`
+    - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/load_residual_thermal_bridge_analysis/`
 
 目前仍未完成的是 external node 的真實 telemetry 恢復：
 
@@ -141,6 +169,9 @@ Control plane IP: `140.113.179.9`
 - `http://127.0.0.1:4174/` 可回應
 - `cluster-dashboard` 已以 Node 22 成功重新 build，包含新 fan-cycle control UI
 - `cluster-dashboard` 已新增 `LLM Workloads` table，顯示 workload-centric serving 指標
+- `LLM Serving Lab` 現在已明確分成：
+  - `Serving Capacity View`
+  - `Hardware Capacity View`
 
 ### 4.1 LLM workload monitoring notes
 
@@ -158,6 +189,10 @@ Control plane IP: `140.113.179.9`
 - single-GPU vLLM Pod 需要 `runtimeClassName: nvidia`
 - Gemma 4 cold start 需要 `startupProbe`
 - 單 GPU node 更新策略宜用 `Recreate`
+- live `autoscale-api` workload query window 已收斂為 `3s`
+- `Serving Benchmark` 與 `Offline Throughput Benchmark` 必須分 target：
+  - live serving pod 保留給 `vllm bench serve`
+  - offline throughput 改走 dedicated benchmark pod
 
 ### 5. External node integration status
 
@@ -378,3 +413,20 @@ Control plane IP: `140.113.179.9`
 - 恢復 RFSoC 可達性與 SSH key
 - 恢復 OpenWrt AP credentials / collectors / metrics producer
 - 視需求重跑 full-duration / multi-repeat 正式實驗批次
+## 2026-07-02 LLM Serving Lab availability fix
+
+- Symptom:
+  - `Single Inference` and `Serving Benchmark` in `LLM Serving Lab` were unavailable.
+  - `GET /api/v1/workloads` showed `gemma4-e2b-vllm` as `ready_replicas = 0`, `status = not_ready`.
+- Root cause:
+  - The `iccl-s3-251230` node currently advertises `nvidia.com/gpu.shared: 4` and `nvidia.com/gpu: 0`.
+  - The live `ai-serving/gemma4-e2b-vllm` deployment was still requesting `nvidia.com/gpu: 1`.
+  - Kubernetes therefore kept the pod in `Pending`, so `autoscale_api` correctly rejected `Single Inference` and `Serving Benchmark` with workload-not-ready behavior.
+- Live fix applied:
+  - Patched `ai-serving/gemma4-e2b-vllm` to request/limit `nvidia.com/gpu.shared: 1`.
+  - Waited for rollout to complete and verified the pod returned to `1/1 Ready` on `iccl-s3-251230`.
+- Post-fix verification:
+  - `GET /api/v1/workloads` returned `status = ready`, `ready_replicas = 1`.
+  - `POST /api/v1/llm-lab/inference` succeeded.
+  - `POST /api/v1/llm-lab/benchmarks/runs` with `profile_id = continuous` started successfully.
+  - `POST /api/v1/llm-lab/benchmarks/runs/{run_id}/cancel` reached terminal `cancelled` state cleanly.

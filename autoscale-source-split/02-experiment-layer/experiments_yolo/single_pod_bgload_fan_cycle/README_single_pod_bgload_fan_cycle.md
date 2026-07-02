@@ -78,6 +78,20 @@ CC_PASSWORD='your_coolercontrol_password' \
 bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle_loop.sh
 ```
 
+若本輪資料會用於 10-30s VM-derived telemetry early-warning，建議啟用 debug sample-age metadata：
+
+```bash
+cd /home/icclz2/Pre6G
+DEBUG_OUTPUT=1 CC_PASSWORD='your_coolercontrol_password' LOOP_GAP_SECONDS=300 \
+bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle_loop.sh
+```
+
+新版 collector 會將 VM query sample age summary 寫入 `vm_aggregator_timeseries.csv`，並將每條 PromQL query 的 sample timestamp / age 寫入 sidecar：
+
+```text
+vm_aggregator_timeseries.vm_query_samples.jsonl
+```
+
 ### Loop Smoke Test
 
 ```bash
@@ -108,6 +122,55 @@ autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_b
 - `aligned_serial_thermal.csv`
 - `thermal_cycle/worker_logs/thermal.csv`
 - `thermal_cycle/worker_logs/summary.json`
+- `vm_aggregator_timeseries.csv`
+- `vm_aggregator_timeseries.vm_query_samples.jsonl`
+- `vm_aggregator_training_features.csv`
+
+## Offline Forecasting Analysis
+
+本實驗的 forecasting-first 離線分析分三層：
+
+1. Thermal / clock / latency forecasting 與 residual anomaly：
+
+```bash
+cd /home/icclz2/Pre6G
+MPLCONFIGDIR=/tmp/matplotlib-pre6g ./iccl/bin/python \
+  autoscale-source-split/02-experiment-layer/experiments_yolo/common/offline_bgload_forecasting_analysis.py \
+  --results-root autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle \
+  --out-dir autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/offline_forecasting_analysis
+```
+
+2. VM 主要負載預測，target 為 GPU util、VRAM usage、CPU usage、RAM usage：
+
+```bash
+cd /home/icclz2/Pre6G
+MPLCONFIGDIR=/tmp/matplotlib-pre6g ./iccl/bin/python \
+  autoscale-source-split/02-experiment-layer/experiments_yolo/common/offline_vm_load_forecasting.py \
+  --results-root autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle \
+  --out-dir autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/vm_load_forecasting_analysis
+```
+
+3. Load forecast residual 接續 thermal degradation early-warning：
+
+```bash
+cd /home/icclz2/Pre6G
+MPLCONFIGDIR=/tmp/matplotlib-pre6g ./iccl/bin/python \
+  autoscale-source-split/02-experiment-layer/experiments_yolo/common/offline_load_residual_thermal_bridge.py \
+  --results-root autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle \
+  --load-dir autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/vm_load_forecasting_analysis \
+  --thermal-dir autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/offline_forecasting_analysis \
+  --out-dir autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/load_residual_thermal_bridge_analysis
+```
+
+主要分析輸出目錄：
+
+```text
+autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/offline_forecasting_analysis/
+autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/vm_load_forecasting_analysis/
+autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/load_residual_thermal_bridge_analysis/
+```
+
+目前 `2026-07-02` bridge 實驗結論：`load_residual_only` 尚不足以 early-warning，主要可用訊號仍是 thermal / clock；`thermal_plus_load_residual` 可作為後續 ablation，但仍需更多純正常高負載、不同 workload intensity 與 open-loop request 資料才能支持未知根因泛化。
 
 ## Notes
 

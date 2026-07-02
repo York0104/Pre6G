@@ -33,6 +33,14 @@
 - `scripts/run_yolo26_singlepod_rate_sweep.sh` 短版 rate sweep 已跑通
 - `scripts/run_yolo26_singlepod_async_rate_sweep.sh` 短版 async rate sweep 已跑通
 
+截至 `2026-07-02`，`single_pod_bgload_fan_cycle` 已補上 forecasting-first 離線分析路徑：
+
+- `vm_aggregator` / collector 會保存 VM query result sample timestamp / age，用於確認 VictoriaMetrics query lag 是否影響 10-30s early-warning。
+- `offline_bgload_forecasting_analysis.py` 產生 thermal / clock / latency forecasting、residual anomaly、composite service degradation early-warning 報告。
+- `offline_vm_load_forecasting.py` 先針對 GPU util、VRAM usage、CPU usage、RAM usage 做短期負載預測。
+- `offline_load_residual_thermal_bridge.py` 將負載 forecast residual 接到 thermal degradation early-warning，比較 `thermal_only`、`load_residual_only`、`thermal_plus_load_residual`。
+- 目前結果顯示 load residual 單獨不足以 early-warning；主要可用訊號仍是 GPU temperature / clock，load residual 目前應視為輔助 feature 與後續資料補強方向。
+
 ## 實驗場景
 
 ### 1. `single_pod_serial/`
@@ -172,6 +180,16 @@ cd /home/icclz2/Pre6G
 CC_PASSWORD='your_coolercontrol_password' \
 bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle_loop.sh
 ```
+
+新版 VM sample-age sanity run 建議保留 `DEBUG_OUTPUT=1`：
+
+```bash
+cd /home/icclz2/Pre6G
+DEBUG_OUTPUT=1 CC_PASSWORD='your_coolercontrol_password' LOOP_GAP_SECONDS=300 \
+bash autoscale-source-split/02-experiment-layer/experiments_yolo/single_pod_bgload_fan_cycle/run_single_pod_bgload_fan_cycle_loop.sh
+```
+
+`vm_aggregator_timeseries.csv` 會包含 `vmagg._debug.vm_query_sample_age_summary.*`；per-query metadata 會寫到同一 run 目錄的 `vm_aggregator_timeseries.vm_query_samples.jsonl`。
 
 短版 loop smoke test：
 

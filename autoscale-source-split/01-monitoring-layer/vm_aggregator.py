@@ -25,6 +25,7 @@ TRACE = os.getenv("TRACE", "0") == "1"
 DEBUG_OUTPUT = os.getenv("DEBUG_OUTPUT", "0") == "1"
 
 QCOUNT = 0
+VM_QUERY_SAMPLES: List[dict] = []
 
 NODE_EXPORTER_INSTANCE = os.getenv("NODE_EXPORTER_INSTANCE", "").strip()
 CADVISOR_SELECTOR = os.getenv("CADVISOR_SELECTOR", 'job="kubelet-cadvisor"')
@@ -690,20 +691,99 @@ def build_netdata_host_scoped_client(target_node: str) -> Tuple[NetdataClient, s
 netdata_child_local = NetdataClient(NETDATA_CHILD_URL)
 
 
+def quantile_sorted(values: List[float], p: float) -> Optional[float]:
+    if not values:
+        return None
+    xs = sorted(values)
+    if len(xs) == 1:
+        return xs[0]
+    pos = (len(xs) - 1) * p
+    lo = int(pos)
+    hi = min(lo + 1, len(xs) - 1)
+    frac = pos - lo
+    return xs[lo] * (1.0 - frac) + xs[hi] * frac
+
+
+def result_sample_timestamps(result: list) -> List[float]:
+    out = []
+    for item in result or []:
+        value = item.get("value") if isinstance(item, dict) else None
+        if not value or len(value) < 1:
+            continue
+        try:
+            out.append(float(value[0]))
+        except Exception:
+            continue
+    return out
+
+
+def record_vm_query_sample(query_index: int, promql: str, result: list, query_started_s: float, query_finished_s: float, error: str = ""):
+    sample_ts = result_sample_timestamps(result)
+    ages = [query_finished_s - ts for ts in sample_ts]
+    distinct_ts = sorted(set(round(ts, 6) for ts in sample_ts))
+    VM_QUERY_SAMPLES.append({
+        "query_index": query_index,
+        "promql": promql,
+        "query_started_s": round(query_started_s, 6),
+        "query_finished_s": round(query_finished_s, 6),
+        "query_duration_s": round(query_finished_s - query_started_s, 6),
+        "result_count": len(result or []),
+        "sample_ts_min": min(sample_ts) if sample_ts else None,
+        "sample_ts_max": max(sample_ts) if sample_ts else None,
+        "sample_age_min_s": min(ages) if ages else None,
+        "sample_age_p50_s": quantile_sorted(ages, 0.5) if ages else None,
+        "sample_age_max_s": max(ages) if ages else None,
+        "distinct_sample_ts_count": len(distinct_ts),
+        "distinct_sample_ts_head": distinct_ts[:20],
+        "distinct_sample_ts_omitted": max(0, len(distinct_ts) - 20),
+        "error": error,
+    })
+
+
+def summarize_vm_query_samples() -> dict:
+    ages = []
+    durations = []
+    no_sample = 0
+    for item in VM_QUERY_SAMPLES:
+        if item.get("sample_age_max_s") is None:
+            no_sample += 1
+        else:
+            ages.append(float(item["sample_age_max_s"]))
+        durations.append(float(item.get("query_duration_s") or 0.0))
+    return {
+        "queries_recorded": len(VM_QUERY_SAMPLES),
+        "queries_without_sample_ts": no_sample,
+        "sample_age_max_p50_s": quantile_sorted(ages, 0.5),
+        "sample_age_max_p95_s": quantile_sorted(ages, 0.95),
+        "sample_age_max_max_s": max(ages) if ages else None,
+        "query_duration_p50_s": quantile_sorted(durations, 0.5),
+        "query_duration_p95_s": quantile_sorted(durations, 0.95),
+    }
+
+
 def vm_query(promql: str):
     global QCOUNT
     QCOUNT += 1
+    query_index = QCOUNT
+    query_started_s = time.time()
     if TRACE:
         print(f"[vm_query #{QCOUNT}] {promql}")
 
     url = f"{VM_URL}/api/v1/query?" + urllib.parse.urlencode({"query": promql})
     req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=7) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=7) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        record_vm_query_sample(query_index, promql, [], query_started_s, time.time(), error=f"{type(exc).__name__}: {exc}")
+        raise
 
     if data.get("status") != "success":
+        record_vm_query_sample(query_index, promql, [], query_started_s, time.time(), error=f"non-success: {data.get('status')}")
         raise RuntimeError(f"vm_query non-success: {data}\nPROMQL={promql}\nURL={url}")
-    return data["data"].get("result", [])
+    result = data["data"].get("result", [])
+    record_vm_query_sample(query_index, promql, result, query_started_s, time.time())
+    return result
 
 
 def vm_query_optional(promql: str):
@@ -1410,7 +1490,7 @@ def collect_state_for_node(
     namespace: Optional[str] = None,
     k8s_node_name: Optional[str] = None,
 ):
-    global QCOUNT
+    global QCOUNT, VM_QUERY_SAMPLES
     if not VM_URL:
         raise RuntimeError("VM_URL is required")
 
@@ -1419,6 +1499,7 @@ def collect_state_for_node(
     target_namespace = clean_name(namespace or NAMESPACE)
 
     QCOUNT = 0
+    VM_QUERY_SAMPLES = []
     ts = int(time.time())
 
     netdata_host_scoped = None
@@ -2105,6 +2186,8 @@ def collect_state_for_node(
     output["_debug"]["target_host"] = target_host
     output["_debug"]["cadvisor_selector"] = CADVISOR_SELECTOR
     output["_debug"]["vm_query_count"] = QCOUNT
+    output["_debug"]["vm_query_sample_age_summary"] = summarize_vm_query_samples()
+    output["_debug"]["vm_query_samples"] = VM_QUERY_SAMPLES
     output["_debug"]["gpu_missing_fields"] = {
         "by_gpu": gpu_missing_by_gpu,
         "missing_on_all_gpus": gpu_missing_on_all,
@@ -2145,6 +2228,8 @@ def build_error_state(exc: Exception) -> dict:
             "observer": OBSERVER,
             "vm_url": VM_URL,
             "vm_query_count": QCOUNT,
+            "vm_query_sample_age_summary": summarize_vm_query_samples(),
+            "vm_query_samples": VM_QUERY_SAMPLES,
             "node_exporter_instance": NODE_EXPORTER_INSTANCE,
             "node_exporter_match_method": "env_override" if NODE_EXPORTER_INSTANCE else "",
             "target_host": target_host,
