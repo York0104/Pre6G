@@ -9,6 +9,7 @@ from app.schemas.llm_lab import (
     LlmBenchmarkResponse,
     LlmInferenceRequest,
     LlmInferenceResponse,
+    LlmOfflineThroughputRequest,
     LlmRunHistoryResponse,
     LlmSmokeBenchmarkRequest,
     LlmSmokeBenchmarkResponse,
@@ -101,6 +102,21 @@ def run_benchmark_profile(profile: str, request: LlmBenchmarkRequest) -> LlmBenc
             namespace=request.namespace,
             workload=request.workload,
             profile=profile,
+        )
+        return LlmBenchmarkResponse(**payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except LlmInferenceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+@router.post("/offline-throughput", response_model=LlmBenchmarkResponse)
+def run_offline_throughput(request: LlmOfflineThroughputRequest) -> LlmBenchmarkResponse:
+    try:
+        payload = llm_lab_service.run_offline_throughput_profile(
+            namespace=request.namespace,
+            workload=request.workload,
+            profile=request.profile_id,
         )
         return LlmBenchmarkResponse(**payload)
     except KeyError as exc:

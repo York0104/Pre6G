@@ -7,7 +7,7 @@ import subprocess
 import urllib.request
 import urllib.error
 
-OPENWRT = os.getenv("OPENWRT", "192.168.1.1")
+OPENWRT = os.getenv("OPENWRT", "192.168.100.112")
 AP_IFACE = os.getenv("AP_IFACE", "phy0-ap0")
 AP_NAME = os.getenv("AP_NAME", "openwrt_ap")
 SSH_KEY = os.getenv("SSH_KEY", os.path.expanduser("~/.ssh/openwrt_ap_ed25519"))

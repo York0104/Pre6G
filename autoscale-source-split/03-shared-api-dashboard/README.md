@@ -57,6 +57,9 @@
 - `Service Overview`
 - `Live Serving Observation`
 - `Replica / Kubernetes Observation`
+- `Single Inference`
+- `Serving Benchmark`
+- `Offline Throughput Benchmark`
 
 用於查看：
 
@@ -69,6 +72,35 @@
 - metrics freshness
 - runtime image
 - query window
+- service-side serving benchmark 結果
+- hardware-capacity-oriented offline throughput benchmark 結果
+
+目前 `Offline Throughput Benchmark` 的設計結論是：
+
+- 保留 live `Gemma 4` serving pod 給 `vllm bench serve`
+- `Offline Throughput Benchmark` 只應部署在受支援的 GPU/runtime 組合上
+- `GTX 1080 Ti (CC 6.1)` 已被排除為目前平台下的受支援 target
+- 若要保留完整 `k3s` 平台路徑，建議改採 `RTX 4090` dedicated benchmark target
+
+`icclz1` 這次的驗證紀錄可參考：
+
+- [docs/LLM_OFFLINE_BENCHMARK_TARGET_ICCLZ1.md](./docs/LLM_OFFLINE_BENCHMARK_TARGET_ICCLZ1.md)
+- [docs/LLM_OFFLINE_BENCHMARK_TARGET_4090.md](./docs/LLM_OFFLINE_BENCHMARK_TARGET_4090.md)
+
+目前 `LLM Serving Lab` 內兩條 benchmark 路徑的正式語意為：
+
+| UI 區塊 | 官方工具 | Target | Capacity View |
+| --- | --- | --- | --- |
+| `Serving Benchmark` | `vllm bench serve` | live `Gemma 4` serving pod | `Serving Capacity View` |
+| `Offline Throughput Benchmark` | `vllm bench throughput` | dedicated supported-GPU benchmark pod | `Hardware Capacity View` |
+
+目前 live 驗證狀態：
+
+- control path 曾被實際打通
+- dedicated target 部署曾成功驗證
+- 但 `vllm/vllm-openai:v0.23.0` 在 `GTX 1080 Ti` 上有 runtime 相容性問題
+- 因此 `1080 Ti` 已從正式 target 候選中排除
+- 在單卡環境下，若改用 `4090 dedicated target`，代價是 live serving 與 offline throughput 必須分時切換
 
 ## 目錄與檔案說明
 

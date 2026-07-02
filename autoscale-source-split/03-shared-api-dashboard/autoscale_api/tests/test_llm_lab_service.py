@@ -272,6 +272,16 @@ class LlmLabServiceTests(unittest.TestCase):
         self.assertEqual(response["status"], "completed_with_errors")
         self.assertEqual(response["aggregate_prompt_tps"], 150.0)
 
+    def test_run_offline_throughput_requires_dedicated_target_configuration(self) -> None:
+        service = self._make_service()
+        with self.assertRaises(LlmInferenceError) as ctx:
+            service.run_offline_throughput_profile(
+                namespace="ai-serving",
+                workload="gemma4-e2b-vllm",
+                profile="smoke",
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+
     def test_get_history_returns_recent_items(self) -> None:
         service = self._make_service()
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -301,7 +311,7 @@ class LlmLabServiceTests(unittest.TestCase):
     def test_start_benchmark_run_exposes_progress_and_result(self) -> None:
         service = self._make_service()
         mock_process = Mock()
-        mock_process.poll.side_effect = [None, 0]
+        mock_process.poll.side_effect = [None, 0, 0, 0, 0]
         mock_process.returncode = 0
         mock_process.stderr = None
         with patch.object(
@@ -359,6 +369,56 @@ class LlmLabServiceTests(unittest.TestCase):
         self.assertEqual(response["status"], "cancelling")
         self.assertTrue(cancel_event.is_set())
         mock_process.terminate.assert_called_once()
+
+    def test_start_continuous_benchmark_run_can_stop_and_returns_summary(self) -> None:
+        service = self._make_service()
+        mock_process = Mock()
+        poll_calls = {"count": 0}
+
+        def fake_poll():
+            poll_calls["count"] += 1
+            return None if poll_calls["count"] == 1 else 0
+
+        mock_process.poll.side_effect = fake_poll
+        mock_process.returncode = 0
+        mock_process.stderr = None
+        with patch.object(
+            service,
+            "_resolve_ready_target",
+            return_value=("http://10.43.227.115:8000/v1/chat/completions", "gemma4-e2b-w4a16"),
+        ), patch("app.services.llm_lab_service.subprocess.Popen", return_value=mock_process), patch.object(
+            service,
+            "_read_benchmark_result_payload",
+            return_value={
+                "duration": 1.0,
+                "completed": 20,
+                "failed": 0,
+                "total_input_tokens": 400,
+                "total_output_tokens": 1280,
+                "mean_e2el_ms": 250,
+                "mean_ttft_ms": 10,
+                "mean_tpot_ms": 3.5,
+                "mean_itl_ms": 3.4,
+            },
+        ):
+            started = service.start_benchmark_run(
+                namespace="ai-serving",
+                workload="gemma4-e2b-vllm",
+                profile="continuous",
+            )
+            run_id = started["run_id"]
+            time.sleep(0.1)
+            service.cancel_benchmark_run(run_id=run_id)
+            deadline = time.time() + 2.0
+            snapshot = service.get_benchmark_run(run_id=run_id)
+            while snapshot["status"] in {"queued", "running", "cancelling"} and time.time() < deadline:
+                time.sleep(0.05)
+                snapshot = service.get_benchmark_run(run_id=run_id)
+
+        self.assertEqual(snapshot["run_id"], run_id)
+        self.assertEqual(snapshot["status"], "cancelled")
+        self.assertIsNotNone(snapshot["result"])
+        self.assertGreaterEqual(snapshot["result"]["completed_requests"], 0)
 
     def test_update_run_progress_fills_missing_seconds_with_zero_buckets(self) -> None:
         service = self._make_service()

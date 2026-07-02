@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemma4-offline-bench-4090
+  namespace: ai-serving
+  labels:
+    app: gemma4-offline-bench-4090
+    pre6g.io/benchmark-kind: offline-throughput
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gemma4-offline-bench-4090
+  template:
+    metadata:
+      labels:
+        app: gemma4-offline-bench-4090
+        pre6g.io/benchmark-kind: offline-throughput
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        kubernetes.io/hostname: iccl-s3-251230
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: vllm-bench
+          image: vllm/vllm-openai:v0.23.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              mkdir -p /cache/huggingface /workspace
+              echo "[pre6g] 4090 offline throughput target ready on $(hostname)"
+              sleep infinity
+          env:
+            - name: HF_HOME
+              value: /cache/huggingface
+            - name: TRANSFORMERS_CACHE
+              value: /cache/huggingface
+            - name: HUGGINGFACE_HUB_CACHE
+              value: /cache/huggingface
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0"
+          resources:
+            requests:
+              cpu: "4000m"
+              memory: "24Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8000m"
+              memory: "32Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /cache/huggingface
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: gemma4-e2b-w4a16-hf-cache
+        - name: workspace
+          emptyDir: {}

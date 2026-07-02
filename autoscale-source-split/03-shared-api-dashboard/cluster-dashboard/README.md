@@ -40,16 +40,46 @@
 - `Tasks & Runs`
   - `Single Inference`
   - `Serving Benchmark`
-- fixed benchmark profiles (`Smoke` / `Steady` / `Long Context`)
+- `Offline Throughput Benchmark`
+- fixed serving benchmark profiles (`Smoke` / `Continuous`)
+- fixed offline throughput profiles (`Offline Smoke` / `Offline Steady`)
 - `Recent Runtime History` with filterable recent events
 
 目前這一頁的語意邊界是：
 
 - `Single Inference`：功能驗證、token usage 驗證、單次 latency 觀測
 - `Serving Benchmark`：固定 profile 的官方 `vllm bench serve` serving benchmark
+- `Offline Throughput Benchmark`：固定 profile 的官方 `vllm bench throughput` offline batch benchmark
 - 目前同時支援：
   - 同步 benchmark summary
   - background run progress polling
+
+目前 `Serving Benchmark` 的預設 fixed profiles 為：
+
+- `Smoke`
+  - `max_tokens = 64`
+  - `concurrency = 1`
+  - `request_count = 20`
+- `Continuous`
+  - `max_tokens = 128`
+  - `concurrency = 8`
+  - `request_count per chunk = 50`
+  - `run mode = repeat chunks until Stop or 30 min safety limit`
+
+兩種 benchmark 在 UI 上的正式解讀：
+
+| UI 區塊 | Official Tool | Target | Capacity View |
+| --- | --- | --- | --- |
+| `Serving Benchmark` | `vllm bench serve` | live `Gemma 4` serving pod | `Serving Capacity View` |
+| `Offline Throughput Benchmark` | `vllm bench throughput` | dedicated supported-GPU benchmark pod | `Hardware Capacity View` |
+
+目前 live 驗證狀態：
+
+- `Serving Benchmark` path 可正常保留在 live `Gemma 4` serving 模型
+- `Offline Throughput Benchmark` path 曾實際打到 `icclz1` dedicated target
+- 但 `vllm/vllm-openai:v0.23.0` 在 `GTX 1080 Ti` 上有 CUDA 初始化相容性問題
+- 因此 `1080 Ti` 已從正式 offline throughput target 候選中排除
+- 若要恢復正式 offline throughput，建議改成 `RTX 4090 dedicated benchmark target`
 
 這次 external nodes 進 dashboard 的方式是擴充 API 層，不是重寫 React 卡片元件；因此 API 更新完成後，前端重新整理頁面即可看到新節點。
 
@@ -172,6 +202,7 @@ bash run_local_dashboard_preview.sh
 - `Single Inference` result
 - `Target Service`
 - `Serving Benchmark` result
+- `Offline Throughput Benchmark` result
 - recent `Runtime History`
 
 benchmark result 目前應包含：

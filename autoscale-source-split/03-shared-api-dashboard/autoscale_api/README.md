@@ -38,6 +38,7 @@
 - `GET /api/v1/llm-lab/benchmarks/runs/{run_id}`
 - `POST /api/v1/llm-lab/benchmarks/runs/{run_id}/cancel`
 - `POST /api/v1/llm-lab/benchmarks/{profile}`
+- `POST /api/v1/llm-lab/offline-throughput`
 - `GET /api/v1/llm-lab/history`
 - `GET /api/v1/experiments/fan-cycle/latest`
 - `GET /api/v1/experiments/fan-cycle/live`
@@ -199,6 +200,51 @@ response summary:
 - 同一個 API call 會等待該 benchmark 完成後回 summary
 - 適合小型、固定 profile 的同步基線測試
 
+### `/api/v1/llm-lab/offline-throughput`
+
+`2026-07-02` 起，`LLM Serving Lab` 另外提供官方 `vllm bench throughput` 的 offline batch benchmark proxy。
+
+這條路徑和 `vllm bench serve` 的差別是：
+
+- `vllm bench serve`
+  - 量測 live serving endpoint
+  - 走既有 `Gemma 4` `vllm serve` service
+- `vllm bench throughput`
+  - 量測 offline engine 的 batch throughput
+  - 會在 benchmark target 內自行初始化一個新的 `LLM` engine
+
+因此第一版不會直接在 live `Gemma 4` serving pod 內跑 offline throughput。設計原則是：
+
+- `Gemma 4` live serving workload 保持不動
+- 只對受支援 GPU/runtime 組合配置 dedicated benchmark target
+
+先前驗證過的保守 profile 曾針對 `GTX 1080 Ti 11GB` 收斂為：
+
+- model: `Qwen/Qwen2.5-1.5B-Instruct`
+- `gpu_memory_utilization`: `0.72`
+- `max_model_len`: `2048`
+
+用途定位：
+
+- 觀察較接近硬體 batch capacity 的 output token throughput
+- 不直接代表 live API serving capacity
+- 適合和 `Serving Benchmark` 對照成 `Hardware Capacity View` / `Serving Capacity View`
+
+目前 `LLM Lab` 兩種 benchmark 的正式定義：
+
+| Path | Official Tool | Target | Interpretation |
+| --- | --- | --- | --- |
+| `POST /api/v1/llm-lab/benchmarks/{profile}` | `vllm bench serve` | live `Gemma 4` serving pod | `Serving Capacity View` |
+| `POST /api/v1/llm-lab/offline-throughput` | `vllm bench throughput` | dedicated supported-GPU benchmark pod | `Hardware Capacity View` |
+
+`2026-07-02` live 驗證補充：
+
+- host-side `autoscale_api` 已成功實際呼叫 offline benchmark target
+- `GTX 1080 Ti` 上的 blocker 是 `vllm/vllm-openai:v0.23.0` runtime 與 Pascal GPU 的 CUDA forward-compatibility 問題
+- 因此 `GTX 1080 Ti (CC 6.1)` 已被排除為目前平台下的受支援 offline throughput target
+- 之後若 API 未配置 `PRE6G_LLM_OFFLINE_BENCH_*`，`/api/v1/llm-lab/offline-throughput` 應回 `409` 表示未配置，而不是 route 缺失
+- 若要保留 `k3s` / `kubectl exec` 這條正式平台路徑，建議改用 `RTX 4090` dedicated benchmark target
+
 ### `/api/v1/llm-lab/benchmarks/runs`
 
 `2026-06-30` 新增 benchmark background run v2。
@@ -281,6 +327,7 @@ query params:
 - `NETDATA_CHILD_URL`
 - `NETDATA_PARENT_BASE_URL`
 - `KSM_URL`
+- `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS`
 
 建議直接沿用：
 
@@ -294,6 +341,17 @@ query params:
 - `NETDATA_CHILD_URL=http://140.113.179.9:32163`
 - `NETDATA_PARENT_BASE_URL=http://140.113.179.9:32163`
 - `KSM_URL=http://140.113.179.9:32080`
+- `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS=3`
+
+若要在受支援 GPU 上啟用 `Offline Throughput Benchmark`，還需要 dedicated benchmark target：
+
+- `PRE6G_LLM_OFFLINE_BENCH_NAMESPACE`
+- `PRE6G_LLM_OFFLINE_BENCH_TARGET`
+
+範例值：
+
+- `PRE6G_LLM_OFFLINE_BENCH_NAMESPACE=ai-serving`
+- `PRE6G_LLM_OFFLINE_BENCH_TARGET=<supported-gpu-benchmark-deployment>`
 
 若要啟用 `Fan-Cycle Experiment` 與 `YOLO demo` control，還需要以下 experiment runtime env：
 

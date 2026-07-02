@@ -3,13 +3,17 @@ import os
 import re
 import time
 import subprocess
+import shutil
 import urllib.request
+import importlib
 
-OPENWRT = os.getenv("OPENWRT", "192.168.1.1")
+OPENWRT = os.getenv("OPENWRT", "192.168.100.112")
 AP_NAME = os.getenv("AP_NAME", "openwrt_ap")
 AP_IFACE = os.getenv("AP_IFACE", "phy0-ap0")
 SNMP_COMMUNITY = os.getenv("SNMP_COMMUNITY", "public")
 SNMP_IFINDEX = os.getenv("SNMP_IFINDEX", "3")
+SNMP_TIMEOUT = float(os.getenv("SNMP_TIMEOUT", "3"))
+SNMP_RETRIES = int(os.getenv("SNMP_RETRIES", "0"))
 INTERVAL = int(os.getenv("INTERVAL", "10"))
 VM_URL = os.getenv("VM_URL", "http://140.113.179.9:31888/api/v1/import/prometheus")
 
@@ -46,6 +50,15 @@ def parse_number(text):
 
 
 def snmpget(oid):
+    if shutil.which("snmpget"):
+        try:
+            return snmpget_cli(oid)
+        except (subprocess.TimeoutExpired, RuntimeError):
+            pass
+    return snmpget_pysnmp(oid)
+
+
+def snmpget_cli(oid):
     cmd = [
         "snmpget",
         "-v2c",
@@ -56,10 +69,44 @@ def snmpget(oid):
         OPENWRT,
         oid,
     ]
-    r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+    r = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=SNMP_TIMEOUT + 2,
+    )
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip())
     return parse_number(r.stdout.strip())
+
+
+def snmpget_pysnmp(oid):
+    try:
+        hlapi = importlib.import_module("pysnmp.hlapi")
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "snmpget command not found and pysnmp is not installed"
+        ) from exc
+
+    iterator = hlapi.getCmd(
+        hlapi.SnmpEngine(),
+        hlapi.CommunityData(SNMP_COMMUNITY, mpModel=1),
+        hlapi.UdpTransportTarget((OPENWRT, 161), timeout=SNMP_TIMEOUT, retries=SNMP_RETRIES),
+        hlapi.ContextData(),
+        hlapi.ObjectType(hlapi.ObjectIdentity(oid)),
+    )
+    error_indication, error_status, error_index, var_binds = next(iterator)
+    if error_indication:
+        raise RuntimeError(str(error_indication))
+    if error_status:
+        raise RuntimeError(
+            f"{error_status.prettyPrint()} at {error_index and var_binds[int(error_index) - 1][0] or '?'}"
+        )
+
+    for _, value in var_binds:
+        return parse_number(value.prettyPrint())
+    return None
 
 
 def metric(name, value, labels):

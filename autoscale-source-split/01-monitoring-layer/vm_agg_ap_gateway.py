@@ -12,7 +12,7 @@ VM_URL = os.getenv("VM_URL", "http://140.113.179.9:31888").rstrip("/")
 
 AP_NAME = os.getenv("AP_NAME", "openwrt_ap")
 AP_IFACE = os.getenv("AP_IFACE", "phy0-ap0")
-AP_TARGET = os.getenv("OPENWRT", "192.168.1.1")
+AP_TARGET = os.getenv("OPENWRT", "192.168.100.112")
 
 RATE_WINDOW = os.getenv("RATE_WINDOW", "5m")
 

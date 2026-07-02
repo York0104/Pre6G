@@ -4,7 +4,12 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from app.routers import llm_lab as llm_lab_router
-from app.schemas.llm_lab import LlmBenchmarkRunRequest, LlmInferenceRequest, LlmSmokeBenchmarkRequest
+from app.schemas.llm_lab import (
+    LlmBenchmarkRunRequest,
+    LlmInferenceRequest,
+    LlmOfflineThroughputRequest,
+    LlmSmokeBenchmarkRequest,
+)
 from app.services.llm_lab_service import LlmInferenceError
 
 
@@ -126,6 +131,39 @@ class LlmLabRouterTests(unittest.TestCase):
         with patch.object(llm_lab_router.llm_lab_service, "start_benchmark_run", return_value=payload):
             response = llm_lab_router.start_benchmark_run(
                 LlmBenchmarkRunRequest(
+                    namespace="ai-serving",
+                    workload="gemma4-e2b-vllm",
+                    profile_id="smoke",
+                )
+            )
+        self.assertEqual(response.run_id, payload["run_id"])
+
+    def test_run_offline_throughput_route_returns_payload(self) -> None:
+        payload = {
+            "schema": "pre6g.llm_benchmark.v1",
+            "ts": 1710000010,
+            "run_id": "offline-smoke-20260701T080000Z",
+            "namespace": "ai-serving",
+            "workload": "gemma4-e2b-vllm",
+            "profile": "Offline Smoke",
+            "profile_id": "smoke",
+            "request_count": 16,
+            "max_tokens": 64,
+            "temperature": 0.0,
+            "concurrency": 1,
+            "status": "succeeded",
+            "completed_requests": 16,
+            "failed_requests": 0,
+            "run_elapsed_seconds": 3.2,
+            "request_throughput_rps": 5.0,
+            "aggregate_total_tps": 320.0,
+            "mean_prompt_tokens": 128.0,
+            "mean_completion_tokens": 64.0,
+            "mean_total_tokens": 192.0,
+        }
+        with patch.object(llm_lab_router.llm_lab_service, "run_offline_throughput_profile", return_value=payload):
+            response = llm_lab_router.run_offline_throughput(
+                LlmOfflineThroughputRequest(
                     namespace="ai-serving",
                     workload="gemma4-e2b-vllm",
                     profile_id="smoke",

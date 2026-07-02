@@ -58,6 +58,44 @@ if [[ -z "$CC_PASSWORD" ]]; then
   exit 1
 fi
 
+cleanup_worker() {
+  local rc=$?
+  echo "[CLEANUP] worker cleanup start rc=${rc}"
+  ssh ${SSH_OPTS} "${WORKER_SSH}" bash -s -- \
+    "${WORKER_REPO}" \
+    "${RESTORE_MODE}" \
+    "${CC_PASSWORD}" <<'REMOTE_CLEANUP' || true
+set +e
+WORKER_REPO="$1"
+RESTORE_MODE="$2"
+CC_PASSWORD="$3"
+
+cd "$WORKER_REPO" || exit 0
+if [ -f ../gpu-tempctl-1080ti/bin/activate ]; then
+  # shellcheck disable=SC1091
+  source ../gpu-tempctl-1080ti/bin/activate
+fi
+if [ -f fan_control_lab/env.sh ]; then
+  # shellcheck disable=SC1091
+  source fan_control_lab/env.sh
+fi
+if [ -f "$HOME/.cargo/env" ]; then
+  # shellcheck disable=SC1090
+  source "$HOME/.cargo/env"
+fi
+
+pkill -TERM -f 'fan_control_lab/gpu_load_torch.py' || true
+sleep 2
+pkill -KILL -f 'fan_control_lab/gpu_load_torch.py' || true
+python fan_control_lab/cc.py -p "$CC_PASSWORD" --mode "$RESTORE_MODE" >/dev/null 2>&1 || true
+nvidia-smi --query-gpu=temperature.gpu,fan.speed,pstate,power.draw,utilization.gpu,memory.used --format=csv,noheader,nounits || true
+REMOTE_CLEANUP
+  echo "[CLEANUP] worker cleanup end"
+  return "${rc}"
+}
+
+trap cleanup_worker INT TERM
+
 ssh ${SSH_OPTS} "${WORKER_SSH}" "
   hostname
   whoami

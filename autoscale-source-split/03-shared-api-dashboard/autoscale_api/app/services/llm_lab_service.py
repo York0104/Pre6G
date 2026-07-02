@@ -60,6 +60,47 @@ class LlmLabService:
             "request_count": 8,
             "description": "Official vLLM serving benchmark with longer prompt context pressure.",
         },
+        "continuous": {
+            "display_name": "Continuous",
+            "model": "unsloth/gemma-4-E2B-it-qat-w4a16",
+            "served_model_name": "gemma4-e2b-w4a16",
+            "input_len": 512,
+            "max_tokens": 128,
+            "temperature": 0.0,
+            "concurrency": 8,
+            "request_count": 50,
+            "continuous": True,
+            "max_runtime_seconds": 1800,
+            "description": "Continuously repeats denser official vLLM serving benchmark chunks until stopped or the safety limit is reached.",
+        },
+    }
+    OFFLINE_THROUGHPUT_PROFILES: dict[str, dict[str, Any]] = {
+        "smoke": {
+            "display_name": "Offline Smoke",
+            "model": "Qwen/Qwen2.5-1.5B-Instruct",
+            "served_model_name": "Qwen/Qwen2.5-1.5B-Instruct",
+            "input_len": 128,
+            "max_tokens": 64,
+            "temperature": 0.0,
+            "concurrency": 1,
+            "request_count": 16,
+            "gpu_memory_utilization": 0.72,
+            "max_model_len": 2048,
+            "description": "Small offline throughput smoke benchmark.",
+        },
+        "steady": {
+            "display_name": "Offline Steady",
+            "model": "Qwen/Qwen2.5-1.5B-Instruct",
+            "served_model_name": "Qwen/Qwen2.5-1.5B-Instruct",
+            "input_len": 384,
+            "max_tokens": 128,
+            "temperature": 0.0,
+            "concurrency": 1,
+            "request_count": 48,
+            "gpu_memory_utilization": 0.72,
+            "max_model_len": 2048,
+            "description": "Offline throughput benchmark for hardware-oriented batch capacity checks.",
+        },
     }
 
     def __init__(
@@ -83,6 +124,8 @@ class LlmLabService:
         self.benchmark_timeout_seconds = float(
             (os.getenv("PRE6G_LLM_BENCHMARK_TIMEOUT_SECONDS", "1800").strip() or "1800")
         )
+        self.offline_bench_namespace = os.getenv("PRE6G_LLM_OFFLINE_BENCH_NAMESPACE", "").strip()
+        self.offline_bench_target = os.getenv("PRE6G_LLM_OFFLINE_BENCH_TARGET", "").strip()
 
     @staticmethod
     def _selector_match(labels: dict[str, Any], selector: dict[str, Any]) -> bool:
@@ -265,6 +308,16 @@ class LlmLabService:
     def _benchmark_result_paths(self, run_id: str) -> tuple[str, str]:
         return f"/tmp/{run_id}.json", f"/tmp/{run_id}.log"
 
+    def _resolve_offline_bench_target(self) -> tuple[str, str]:
+        namespace = self.offline_bench_namespace
+        target = self.offline_bench_target
+        if not namespace or not target:
+            raise LlmInferenceError(
+                409,
+                "offline throughput benchmark is not configured for this runtime; configure PRE6G_LLM_OFFLINE_BENCH_NAMESPACE and PRE6G_LLM_OFFLINE_BENCH_TARGET for a dedicated benchmark target",
+            )
+        return namespace, target
+
     def _build_benchmark_exec_command(
         self,
         *,
@@ -311,6 +364,216 @@ class LlmLabService:
             "-lc",
             shell_cmd,
         ]
+
+    def _build_offline_throughput_exec_command(
+        self,
+        *,
+        profile_config: dict[str, Any],
+        run_id: str,
+    ) -> list[str]:
+        target_namespace, target = self._resolve_offline_bench_target()
+        result_path, log_path = self._benchmark_result_paths(run_id)
+        model = str(profile_config["model"])
+        served_model_name = str(profile_config.get("served_model_name") or model)
+        gpu_memory_utilization = float(profile_config.get("gpu_memory_utilization") or 0.72)
+        max_model_len = int(profile_config.get("max_model_len") or 2048)
+        shell_cmd = (
+            f"rm -f {result_path} {log_path}; "
+            "vllm bench throughput "
+            "--backend vllm "
+            "--dataset-name random "
+            f"--model {model} "
+            f"--served-model-name {served_model_name} "
+            f"--input-len {int(profile_config['input_len'])} "
+            f"--output-len {int(profile_config['max_tokens'])} "
+            f"--num-prompts {int(profile_config['request_count'])} "
+            f"--gpu-memory-utilization {gpu_memory_utilization} "
+            f"--max-model-len {max_model_len} "
+            f"--output-json {result_path} "
+            f">{log_path} 2>&1"
+        )
+        return [
+            self.kubectl_bin,
+            "-n",
+            target_namespace,
+            "exec",
+            target,
+            "--",
+            "/bin/bash",
+            "-lc",
+            shell_cmd,
+        ]
+
+    def _read_offline_throughput_result_payload(self, *, run_id: str) -> dict[str, Any]:
+        target_namespace, target = self._resolve_offline_bench_target()
+        result_path, _ = self._benchmark_result_paths(run_id)
+        command = [
+            self.kubectl_bin,
+            "-n",
+            target_namespace,
+            "exec",
+            target,
+            "--",
+            "/bin/bash",
+            "-lc",
+            f"cat {result_path}",
+        ]
+        completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
+        if completed.returncode != 0:
+            raise LlmInferenceError(
+                502,
+                f"failed to read offline throughput benchmark result: {completed.stderr.strip() or completed.stdout.strip() or 'unknown error'}",
+            )
+        try:
+            return json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise LlmInferenceError(502, "offline throughput benchmark result was not valid JSON") from exc
+
+    def _build_offline_throughput_result(
+        self,
+        *,
+        namespace: str,
+        workload: str,
+        profile: str,
+        profile_config: dict[str, Any],
+        run_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        elapsed = round(float(payload.get("elapsed_time") or payload.get("duration") or 0.0), 3)
+        total_output_tokens = float(payload.get("total_num_tokens") or payload.get("total_output_tokens") or 0.0)
+        throughput = float(payload.get("tokens_per_second") or payload.get("throughput") or 0.0)
+        completed_requests = int(payload.get("num_prompts") or payload.get("completed") or profile_config["request_count"])
+        return {
+            "schema": "pre6g.llm_benchmark.v1",
+            "ts": int(time.time()),
+            "run_id": run_id,
+            "namespace": namespace,
+            "workload": workload,
+            "profile": str(profile_config["display_name"]),
+            "profile_id": profile,
+            "request_count": int(profile_config["request_count"]),
+            "max_tokens": int(profile_config["max_tokens"]),
+            "temperature": float(profile_config["temperature"]),
+            "concurrency": int(profile_config["concurrency"]),
+            "status": "succeeded",
+            "completed_requests": completed_requests,
+            "failed_requests": 0,
+            "run_elapsed_seconds": elapsed if elapsed > 0 else None,
+            "request_throughput_rps": round(completed_requests / elapsed, 3) if elapsed > 0 else None,
+            "aggregate_prompt_tps": None,
+            "aggregate_generation_tps": round(throughput, 3) if throughput > 0 else 0.0,
+            "aggregate_total_tps": round(throughput, 3) if throughput > 0 else 0.0,
+            "latency_p50_seconds": None,
+            "latency_p95_seconds": None,
+            "mean_latency_seconds": None,
+            "mean_prompt_tokens": round(float(profile_config["input_len"]), 3),
+            "mean_completion_tokens": round((total_output_tokens / max(completed_requests, 1)), 3)
+            if total_output_tokens > 0
+            else round(float(profile_config["max_tokens"]), 3),
+            "mean_total_tokens": round(
+                float(profile_config["input_len"])
+                + (
+                    (total_output_tokens / max(completed_requests, 1))
+                    if total_output_tokens > 0
+                    else float(profile_config["max_tokens"])
+                ),
+                3,
+            ),
+            "mean_ttft_seconds": None,
+            "p95_ttft_seconds": None,
+            "mean_tpot_seconds": None,
+            "p95_tpot_seconds": None,
+            "mean_itl_seconds": None,
+            "p95_itl_seconds": None,
+        }
+
+    @staticmethod
+    def _empty_benchmark_aggregate() -> dict[str, Any]:
+        return {
+            "chunks_completed": 0,
+            "completed_requests": 0,
+            "failed_requests": 0,
+            "total_input_tokens": 0.0,
+            "total_output_tokens": 0.0,
+            "weighted_mean_e2el_ms": 0.0,
+            "weighted_mean_ttft_ms": 0.0,
+            "weighted_mean_tpot_ms": 0.0,
+            "weighted_mean_itl_ms": 0.0,
+        }
+
+    def _accumulate_benchmark_payload(self, aggregate: dict[str, Any], payload: dict[str, Any]) -> None:
+        completed = int(payload.get("completed") or 0)
+        aggregate["chunks_completed"] += 1
+        aggregate["completed_requests"] += completed
+        aggregate["failed_requests"] += int(payload.get("failed") or 0)
+        aggregate["total_input_tokens"] += float(payload.get("total_input_tokens") or 0.0)
+        aggregate["total_output_tokens"] += float(payload.get("total_output_tokens") or 0.0)
+        if completed > 0:
+            aggregate["weighted_mean_e2el_ms"] += float(payload.get("mean_e2el_ms") or 0.0) * completed
+            aggregate["weighted_mean_ttft_ms"] += float(payload.get("mean_ttft_ms") or 0.0) * completed
+            aggregate["weighted_mean_tpot_ms"] += float(payload.get("mean_tpot_ms") or 0.0) * completed
+            aggregate["weighted_mean_itl_ms"] += float(payload.get("mean_itl_ms") or 0.0) * completed
+
+    def _build_continuous_result(
+        self,
+        *,
+        namespace: str,
+        workload: str,
+        profile: str,
+        profile_config: dict[str, Any],
+        run_id: str,
+        aggregate: dict[str, Any],
+        started_monotonic: float,
+        status: str,
+    ) -> dict[str, Any]:
+        elapsed = round(max(time.time() - started_monotonic, 0.001), 3)
+        completed_requests = int(aggregate["completed_requests"])
+        total_input_tokens = float(aggregate["total_input_tokens"])
+        total_output_tokens = float(aggregate["total_output_tokens"])
+        total_tokens = total_input_tokens + total_output_tokens
+        return {
+            "schema": "pre6g.llm_benchmark.v1",
+            "ts": int(time.time()),
+            "run_id": run_id,
+            "namespace": namespace,
+            "workload": workload,
+            "profile": str(profile_config["display_name"]),
+            "profile_id": profile,
+            "request_count": int(profile_config["request_count"]),
+            "max_tokens": int(profile_config["max_tokens"]),
+            "temperature": float(profile_config["temperature"]),
+            "concurrency": int(profile_config["concurrency"]),
+            "status": status,
+            "completed_requests": completed_requests,
+            "failed_requests": int(aggregate["failed_requests"]),
+            "run_elapsed_seconds": elapsed,
+            "request_throughput_rps": round(completed_requests / elapsed, 3),
+            "aggregate_prompt_tps": round(total_input_tokens / elapsed, 3) if total_input_tokens > 0 else 0.0,
+            "aggregate_generation_tps": round(total_output_tokens / elapsed, 3) if total_output_tokens > 0 else 0.0,
+            "aggregate_total_tps": round(total_tokens / elapsed, 3) if total_tokens > 0 else 0.0,
+            "latency_p50_seconds": None,
+            "latency_p95_seconds": None,
+            "mean_latency_seconds": round((aggregate["weighted_mean_e2el_ms"] / max(completed_requests, 1)) / 1000.0, 3)
+            if completed_requests > 0
+            else None,
+            "mean_prompt_tokens": round(total_input_tokens / max(completed_requests, 1), 3) if total_input_tokens > 0 else 0.0,
+            "mean_completion_tokens": round(total_output_tokens / max(completed_requests, 1), 3)
+            if total_output_tokens > 0
+            else 0.0,
+            "mean_total_tokens": round(total_tokens / max(completed_requests, 1), 3) if total_tokens > 0 else 0.0,
+            "mean_ttft_seconds": round((aggregate["weighted_mean_ttft_ms"] / max(completed_requests, 1)) / 1000.0, 3)
+            if completed_requests > 0
+            else None,
+            "p95_ttft_seconds": None,
+            "mean_tpot_seconds": round((aggregate["weighted_mean_tpot_ms"] / max(completed_requests, 1)) / 1000.0, 4)
+            if completed_requests > 0
+            else None,
+            "p95_tpot_seconds": None,
+            "mean_itl_seconds": round((aggregate["weighted_mean_itl_ms"] / max(completed_requests, 1)) / 1000.0, 4)
+            if completed_requests > 0
+            else None,
+            "p95_itl_seconds": None,
+        }
 
     def _read_benchmark_result_payload(self, *, namespace: str, workload: str, run_id: str) -> dict[str, Any]:
         result_path, _ = self._benchmark_result_paths(run_id)
@@ -744,72 +1007,106 @@ class LlmLabService:
         state["status"] = "running"
         state["started_ts"] = int(time.time())
         self._write_run_state(run_id, state)
+        aggregate_totals = self._empty_benchmark_aggregate()
 
         try:
-            command = self._build_benchmark_exec_command(
-                namespace=namespace,
-                workload=workload,
-                profile_config=profile_config,
-                run_id=run_id,
-            )
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            with self._run_state_lock:
-                control = self._active_run_controls.get(run_id)
-                if control is not None:
-                    control["process"] = process
+            chunk_index = 0
+            is_continuous = bool(profile_config.get("continuous"))
+            max_runtime_seconds = float(profile_config.get("max_runtime_seconds") or self.benchmark_timeout_seconds)
 
             while True:
-                state = self._read_run_state(run_id)
-                if cancel_event.is_set():
-                    if process.poll() is None:
-                        process.terminate()
-                        try:
-                            process.wait(timeout=10)
-                        except subprocess.TimeoutExpired:
-                            process.kill()
-                    state["status"] = "cancelled"
-                    state["finished_ts"] = int(time.time())
-                    self._update_run_progress(state=state, started_monotonic=started)
-                    self._write_run_state(run_id, state)
-                    return
+                if is_continuous and (time.time() - started) >= max_runtime_seconds:
+                    cancel_event.set()
+                    break
 
-                workload_status = self.workloads.get_workload_status(namespace=namespace, workload=workload)
-                aggregate = workload_status.aggregate
-                self._update_run_progress(state=state, started_monotonic=started)
-                progress = state["progress"]
-                if progress["buckets"]:
-                    bucket = progress["buckets"][-1]
-                    bucket["prompt_tokens"] = self._round_metric(float(aggregate.prompt_tokens_per_second or 0.0))
-                    bucket["completion_tokens"] = self._round_metric(
-                        float(aggregate.generation_tokens_per_second or 0.0)
-                    )
-                    bucket["total_tokens"] = self._round_metric(
-                        float(aggregate.prompt_tokens_per_second or 0.0)
-                        + float(aggregate.generation_tokens_per_second or 0.0)
-                    )
-                    progress["current_prompt_tps"] = bucket["prompt_tokens"]
-                    progress["current_generation_tps"] = bucket["completion_tokens"]
-                    progress["current_total_tps"] = bucket["total_tokens"]
-                    progress["current_request_throughput_rps"] = self._round_metric(
-                        progress["completed_requests"] / max(progress["elapsed_seconds"], 1.0)
-                    )
+                chunk_run_id = run_id if not is_continuous else f"{run_id}-chunk-{chunk_index:05d}"
+                command = self._build_benchmark_exec_command(
+                    namespace=namespace,
+                    workload=workload,
+                    profile_config=profile_config,
+                    run_id=chunk_run_id,
+                )
+                process = subprocess.Popen(
+                    command,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                with self._run_state_lock:
+                    control = self._active_run_controls.get(run_id)
+                    if control is not None:
+                        control["process"] = process
+
+                while True:
+                    state = self._read_run_state(run_id)
+                    if cancel_event.is_set():
+                        if process.poll() is None:
+                            process.terminate()
+                            try:
+                                process.wait(timeout=10)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                        break
+
+                    workload_status = self.workloads.get_workload_status(namespace=namespace, workload=workload)
+                    aggregate = workload_status.aggregate
+                    self._update_run_progress(state=state, started_monotonic=started)
+                    progress = state["progress"]
+                    if progress["buckets"]:
+                        bucket = progress["buckets"][-1]
+                        bucket["prompt_tokens"] = self._round_metric(float(aggregate.prompt_tokens_per_second or 0.0))
+                        bucket["completion_tokens"] = self._round_metric(
+                            float(aggregate.generation_tokens_per_second or 0.0)
+                        )
+                        bucket["total_tokens"] = self._round_metric(
+                            float(aggregate.prompt_tokens_per_second or 0.0)
+                            + float(aggregate.generation_tokens_per_second or 0.0)
+                        )
+                        progress["current_prompt_tps"] = bucket["prompt_tokens"]
+                        progress["current_generation_tps"] = bucket["completion_tokens"]
+                        progress["current_total_tps"] = bucket["total_tokens"]
+                        progress["current_request_throughput_rps"] = self._round_metric(
+                            progress["completed_requests"] / max(progress["elapsed_seconds"], 1.0)
+                        )
+                    state["ts"] = int(time.time())
+                    self._write_run_state(run_id, state)
+
+                    if process.poll() is not None:
+                        if process.returncode != 0:
+                            stderr_text = (process.stderr.read() or "").strip() if process.stderr else ""
+                            raise LlmInferenceError(
+                                502,
+                                f"vLLM bench serve failed: {stderr_text or f'exit code {process.returncode}'}",
+                            )
+                        break
+                    time.sleep(1.0)
+
+                if cancel_event.is_set():
+                    break
+
+                result_payload = self._read_benchmark_result_payload(
+                    namespace=namespace,
+                    workload=workload,
+                    run_id=chunk_run_id,
+                )
+                self._accumulate_benchmark_payload(aggregate_totals, result_payload)
+                state = self._read_run_state(run_id)
+                self._update_run_progress(
+                    state=state,
+                    started_monotonic=started,
+                    completed_delta=int(result_payload.get("completed") or 0),
+                    failed_delta=int(result_payload.get("failed") or 0),
+                    prompt_tokens_delta=float(result_payload.get("total_input_tokens") or 0.0),
+                    completion_tokens_delta=float(result_payload.get("total_output_tokens") or 0.0),
+                    total_tokens_delta=float(result_payload.get("total_input_tokens") or 0.0)
+                    + float(result_payload.get("total_output_tokens") or 0.0),
+                )
                 state["ts"] = int(time.time())
                 self._write_run_state(run_id, state)
 
-                if process.poll() is not None:
-                    if process.returncode != 0:
-                        stderr_text = (process.stderr.read() or "").strip() if process.stderr else ""
-                        raise LlmInferenceError(
-                            502,
-                            f"vLLM bench serve failed: {stderr_text or f'exit code {process.returncode}'}",
-                        )
+                if not is_continuous:
                     break
-                time.sleep(1.0)
+                chunk_index += 1
         except Exception as exc:
             state = self._read_run_state(run_id)
             state["status"] = "failed"
@@ -821,20 +1118,36 @@ class LlmLabService:
                 self._active_run_controls.pop(run_id, None)
             return
 
-        result_payload = self._read_benchmark_result_payload(
-            namespace=namespace,
-            workload=workload,
-            run_id=run_id,
-        )
-        result = self._build_benchmark_result_from_vllm(
-            namespace=namespace,
-            workload=workload,
-            profile=profile,
-            profile_config=profile_config,
-            run_id=run_id,
-            payload=result_payload,
-            started_monotonic=started,
-        )
+        if bool(profile_config.get("continuous")):
+            result = self._build_continuous_result(
+                namespace=namespace,
+                workload=workload,
+                profile=profile,
+                profile_config=profile_config,
+                run_id=run_id,
+                aggregate=aggregate_totals,
+                started_monotonic=started,
+                status="cancelled" if cancel_event.is_set() else "succeeded",
+            )
+            result_payload = {
+                "total_input_tokens": aggregate_totals["total_input_tokens"],
+                "total_output_tokens": aggregate_totals["total_output_tokens"],
+            }
+        else:
+            result_payload = self._read_benchmark_result_payload(
+                namespace=namespace,
+                workload=workload,
+                run_id=run_id,
+            )
+            result = self._build_benchmark_result_from_vllm(
+                namespace=namespace,
+                workload=workload,
+                profile=profile,
+                profile_config=profile_config,
+                run_id=run_id,
+                payload=result_payload,
+                started_monotonic=started,
+            )
         state = self._read_run_state(run_id)
         state["status"] = result["status"]
         state["finished_ts"] = int(time.time())
@@ -925,6 +1238,61 @@ class LlmLabService:
 
     def run_smoke_benchmark(self, *, namespace: str, workload: str) -> dict[str, Any]:
         return self.run_benchmark_profile(namespace=namespace, workload=workload, profile="smoke")
+
+    def run_offline_throughput_profile(self, *, namespace: str, workload: str, profile: str) -> dict[str, Any]:
+        profile_config = self.OFFLINE_THROUGHPUT_PROFILES.get(profile)
+        if not profile_config:
+            raise LlmInferenceError(404, f"unknown offline throughput profile: {profile}")
+        run_id = f"offline-{profile}-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        command = self._build_offline_throughput_exec_command(
+            profile_config=profile_config,
+            run_id=run_id,
+        )
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=self.benchmark_timeout_seconds,
+        )
+        if completed.returncode != 0:
+            raise LlmInferenceError(
+                502,
+                f"vLLM bench throughput failed: {completed.stderr.strip() or completed.stdout.strip() or f'exit code {completed.returncode}'}",
+            )
+        payload = self._read_offline_throughput_result_payload(run_id=run_id)
+        result = self._build_offline_throughput_result(
+            namespace=namespace,
+            workload=workload,
+            profile=profile,
+            profile_config=profile_config,
+            run_id=run_id,
+            payload=payload,
+        )
+        self._append_history(
+            {
+                "ts": result["ts"],
+                "event_type": "offline_throughput_benchmark",
+                "namespace": namespace,
+                "workload": workload,
+                "status": result["status"],
+                "run_id": run_id,
+                "profile": result["profile"],
+                "profile_id": profile,
+                "request_count": result["request_count"],
+                "concurrency": result["concurrency"],
+                "completed_requests": result["completed_requests"],
+                "failed_requests": result["failed_requests"],
+                "run_elapsed_seconds": result["run_elapsed_seconds"],
+                "request_throughput_rps": result["request_throughput_rps"],
+                "aggregate_generation_tps": result["aggregate_generation_tps"],
+                "aggregate_total_tps": result["aggregate_total_tps"],
+                "mean_prompt_tokens": result["mean_prompt_tokens"],
+                "mean_completion_tokens": result["mean_completion_tokens"],
+                "mean_total_tokens": result["mean_total_tokens"],
+            }
+        )
+        return result
 
     def _append_history(self, item: dict[str, Any]) -> None:
         with self.history_path.open("a", encoding="utf-8") as fh:

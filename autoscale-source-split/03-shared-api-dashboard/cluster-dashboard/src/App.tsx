@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
+  Label,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -212,6 +213,12 @@ type LlmBenchmarkRunRequest = {
   profile_id: string;
 };
 
+type LlmOfflineThroughputRequest = {
+  namespace: string;
+  workload: string;
+  profile_id: string;
+};
+
 type LlmSmokeBenchmarkResponse = {
   schema: string;
   ts: number;
@@ -365,22 +372,36 @@ const BENCHMARK_PROFILES = [
     requestCount: 20,
   },
   {
-    id: "steady",
-    label: "Steady",
+    id: "continuous",
+    label: "Continuous",
     promptSource: "vLLM random synthetic dataset",
     maxTokens: 128,
     temperature: 0.0,
-    concurrency: 4,
-    requestCount: 30,
+    concurrency: 8,
+    requestCount: 50,
   },
+] as const;
+
+const OFFLINE_THROUGHPUT_PROFILES = [
   {
-    id: "long-context",
-    label: "Long Context",
+    id: "smoke",
+    label: "Offline Smoke",
+    model: "Qwen/Qwen2.5-1.5B-Instruct",
     promptSource: "vLLM random synthetic dataset",
     maxTokens: 64,
     temperature: 0.0,
-    concurrency: 2,
-    requestCount: 8,
+    concurrency: 1,
+    requestCount: 16,
+  },
+  {
+    id: "steady",
+    label: "Offline Steady",
+    model: "Qwen/Qwen2.5-1.5B-Instruct",
+    promptSource: "vLLM random synthetic dataset",
+    maxTokens: 128,
+    temperature: 0.0,
+    concurrency: 1,
+    requestCount: 48,
   },
 ] as const;
 
@@ -1143,9 +1164,13 @@ function LlmServingLabPage({
   const [smokeLoading, setSmokeLoading] = useState(false);
   const [smokeError, setSmokeError] = useState("");
   const [smokeResult, setSmokeResult] = useState<LlmSmokeBenchmarkResponse | null>(null);
+  const [offlineLoading, setOfflineLoading] = useState(false);
+  const [offlineError, setOfflineError] = useState("");
+  const [offlineResult, setOfflineResult] = useState<LlmSmokeBenchmarkResponse | null>(null);
   const [activeBenchmarkRun, setActiveBenchmarkRun] = useState<LlmBenchmarkRunStatusResponse | null>(null);
   const [activeBenchmarkRunId, setActiveBenchmarkRunId] = useState("");
   const [benchmarkProfileId, setBenchmarkProfileId] = useState<(typeof BENCHMARK_PROFILES)[number]["id"]>("smoke");
+  const [offlineProfileId, setOfflineProfileId] = useState<(typeof OFFLINE_THROUGHPUT_PROFILES)[number]["id"]>("smoke");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [runHistory, setRunHistory] = useState<LlmRunHistoryItem[]>([]);
@@ -1166,6 +1191,9 @@ function LlmServingLabPage({
     !!primaryDetail && replicas.some((replica) => replica.metrics_observed_ts);
   const selectedBenchmarkProfile =
     BENCHMARK_PROFILES.find((profile) => profile.id === benchmarkProfileId) || BENCHMARK_PROFILES[0];
+  const selectedOfflineProfile =
+    OFFLINE_THROUGHPUT_PROFILES.find((profile) => profile.id === offlineProfileId) || OFFLINE_THROUGHPUT_PROFILES[0];
+  const shouldHideContinuousPercentiles = smokeResult?.profile_id === "continuous";
   const filteredRunHistory = runHistory.filter((item) => {
     if (historyFilter === "all") return true;
     if (historyFilter === "single_inference") return item.event_type === "single_inference";
@@ -1255,6 +1283,29 @@ function LlmServingLabPage({
       await loadBenchmarkRun(activeBenchmarkRunId);
     } catch (error) {
       setSmokeError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function startOfflineThroughputBenchmark() {
+    if (!primaryWorkload) return;
+    setOfflineLoading(true);
+    setOfflineError("");
+    setOfflineResult(null);
+    try {
+      const response = await postJsonBody<LlmSmokeBenchmarkResponse>(
+        "/api/v1/llm-lab/offline-throughput",
+        {
+          namespace: primaryWorkload.namespace,
+          workload: primaryWorkload.workload,
+          profile_id: offlineProfileId,
+        } satisfies LlmOfflineThroughputRequest,
+      );
+      setOfflineResult(response);
+      await loadRunHistory(primaryWorkload.namespace, primaryWorkload.workload);
+    } catch (error) {
+      setOfflineError(error instanceof Error ? error.message : "Failed to run offline throughput benchmark.");
+    } finally {
+      setOfflineLoading(false);
     }
   }
 
@@ -1685,6 +1736,9 @@ function LlmServingLabPage({
                   {observationLine("Temperature", selectedBenchmarkProfile.temperature.toFixed(1))}
                   {observationLine("Concurrency", String(selectedBenchmarkProfile.concurrency))}
                   {observationLine("Request Count", String(selectedBenchmarkProfile.requestCount))}
+                  {selectedBenchmarkProfile.id === "continuous"
+                    ? observationLine("Run Mode", "Runs until Stop or 30 min safety limit")
+                    : observationLine("Run Mode", "Fixed request-count benchmark")}
                 </div>
               </div>
 
@@ -1793,12 +1847,31 @@ function LlmServingLabPage({
                           `${activeBenchmarkRun.progress.current_request_throughput_rps.toFixed(2)} req/s`,
                         )}
                       </div>
-                      <div className="mt-4 h-64 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                        <div className="mb-3 text-sm font-medium text-slate-200">Per-Second Token Throughput</div>
+                        <div className="h-64">
                         <ResponsiveContainer width="100%" height="100%">
                           <LineChart data={activeBenchmarkRun.progress.buckets}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                            <XAxis dataKey="second" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                            <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                            <XAxis dataKey="second" tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                              <Label
+                                value="Elapsed Time (sec)"
+                                position="insideBottom"
+                                offset={-4}
+                                fill="#94a3b8"
+                                fontSize={12}
+                              />
+                            </XAxis>
+                            <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                              <Label
+                                value="Throughput (tokens/s)"
+                                angle={-90}
+                                position="insideLeft"
+                                fill="#94a3b8"
+                                fontSize={12}
+                                style={{ textAnchor: "middle" }}
+                              />
+                            </YAxis>
                             <Tooltip />
                             <Line
                               type="monotone"
@@ -1827,136 +1900,267 @@ function LlmServingLabPage({
                           </LineChart>
                         </ResponsiveContainer>
                       </div>
+                      </div>
                     </div>
                   ) : null}
 
-                  <div className="space-y-2">
-                  {observationLine("Profile", smokeResult?.profile || "N/A")}
-                  {observationLine("Run ID", smokeResult?.run_id || "N/A")}
-                  {observationLine("Status", smokeResult?.status || "N/A")}
-                  {observationLine(
-                    "Completed Requests",
-                    smokeResult?.completed_requests?.toString() || "0",
+                  {activeBenchmarkRun &&
+                  ["queued", "running", "cancelling"].includes(activeBenchmarkRun.status) &&
+                  !smokeResult ? (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-4 text-amber-100">
+                      <div className="text-sm font-medium">
+                        Final Summary available after stop/completion
+                      </div>
+                      <div className="mt-2 text-sm text-amber-200/80">
+                        This section is populated when the benchmark reaches a terminal state
+                        (`succeeded`, `cancelled`, or `failed`).
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {observationLine("Profile", smokeResult?.profile || "N/A")}
+                      {observationLine("Run ID", smokeResult?.run_id || "N/A")}
+                      {observationLine("Status", smokeResult?.status || "N/A")}
+                      {observationLine(
+                        "Completed Requests",
+                        smokeResult?.completed_requests?.toString() || "0",
+                      )}
+                      {observationLine(
+                        "Failed Requests",
+                        smokeResult?.failed_requests?.toString() || "0",
+                      )}
+                      {observationLine(
+                        "Concurrency",
+                        smokeResult?.concurrency?.toString() || "N/A",
+                      )}
+                      {observationLine(
+                        "Run Elapsed",
+                        smokeResult?.run_elapsed_seconds !== undefined &&
+                          smokeResult?.run_elapsed_seconds !== null
+                          ? `${smokeResult.run_elapsed_seconds.toFixed(3)} sec`
+                          : "N/A",
+                      )}
+                      {observationLine(
+                        "Request Throughput",
+                        smokeResult?.request_throughput_rps !== undefined &&
+                          smokeResult?.request_throughput_rps !== null
+                          ? `${smokeResult.request_throughput_rps.toFixed(3)} req/s`
+                          : "N/A",
+                      )}
+                      {observationLine(
+                        "Aggregate Prompt Throughput",
+                        smokeResult?.aggregate_prompt_tps !== undefined &&
+                          smokeResult?.aggregate_prompt_tps !== null
+                          ? `${smokeResult.aggregate_prompt_tps.toFixed(3)} tok/s`
+                          : "N/A",
+                      )}
+                      {observationLine(
+                        "Aggregate Generation Throughput",
+                        smokeResult?.aggregate_generation_tps !== undefined &&
+                          smokeResult?.aggregate_generation_tps !== null
+                          ? `${smokeResult.aggregate_generation_tps.toFixed(3)} tok/s`
+                          : "N/A",
+                      )}
+                      {observationLine(
+                        "Aggregate Total Throughput",
+                        smokeResult?.aggregate_total_tps !== undefined &&
+                          smokeResult?.aggregate_total_tps !== null
+                          ? `${smokeResult.aggregate_total_tps.toFixed(3)} tok/s`
+                          : "N/A",
+                      )}
+                      {!shouldHideContinuousPercentiles &&
+                        observationLine(
+                          "Latency P50",
+                          smokeResult?.latency_p50_seconds !== undefined &&
+                            smokeResult?.latency_p50_seconds !== null
+                            ? `${smokeResult.latency_p50_seconds.toFixed(3)} sec`
+                            : "N/A",
+                        )}
+                      {!shouldHideContinuousPercentiles &&
+                        observationLine(
+                          "Latency P95",
+                          smokeResult?.latency_p95_seconds !== undefined &&
+                            smokeResult?.latency_p95_seconds !== null
+                            ? `${smokeResult.latency_p95_seconds.toFixed(3)} sec`
+                            : "N/A",
+                        )}
+                      {observationLine(
+                        "Mean Latency",
+                        smokeResult?.mean_latency_seconds !== undefined &&
+                          smokeResult?.mean_latency_seconds !== null
+                          ? `${smokeResult.mean_latency_seconds.toFixed(3)} sec`
+                          : "N/A",
+                      )}
+                      {observationLine(
+                        "Mean Prompt Tokens",
+                        smokeResult?.mean_prompt_tokens?.toFixed(1) || "N/A",
+                      )}
+                      {observationLine(
+                        "Mean Completion Tokens",
+                        smokeResult?.mean_completion_tokens?.toFixed(1) || "N/A",
+                      )}
+                      {observationLine(
+                        "Mean Total Tokens",
+                        smokeResult?.mean_total_tokens?.toFixed(1) || "N/A",
+                      )}
+                      {observationLine(
+                        "Mean TTFT",
+                        smokeResult?.mean_ttft_seconds !== undefined &&
+                          smokeResult?.mean_ttft_seconds !== null
+                          ? `${smokeResult.mean_ttft_seconds.toFixed(3)} sec`
+                          : "N/A",
+                      )}
+                      {!shouldHideContinuousPercentiles &&
+                        observationLine(
+                          "P95 TTFT",
+                          smokeResult?.p95_ttft_seconds !== undefined &&
+                            smokeResult?.p95_ttft_seconds !== null
+                            ? `${smokeResult.p95_ttft_seconds.toFixed(3)} sec`
+                            : "N/A",
+                        )}
+                      {observationLine(
+                        "Mean TPOT",
+                        smokeResult?.mean_tpot_seconds !== undefined &&
+                          smokeResult?.mean_tpot_seconds !== null
+                          ? `${smokeResult.mean_tpot_seconds.toFixed(4)} sec`
+                          : "N/A",
+                      )}
+                      {!shouldHideContinuousPercentiles &&
+                        observationLine(
+                          "P95 TPOT",
+                          smokeResult?.p95_tpot_seconds !== undefined &&
+                            smokeResult?.p95_tpot_seconds !== null
+                            ? `${smokeResult.p95_tpot_seconds.toFixed(4)} sec`
+                            : "N/A",
+                        )}
+                      {observationLine(
+                        "Mean ITL",
+                        smokeResult?.mean_itl_seconds !== undefined &&
+                          smokeResult?.mean_itl_seconds !== null
+                          ? `${smokeResult.mean_itl_seconds.toFixed(4)} sec`
+                          : "N/A",
+                      )}
+                      {!shouldHideContinuousPercentiles &&
+                        observationLine(
+                          "P95 ITL",
+                          smokeResult?.p95_itl_seconds !== undefined &&
+                            smokeResult?.p95_itl_seconds !== null
+                            ? `${smokeResult.p95_itl_seconds.toFixed(4)} sec`
+                            : "N/A",
+                        )}
+                    </div>
                   )}
-                  {observationLine(
-                    "Failed Requests",
-                    smokeResult?.failed_requests?.toString() || "0",
-                  )}
-                  {observationLine(
-                    "Concurrency",
-                    smokeResult?.concurrency?.toString() || "N/A",
-                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </SectionCard>
+      )}
+
+      {primaryWorkload && (
+        <SectionCard title="Offline Throughput Benchmark">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <div className="space-y-4">
+              <label className="block text-sm text-slate-300">
+                <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                  Benchmark Profile
+                </span>
+                <select
+                  value={offlineProfileId}
+                  onChange={(event) =>
+                    setOfflineProfileId(event.target.value as (typeof OFFLINE_THROUGHPUT_PROFILES)[number]["id"])
+                  }
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-sky-500/60"
+                >
+                  {OFFLINE_THROUGHPUT_PROFILES.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+                <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+                  Selected Profile
+                </div>
+                <div className="space-y-2">
+                  {observationLine("Profile", selectedOfflineProfile.label)}
+                  {observationLine("Benchmark Engine", "vllm bench throughput")}
+                  {observationLine("Target Model", selectedOfflineProfile.model)}
+                  {observationLine("Prompt Source", selectedOfflineProfile.promptSource)}
+                  {observationLine("Max Output Tokens", String(selectedOfflineProfile.maxTokens))}
+                  {observationLine("Temperature", selectedOfflineProfile.temperature.toFixed(1))}
+                  {observationLine("Concurrency", String(selectedOfflineProfile.concurrency))}
+                  {observationLine("Request Count", String(selectedOfflineProfile.requestCount))}
+                  {observationLine("Recommended Target", "icclz1 dedicated offline benchmark pod")}
+                  {observationLine("View", "Hardware Capacity View")}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  startOfflineThroughputBenchmark().catch(() => undefined);
+                }}
+                disabled={offlineLoading || !primaryDetail || primaryDetail.replica_summary.ready <= 0}
+                className={`inline-flex items-center rounded-full border px-5 py-2.5 text-sm font-medium transition ${
+                  offlineLoading || !primaryDetail || primaryDetail.replica_summary.ready <= 0
+                    ? "cursor-not-allowed border-slate-700 bg-slate-900/60 text-slate-500"
+                    : "border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-100 hover:border-fuchsia-400"
+                }`}
+              >
+                {offlineLoading ? "Running Offline Benchmark..." : "Start Offline Benchmark"}
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+              {!offlineResult && !offlineError ? (
+                <div className="text-slate-400">
+                  Runs the official `vllm bench throughput` CLI for offline batch inference throughput. This reflects
+                  hardware-oriented batch capacity rather than live serving behavior.
+                </div>
+              ) : offlineError ? (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
+                  {offlineError}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {observationLine("Profile", offlineResult?.profile || "N/A")}
+                  {observationLine("Run ID", offlineResult?.run_id || "N/A")}
+                  {observationLine("Status", offlineResult?.status || "N/A")}
+                  {observationLine("Completed Requests", offlineResult?.completed_requests?.toString() || "0")}
                   {observationLine(
                     "Run Elapsed",
-                    smokeResult?.run_elapsed_seconds !== undefined &&
-                      smokeResult?.run_elapsed_seconds !== null
-                      ? `${smokeResult.run_elapsed_seconds.toFixed(3)} sec`
+                    offlineResult?.run_elapsed_seconds !== undefined && offlineResult?.run_elapsed_seconds !== null
+                      ? `${offlineResult.run_elapsed_seconds.toFixed(3)} sec`
                       : "N/A",
                   )}
                   {observationLine(
                     "Request Throughput",
-                    smokeResult?.request_throughput_rps !== undefined &&
-                      smokeResult?.request_throughput_rps !== null
-                      ? `${smokeResult.request_throughput_rps.toFixed(3)} req/s`
+                    offlineResult?.request_throughput_rps !== undefined && offlineResult?.request_throughput_rps !== null
+                      ? `${offlineResult.request_throughput_rps.toFixed(3)} req/s`
                       : "N/A",
                   )}
                   {observationLine(
-                    "Aggregate Prompt Throughput",
-                    smokeResult?.aggregate_prompt_tps !== undefined &&
-                      smokeResult?.aggregate_prompt_tps !== null
-                      ? `${smokeResult.aggregate_prompt_tps.toFixed(3)} tok/s`
+                    "Offline Throughput",
+                    offlineResult?.aggregate_total_tps !== undefined && offlineResult?.aggregate_total_tps !== null
+                      ? `${offlineResult.aggregate_total_tps.toFixed(3)} tok/s`
                       : "N/A",
                   )}
                   {observationLine(
-                    "Aggregate Generation Throughput",
-                    smokeResult?.aggregate_generation_tps !== undefined &&
-                      smokeResult?.aggregate_generation_tps !== null
-                      ? `${smokeResult.aggregate_generation_tps.toFixed(3)} tok/s`
+                    "Mean Input Tokens",
+                    offlineResult?.mean_prompt_tokens !== undefined && offlineResult?.mean_prompt_tokens !== null
+                      ? offlineResult.mean_prompt_tokens.toFixed(1)
                       : "N/A",
                   )}
                   {observationLine(
-                    "Aggregate Total Throughput",
-                    smokeResult?.aggregate_total_tps !== undefined &&
-                      smokeResult?.aggregate_total_tps !== null
-                      ? `${smokeResult.aggregate_total_tps.toFixed(3)} tok/s`
+                    "Mean Output Tokens",
+                    offlineResult?.mean_completion_tokens !== undefined &&
+                      offlineResult?.mean_completion_tokens !== null
+                      ? offlineResult.mean_completion_tokens.toFixed(1)
                       : "N/A",
                   )}
-                  {observationLine(
-                    "Latency P50",
-                    smokeResult?.latency_p50_seconds !== undefined &&
-                      smokeResult?.latency_p50_seconds !== null
-                      ? `${smokeResult.latency_p50_seconds.toFixed(3)} sec`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "Latency P95",
-                    smokeResult?.latency_p95_seconds !== undefined &&
-                      smokeResult?.latency_p95_seconds !== null
-                      ? `${smokeResult.latency_p95_seconds.toFixed(3)} sec`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "Mean Latency",
-                    smokeResult?.mean_latency_seconds !== undefined &&
-                      smokeResult?.mean_latency_seconds !== null
-                      ? `${smokeResult.mean_latency_seconds.toFixed(3)} sec`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "Mean Prompt Tokens",
-                    smokeResult?.mean_prompt_tokens?.toFixed(1) || "N/A",
-                  )}
-                  {observationLine(
-                    "Mean Completion Tokens",
-                    smokeResult?.mean_completion_tokens?.toFixed(1) || "N/A",
-                  )}
-                  {observationLine(
-                    "Mean Total Tokens",
-                    smokeResult?.mean_total_tokens?.toFixed(1) || "N/A",
-                  )}
-                  {observationLine(
-                    "Mean TTFT",
-                    smokeResult?.mean_ttft_seconds !== undefined &&
-                      smokeResult?.mean_ttft_seconds !== null
-                      ? `${smokeResult.mean_ttft_seconds.toFixed(3)} sec`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "P95 TTFT",
-                    smokeResult?.p95_ttft_seconds !== undefined &&
-                      smokeResult?.p95_ttft_seconds !== null
-                      ? `${smokeResult.p95_ttft_seconds.toFixed(3)} sec`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "Mean TPOT",
-                    smokeResult?.mean_tpot_seconds !== undefined &&
-                      smokeResult?.mean_tpot_seconds !== null
-                      ? `${smokeResult.mean_tpot_seconds.toFixed(4)} sec`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "P95 TPOT",
-                    smokeResult?.p95_tpot_seconds !== undefined &&
-                      smokeResult?.p95_tpot_seconds !== null
-                      ? `${smokeResult.p95_tpot_seconds.toFixed(4)} sec`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "Mean ITL",
-                    smokeResult?.mean_itl_seconds !== undefined &&
-                      smokeResult?.mean_itl_seconds !== null
-                      ? `${smokeResult.mean_itl_seconds.toFixed(4)} sec`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "P95 ITL",
-                    smokeResult?.p95_itl_seconds !== undefined &&
-                      smokeResult?.p95_itl_seconds !== null
-                      ? `${smokeResult.p95_itl_seconds.toFixed(4)} sec`
-                      : "N/A",
-                  )}
-                </div>
                 </div>
               )}
             </div>

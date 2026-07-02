@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen25-3b-awq-offline-bench
+  namespace: ai-serving
+  labels:
+    app: qwen25-3b-awq-offline-bench
+    pre6g.io/benchmark-kind: offline-throughput
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: qwen25-3b-awq-offline-bench
+  template:
+    metadata:
+      labels:
+        app: qwen25-3b-awq-offline-bench
+        pre6g.io/benchmark-kind: offline-throughput
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        kubernetes.io/hostname: icclz1
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: vllm-bench
+          image: vllm/vllm-openai:v0.23.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              mkdir -p /cache/huggingface /workspace
+              echo "[pre6g] offline throughput target ready on $(hostname)"
+              sleep infinity
+          env:
+            - name: HF_HOME
+              value: /cache/huggingface
+            - name: TRANSFORMERS_CACHE
+              value: /cache/huggingface
+            - name: HUGGINGFACE_HUB_CACHE
+              value: /cache/huggingface
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0"
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "8Gi"
+              nvidia.com/gpu.shared: "1"
+            limits:
+              cpu: "4000m"
+              memory: "12Gi"
+              nvidia.com/gpu.shared: "1"
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /cache/huggingface
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: /var/lib/pre6g/hf-cache
+            type: DirectoryOrCreate
+        - name: workspace
+          emptyDir: {}

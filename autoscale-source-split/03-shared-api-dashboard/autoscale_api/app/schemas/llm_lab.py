@@ -37,6 +37,12 @@ class LlmBenchmarkRequest(BaseModel):
     workload: str
 
 
+class LlmOfflineThroughputRequest(BaseModel):
+    namespace: str
+    workload: str
+    profile_id: str
+
+
 class LlmBenchmarkRunRequest(BaseModel):
     namespace: str
     workload: str

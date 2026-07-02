@@ -10,3 +10,7 @@ data:
   NETDATA_PARENT_BASE_URL: "http://140.113.179.9:32163"
   KSM_URL: "http://140.113.179.9:32080"
   AUTOSCALE_API_CORS_ORIGINS: "http://140.113.179.9:30080,http://dashboard.pre6g.local"
+  PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS: "3"
+  # Only set these when a supported dedicated offline benchmark target exists.
+  # PRE6G_LLM_OFFLINE_BENCH_NAMESPACE: "ai-serving"
+  # PRE6G_LLM_OFFLINE_BENCH_TARGET: "deploy/gemma4-offline-bench-4090"

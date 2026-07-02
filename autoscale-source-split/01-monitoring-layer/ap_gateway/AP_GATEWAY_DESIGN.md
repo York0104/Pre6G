@@ -218,7 +218,7 @@
 
 目前穩定可用的基準設定如下：
 
-- `OPENWRT=192.168.1.1`
+- `OPENWRT=192.168.100.112`
 - `AP_NAME=openwrt_ap`
 - `AP_IFACE=phy0-ap0`
 - `SNMP_IFINDEX=3`
@@ -294,7 +294,7 @@ journalctl -u ap-snmp-gateway.service -n 50 --no-pager
 ```bash
 cd /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/ap_gateway
 VM_URL=http://<CONTROL_PLANE_IP>:31888/api/v1/import/prometheus \
-OPENWRT=192.168.1.1 \
+OPENWRT=192.168.100.112 \
 AP_NAME=openwrt_ap \
 AP_IFACE=phy0-ap0 \
 python3 ap_gateway.py
@@ -305,7 +305,7 @@ python3 ap_gateway.py
 ```bash
 cd /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/ap_gateway
 VM_URL=http://<CONTROL_PLANE_IP>:31888/api/v1/import/prometheus \
-OPENWRT=192.168.1.1 \
+OPENWRT=192.168.100.112 \
 AP_NAME=openwrt_ap \
 AP_IFACE=phy0-ap0 \
 SNMP_COMMUNITY=public \
@@ -320,7 +320,7 @@ cd /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer
 VM_URL=http://<CONTROL_PLANE_IP>:31888 \
 AP_NAME=openwrt_ap \
 AP_IFACE=phy0-ap0 \
-OPENWRT=192.168.1.1 \
+OPENWRT=192.168.100.112 \
 python3 vm_agg_ap_gateway.py
 ```
 
@@ -363,9 +363,9 @@ curl -s 'http://<CONTROL_PLANE_IP>:31888/api/v1/query?query=ap_node_cpu_usage_pe
 以下是舊環境 / 舊主機上曾成功驗證的狀態，不代表目前 `icclz2` 已恢復：
 
 ```bash
-curl -I http://192.168.1.1
-ssh -i ~/.ssh/openwrt_ap_ed25519 root@192.168.1.1 "ip addr show br-lan"
-snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
+curl -I http://192.168.100.112
+ssh -i ~/.ssh/openwrt_ap_ed25519 root@192.168.100.112 "ip addr show br-lan"
+snmpwalk -v2c -c public 192.168.100.112 1.3.6.1.2.1.1
 ```
 
 當時重建進度如下：
@@ -383,7 +383,7 @@ snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
 2. 用 `systemctl status` / `journalctl` 取代 `tmux` 作為主要維運方式
 3. 若 OpenWrt 的 SNMP community 或介面 index 變更，需同步更新 collector env 或執行參數
 
-補充：目前 cluster 內 Pod 對 `192.168.1.1` 僅驗到 `UDP/161` 可達，但 `TCP/22` / `TCP/80` timeout，因此不建議先把 AP collectors 改成 Pod 內執行。
+補充：目前 cluster 內 Pod 對 `192.168.100.112` 僅驗到 `UDP/161` 可達，但 `TCP/22` / `TCP/80` timeout，因此不建議先把 AP collectors 改成 Pod 內執行。
 
 ## Current Output Design
 
@@ -577,8 +577,8 @@ snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.1
 
 - `ap_gateway.py` 與 `ap_snmp_gateway.py` 都有在背景執行
 - VictoriaMetrics 可查到代表性 AP metrics：
-  - `ap_wifi_station_count{ap="openwrt_ap",iface="phy0-ap0",target="192.168.1.1"}`
-  - `ap_node_cpu_usage_percent{ap="openwrt_ap",target="192.168.1.1"}`
+  - `ap_wifi_station_count{ap="openwrt_ap",iface="phy0-ap0",target="192.168.100.112"}`
+  - `ap_node_cpu_usage_percent{ap="openwrt_ap",target="192.168.100.112"}`
 - `vm_agg_ap_gateway.py` 可正常輸出 `collector_status: "ok"` 的 semantic JSON
 
 當時驗到的代表性輸出如下：
@@ -623,7 +623,7 @@ cd /home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer
 VM_URL=http://<CONTROL_PLANE_IP>:31888 \
 AP_NAME=openwrt_ap_gw1 \
 AP_IFACE=phy0-ap0 \
-OPENWRT=192.168.1.1 \
+OPENWRT=192.168.100.112 \
 python3 vm_agg_ap_gateway.py
 ```
 
