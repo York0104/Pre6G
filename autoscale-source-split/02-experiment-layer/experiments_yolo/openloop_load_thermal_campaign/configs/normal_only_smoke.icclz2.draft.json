@@ -1,0 +1,104 @@
+{
+  "campaign_name": "normal_only_openloop_smoke_milestone1_icclz2_draft",
+  "endpoint": {
+    "url": "http://10.42.1.46:18080/infer?repeat=10",
+    "method": "POST",
+    "payload_field": "file"
+  },
+  "node_gpu_identity": {
+    "node_name": "icclz1",
+    "gpu_uuid": "operator-confirm-current-gpu-uuid",
+    "gpu_model": "operator-confirm-current-gpu-model"
+  },
+  "container_image": "operator-confirm-yolo-container-image",
+  "yolo_model": "yolo26m.pt observed in previous smoke; operator must confirm current model",
+  "replicates": 1,
+  "normal_live_smoke": {
+    "target_rps": 0.5,
+    "duration_s": 60,
+    "max_inflight": 4,
+    "timeout_s": 10,
+    "payload_mix": [
+      "autoscale-source-split/02-experiment-layer/yolo26_workload/test_images/sanity_input.png"
+    ],
+    "description": "Draft Milestone 1 data-chain smoke only. Operator must fill endpoint, node/GPU identity, and safety limit before live use."
+  },
+  "calibration": {
+    "candidate_offered_rps": [],
+    "duration_s": 60,
+    "max_inflight": 4,
+    "timeout_s": 10,
+    "payload_mix": [
+      "autoscale-source-split/02-experiment-layer/yolo26_workload/test_images/sanity_input.png"
+    ],
+    "decision_policy": "Not used in Milestone 1. Run calibration only after normal-only smoke passes."
+  },
+  "workload_profiles": {
+    "smoke_low": {
+      "target_rps": 0.5,
+      "duration_s": 60,
+      "max_inflight": 4,
+      "payload_mix": [
+        "autoscale-source-split/02-experiment-layer/yolo26_workload/test_images/sanity_input.png"
+      ],
+      "purpose": "Conservative normal-only smoke offered demand."
+    }
+  },
+  "cooling_conditions": {
+    "normal_cooling": {
+      "description": "No fan intervention; normal system cooling policy.",
+      "fan_control_allowed": false,
+      "primary_control": "none"
+    }
+  },
+  "background_workload": {
+    "enabled": false,
+    "profile": "none",
+    "allocation": "none"
+  },
+  "safety": {
+    "operator_max_gpu_temp_c": null,
+    "restore_mode": "GPU_DEFAULT",
+    "require_telemetry_freshness_s": 5,
+    "abort_on_service_total_failure_s": 30,
+    "timeout_rate_abort_fraction": 0.2,
+    "error_rate_abort_fraction": 0.2,
+    "max_inflight_saturation_abort_fraction": 0.05,
+    "abort_on_control_command_failure": true,
+    "abort_on_missing_gpu_telemetry": true
+  },
+  "telemetry_runtime": {
+    "namespace": "intent-lab",
+    "node": "icclz1",
+    "nvidia_smi_ssh_alias": "icclz1-gpu",
+    "mode": "fast",
+    "vm_agg_interval_s": 1.0,
+    "post_client_wait_s": 1,
+    "tail_seconds": 5,
+    "vm_url": "http://140.113.179.9:31888",
+    "netdata_url": "http://140.113.179.9:32163",
+    "netdata_child_url": "http://140.113.179.9:32163",
+    "netdata_parent_base_url": "http://140.113.179.9:32163",
+    "node_exporter_instance": ""
+  },
+  "telemetry_sources": {
+    "open_loop_client_log": true,
+    "open_loop_arrival_1s_summary": true,
+    "open_loop_completion_1s_summary": true,
+    "vm_aggregator_timeseries": true,
+    "vm_query_samples_with_sample_age": true,
+    "nvidia_smi_gpu_1s": true,
+    "worker_thermal_telemetry": false,
+    "control_event_log": false
+  },
+  "analysis_policy": {
+    "milestone": "Milestone 1: normal-only smoke data-chain validation",
+    "operator_must_confirm_before_live": [
+      "endpoint.url",
+      "node_gpu_identity",
+      "telemetry_runtime.node",
+      "safety.operator_max_gpu_temp_c",
+      "no unexpected GPU workload"
+    ]
+  }
+}

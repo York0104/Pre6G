@@ -54,6 +54,27 @@ Control plane IP: `140.113.179.9`
     - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/offline_forecasting_analysis/`
     - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/vm_load_forecasting_analysis/`
     - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/load_residual_thermal_bridge_analysis/`
+- `2026-07-03` 已完成 open-loop normal-only smoke 資料鏈驗證：
+  - 設定為 `0.5 RPS / 60s / max-inflight 4`，不含 fan、CoolerControl、cooling intervention 或 Kubernetes workload control
+  - 30/30 requests 成功，無 max-inflight drop、無 timeout/error burst，GPU max temp 53C
+  - request raw log、arrival-binned summary、completion-binned summary、nvidia-smi telemetry、VM sidecar、manifest 與 safety record 皆已落盤
+  - VM sidecar sample-age p95 約 0.512s、max 約 1.000s；先前 summary 中 116.0 來自 `queries_recorded` 誤納入 sample-age 計算，已修正
+  - 下一步可做 normal-cooling calibration；仍不可直接跳 cooling-constrained campaign 或使用本次單一 smoke 宣稱 high-load baseline 已建立
+- `2026-07-03` 已完成 normal-cooling calibration first pass：
+  - 候選 offered RPS 為 `0.5 / 1.0 / 1.5`，各 60 秒、`max-inflight 4`、正常散熱、無 fan / CoolerControl / Kubernetes 控制
+  - 三個 level 皆 completed，scheduled/completed 分別為 `30/30`、`60/60`、`90/90`，drop ratio、timeout rate、error rate 皆為 0
+  - latency p95 約 `191.95 / 195.68 / 201.25 ms`
+  - GPU temp p95 約 `50 / 59 / 62 C`，SM clock median 約 `1949 / 1936 / 1923 MHz`
+  - VM sample-age max 約 `0.385 / 0.491 / 0.761 s`，皆為 `ok_for_10_30s_warning`
+  - 此結果只支持初版 normal-cooling candidate 可用；尚未完成 replicated normal high-load baseline，也尚未進入 cooling-constrained pilot
+  - 已新增 VM-derived telemetry candidate check：226 個 numeric VM 欄位中，23 個可作 primary load candidate，主要集中於 CPU load average、namespace CPU rate、RAM / memory working set
+  - VM `gpu_util_avg` 與 VRAM usage 在此短 calibration 中為常數或近常數，且 VM `gpu_util_avg=0` 與 nvidia-smi util 不一致；下一輪 load-conditioned model 不應把該 VM GPU util 欄位當 primary feature，需以 nvidia-smi/DCGM 交叉驗證
+- `2026-07-03` 已完成 replicated normal-cooling baseline first pass：
+  - `0.5 / 1.0 / 1.5 RPS` 各 3 次，共 9 個 normal-only runs；全部 completed，無 drop、timeout、error 或 safety abort
+  - 既有 fan-cycle raw RUN_ID directories preservation check 通過，未修改 raw results
+  - 建立 `openloop_load_conditioned_1s_dataset.csv`，共 540 rows，未包含 phase/fan/intervention/run/cycle 作為 primary features
+  - 完成 normal-only load-conditioned expected behavior baseline；正常資料 residual scale 初估為 GPU temp abs residual p95 約 4.67C、SM clock abs residual p95 約 145MHz、latency p95 abs residual p95 約 21.4ms
+  - 這只建立 normal-load false-alarm / threshold 參考；尚未執行 cooling-constrained pilot，也尚未宣稱未知根因泛化
 
 目前仍未完成的是 external node 的真實 telemetry 恢復：
 
@@ -430,3 +451,32 @@ Control plane IP: `140.113.179.9`
   - `POST /api/v1/llm-lab/inference` succeeded.
   - `POST /api/v1/llm-lab/benchmarks/runs` with `profile_id = continuous` started successfully.
   - `POST /api/v1/llm-lab/benchmarks/runs/{run_id}/cancel` reached terminal `cancelled` state cleanly.
+
+## 2026-07-02 Open-loop load-conditioned thermal framework
+
+- Added a safe next-stage experiment framework for:
+  - `Load Tracking / Load Forecasting`
+  - `Load-Conditioned Expected Behavior`
+  - `Thermal / Clock / Latency Residual`
+  - `Thermal-Performance Degradation Risk`
+- Added `open_loop_request_client.py` to generate fixed scheduled arrivals with monotonic timing, bounded in-flight requests, explicit schedule miss / max-in-flight records, raw request logs, and 1s offered-load summaries.
+- Hardened `open_loop_request_client.py` to emit separate arrival-binned offered-load summaries and completion-binned realized service activity summaries.
+- Added `openloop_campaign_runner.py` with `--dry-run`, `--preflight-only`, and `--normal-only`; cooling-constrained `--run-campaign` now fails closed until that executor exists.
+- Added guarded normal-only live smoke and normal-cooling calibration executor paths. They require `--normal-only` and `CONFIRM_NORMAL_SMOKE=YES`, use the open-loop client plus read-only telemetry collectors, and do not perform fan control, CoolerControl, cooling intervention, or Kubernetes scale/restart/delete.
+- Added `offline_normal_load_calibration_analysis.py` to summarize candidate offered-load levels without treating completed RPS as offered demand and without auto-selecting final low/medium/high profiles.
+- Next research milestone is a single conservative normal-only smoke to validate the data chain. Calibration, replicated normal high-load baselines, residual false-alarm validation, and matched cooling-constrained pilots must follow in that order.
+- Added a dedicated normal-only smoke operator template and checklist for Milestone 1. The template keeps safety threshold, endpoint, payload, node, and GPU identity operator-filled and does not enable live execution by itself.
+- 2026-07-03 normal-only smoke was executed with normal cooling only:
+  - endpoint: `http://10.42.1.46:18080/infer?repeat=10`
+  - target offered load: `0.5 RPS`, duration `60s`, max-inflight `4`
+  - output root: `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260703_082457/normal_smoke_20260703_082457`
+  - request chain result: `30/30` successful completions, `0` max-inflight drops, `0` timeout completions, `0` abort reason
+  - GPU telemetry: `nvidia_smi_rows=59`, max temperature `53C`, SM clock median `1949 MHz`
+  - VM telemetry caveat: VM aggregator rows were collected, but max VM sample age reached `116s`; VM-derived features should be reviewed before becoming primary early-warning inputs.
+  - No fan control, CoolerControl, cooling intervention, Kubernetes scale/restart/delete, calibration sweep, or long GPU stress was executed.
+- Added manifest schema, campaign config example, data contract, execution guide, reproducibility guide, and campaign design doc under `experiments_yolo/docs/`.
+- Added load-conditioned residual and event-level onset-only warning scorer for the next open-loop dataset; feature leakage audit requires an actual model manifest or feature-list artifact.
+- Current status:
+  - Framework and dry-run/preflight path are implemented.
+  - No fan control, CoolerControl, Kubernetes scale/restart/delete, or cooling-constrained campaign was executed.
+  - The previous closed-loop fan-cycle data remains useful for temporal evidence and method development, but it is not sufficient to claim open-loop unknown-root-cause generalization.

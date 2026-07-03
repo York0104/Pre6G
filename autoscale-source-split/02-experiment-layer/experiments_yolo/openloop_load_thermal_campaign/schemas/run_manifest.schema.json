@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pre6G Open-loop Load Thermal Campaign Run Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "experiment_timestamp_utc",
+    "git_revision",
+    "execution_mode",
+    "runner_role",
+    "live_executor_status",
+    "campaign_name",
+    "endpoint",
+    "offered_load_profiles",
+    "cooling_condition_metadata",
+    "safety",
+    "telemetry_source_availability",
+    "planned_matrix",
+    "preflight",
+    "cleanup"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "run_id": {"type": "string"},
+    "experiment_timestamp_utc": {"type": "string"},
+    "git_revision": {"type": "string"},
+    "execution_mode": {"enum": ["dry_run", "preflight_only", "run_campaign_requested_fail_closed", "normal_only_live_smoke", "normal_cooling_calibration"]},
+    "runner_role": {"type": "string"},
+    "live_executor_status": {"type": "string"},
+    "confirm_experiment_env": {"type": "string"},
+    "confirm_normal_smoke_env": {"type": "string"},
+    "no_fan_control_executed": {"type": "boolean"},
+    "no_kubernetes_scale_restart_delete_executed": {"type": "boolean"},
+    "live_execution_started": {"type": "boolean"},
+    "normal_only_live_allowed": {"type": "boolean"},
+    "campaign_name": {"type": ["string", "null"]},
+    "node_gpu_identity": {"type": "object"},
+    "container_image": {"type": "string"},
+    "yolo_model": {"type": "string"},
+    "endpoint": {"type": "object"},
+    "offered_load_profiles": {"type": "object"},
+    "background_workload_configuration": {"type": "object"},
+    "cooling_condition_metadata": {"type": "object"},
+    "safety": {"type": "object"},
+    "telemetry_source_availability": {"type": "object"},
+    "telemetry_gap": {"type": "array", "items": {"type": "string"}},
+    "planned_matrix": {"type": "array", "items": {"type": "object"}},
+    "preflight": {
+      "type": "object",
+      "required": ["errors", "warnings"],
+      "properties": {
+        "errors": {"type": "array", "items": {"type": "string"}},
+        "warnings": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "abort_reason": {"type": "string"},
+    "cleanup": {
+      "type": "object",
+      "required": ["restore_target", "restore_attempted", "restore_result"],
+      "properties": {
+        "restore_target": {"type": "string"},
+        "restore_attempted": {"type": "boolean"},
+        "restore_result": {"type": "string"}
+      }
+    },
+    "data_contract": {"type": "object"}
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "schema_version": "1.0",
+  "run_id": "openloop_20260703_095642",
+  "experiment_timestamp_utc": "2026-07-03T01:56:42.231995+00:00",
+  "git_revision": "e0214a213a1e458283aae67d4a9753fec2057adc",
+  "runner_role": "normal_cooling_planner_preflight_executor",
+  "live_executor_status": "normal_only_executor_available",
+  "execution_mode": "normal_cooling_calibration",
+  "confirm_experiment_env": "",
+  "confirm_normal_smoke_env": "YES",
+  "no_fan_control_executed": true,
+  "no_kubernetes_scale_restart_delete_executed": true,
+  "live_execution_started": true,
+  "normal_only_live_allowed": true,
+  "campaign_name": "normal_cooling_openloop_replicated_baseline_milestone3_icclz2_draft",
+  "node_gpu_identity": {
+    "node_name": "icclz1",
+    "gpu_uuid": "GPU-fd68ea02-5910-abaa-e4af-73fffdd8c14d",
+    "gpu_model": "NVIDIA GeForce GTX 1080 Ti"
+  },
+  "container_image": "operator-confirm-yolo-container-image",
+  "yolo_model": "yolo26m.pt",
+  "endpoint": {
+    "url": "http://10.42.1.46:18080/infer?repeat=10",
+    "method": "POST",
+    "payload_field": "file"
+  },
+  "offered_load_profiles": {
+    "replicated_normal_baseline_seed": {
+      "target_rps": 0.5,
+      "duration_s": 60,
+      "max_inflight": 4,
+      "payload_mix": [
+        "autoscale-source-split/02-experiment-layer/yolo26_workload/test_images/sanity_input.png"
+      ],
+      "purpose": "Replicated normal-cooling baseline using first-pass calibration levels."
+    }
+  },
+  "background_workload_configuration": {
+    "enabled": false,
+    "profile": "none",
+    "allocation": "none"
+  },
+  "cooling_condition_metadata": {
+    "normal_cooling": {
+      "description": "No fan intervention; normal system cooling policy.",
+      "fan_control_allowed": false,
+      "primary_control": "none"
+    }
+  },
+  "safety": {
+    "operator_max_gpu_temp_c": 90,
+    "restore_mode": "GPU_DEFAULT",
+    "require_telemetry_freshness_s": 5,
+    "abort_on_service_total_failure_s": 30,
+    "timeout_rate_abort_fraction": 0.2,
+    "error_rate_abort_fraction": 0.2,
+    "max_inflight_saturation_abort_fraction": 0.05,
+    "abort_on_control_command_failure": true,
+    "abort_on_missing_gpu_telemetry": true
+  },
+  "telemetry_source_availability": {
+    "open_loop_client_log": true,
+    "open_loop_arrival_1s_summary": true,
+    "open_loop_completion_1s_summary": true,
+    "vm_aggregator_timeseries": true,
+    "vm_query_samples_with_sample_age": true,
+    "nvidia_smi_gpu_1s": true,
+    "worker_thermal_telemetry": false,
+    "control_event_log": false
+  },
+  "telemetry_gap": [],
+  "planned_matrix": [
+    {
+      "workload_profile": "replicated_normal_baseline_seed",
+      "cooling_condition": "normal_cooling",
+      "replicate": 1,
+      "target_rps": 0.5,
+      "duration_s": 60,
+      "max_inflight": 4,
+      "payload_mix": [
+        "autoscale-source-split/02-experiment-layer/yolo26_workload/test_images/sanity_input.png"
+      ],
+      "condition_metadata": {
+        "description": "No fan intervention; normal system cooling policy.",
+        "fan_control_allowed": false,
+        "primary_control": "none"
+      }
+    }
+  ],
+  "preflight": {
+    "errors": [],
+    "warnings": []
+  },
+  "abort_reason": "",
+  "cleanup": {
+    "restore_target": "GPU_DEFAULT",
+    "restore_attempted": false,
+    "restore_result": "not_needed_in_dry_or_preflight"
+  },
+  "data_contract": {
+    "open_loop_client_log": "required",
+    "open_loop_arrival_1s_summary": "required",
+    "open_loop_completion_1s_summary": "required",
+    "vm_aggregator_timeseries": "required_when_available",
+    "vm_query_samples": "required_for_vm_primary_features",
+    "nvidia_smi_gpu_1s": "required",
+    "worker_thermal_telemetry": "required_when_available",
+    "control_event_log": "required"
+  }
+}

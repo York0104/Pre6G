@@ -1,0 +1,146 @@
+{
+  "campaign_name": "openloop_load_conditioned_thermal_bridge_v1",
+  "endpoint": {
+    "url": "http://127.0.0.1:8000/predict",
+    "method": "POST",
+    "payload_field": "file"
+  },
+  "node_gpu_identity": {
+    "node_name": "operator-filled",
+    "gpu_uuid": "operator-filled",
+    "gpu_model": "operator-filled"
+  },
+  "container_image": "operator-filled",
+  "yolo_model": "operator-filled",
+  "replicates": 3,
+  "normal_live_smoke": {
+    "target_rps": null,
+    "duration_s": 60,
+    "max_inflight": 8,
+    "timeout_s": 10,
+    "payload_mix": ["operator-filled-image-list.txt"],
+    "description": "Normal-cooling live smoke only; no fan, CoolerControl, cooling intervention, or Kubernetes workload control."
+  },
+  "calibration": {
+    "candidate_offered_rps": [0.5, 1.0, 2.0],
+    "duration_s": 60,
+    "max_inflight": 8,
+    "timeout_s": 10,
+    "payload_mix": ["operator-filled-image-list.txt"],
+    "decision_policy": "Do not auto-select final low/medium/high. Operator reviews summary and chooses levels manually."
+  },
+  "workload_profiles": {
+    "low": {
+      "target_rps": null,
+      "duration_s": 600,
+      "max_inflight": 8,
+      "payload_mix": ["operator-filled-image-list.txt"],
+      "purpose": "calibrated low offered demand"
+    },
+    "medium": {
+      "target_rps": null,
+      "duration_s": 600,
+      "max_inflight": 16,
+      "payload_mix": ["operator-filled-image-list.txt"],
+      "purpose": "calibrated medium offered demand"
+    },
+    "high": {
+      "target_rps": null,
+      "duration_s": 600,
+      "max_inflight": 32,
+      "payload_mix": ["operator-filled-image-list.txt"],
+      "purpose": "calibrated high offered demand that remains safe under normal cooling"
+    }
+  },
+  "cooling_conditions": {
+    "normal_cooling": {
+      "description": "No fan intervention; normal system cooling policy.",
+      "fan_control_allowed": false,
+      "primary_control": "none"
+    },
+    "natural_high_load_normal_cooling": {
+      "description": "Optional high GPU utilization control under normal cooling.",
+      "fan_control_allowed": false,
+      "primary_control": "workload_only"
+    },
+    "cooling_constrained": {
+      "description": "Cooling-constrained thermal stress; experimental-only metadata and never a primary model feature.",
+      "fan_control_allowed": true,
+      "primary_control": "operator-approved-cooling-profile",
+      "requires_confirm_experiment": true
+    },
+    "recovery_observation": {
+      "description": "Post-condition recovery observation with GPU_DEFAULT restored.",
+      "fan_control_allowed": true,
+      "primary_control": "restore_to_GPU_DEFAULT",
+      "requires_confirm_experiment": true
+    }
+  },
+  "phase_template": {
+    "warmup_s": 120,
+    "stable_normal_observation_s": 300,
+    "condition_hold_s": 600,
+    "recovery_observation_s": 300,
+    "cooldown_cleanup_s": 120
+  },
+  "background_workload": {
+    "enabled": false,
+    "profile": "operator-filled",
+    "allocation": "operator-filled"
+  },
+  "safety": {
+    "operator_max_gpu_temp_c": null,
+    "restore_mode": "GPU_DEFAULT",
+    "require_telemetry_freshness_s": 5,
+    "abort_on_service_total_failure_s": 30,
+    "timeout_rate_abort_fraction": 0.2,
+    "error_rate_abort_fraction": 0.2,
+    "max_inflight_saturation_abort_fraction": 0.2,
+    "abort_on_control_command_failure": true,
+    "abort_on_missing_gpu_telemetry": true
+  },
+  "telemetry_runtime": {
+    "namespace": "intent-lab",
+    "node": "operator-filled",
+    "mode": "fast",
+    "vm_agg_interval_s": 1.0,
+    "post_client_wait_s": 1,
+    "tail_seconds": 5,
+    "vm_url": "",
+    "netdata_url": "",
+    "netdata_child_url": "",
+    "netdata_parent_base_url": "",
+    "node_exporter_instance": ""
+  },
+  "telemetry_sources": {
+    "open_loop_client_log": true,
+    "open_loop_1s_summary": true,
+    "vm_aggregator_timeseries": true,
+    "vm_query_samples_with_sample_age": true,
+    "nvidia_smi_gpu_1s": true,
+    "worker_thermal_telemetry": true,
+    "control_event_log": true
+  },
+  "telemetry_gap": [
+    "P-state availability must be confirmed from nvidia-smi/DCGM before claiming it.",
+    "Throttle reason / performance-cap reason are not assumed available.",
+    "GPU process-level metrics must be verified per deployment."
+  ],
+  "analysis_policy": {
+    "primary_features_excluded": [
+      "phase",
+      "fan_mode",
+      "fan_speed",
+      "intervention_flag",
+      "t_rel_s",
+      "run_id",
+      "cycle_id",
+      "profile_id"
+    ],
+    "primary_validation_forbidden": [
+      "random row split",
+      "shuffle=True",
+      "same-run adjacent train/test leakage"
+    ]
+  }
+}

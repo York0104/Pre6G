@@ -41,6 +41,26 @@
 - `offline_load_residual_thermal_bridge.py` 將負載 forecast residual 接到 thermal degradation early-warning，比較 `thermal_only`、`load_residual_only`、`thermal_plus_load_residual`。
 - 目前結果顯示 load residual 單獨不足以 early-warning；主要可用訊號仍是 GPU temperature / clock，load residual 目前應視為輔助 feature 與後續資料補強方向。
 
+截至 `2026-07-02`，下一階段 open-loop / load-conditioned thermal framework 已建立為安全的 dry-run / preflight-first 流程：
+
+- `common/open_loop_request_client.py` 使用 monotonic clock 固定 scheduled arrivals，明確區分 `offered_rps` 與 completed/success throughput。
+- `openloop_load_thermal_campaign/openloop_campaign_runner.py` 目前定位為 normal-cooling planner / dry-run / preflight runner，產生 campaign matrix、manifest、preflight 與 raw data preservation check；cooling-constrained `--run-campaign` 在 executor 尚未完成前一律 fail closed。
+- runner 另提供 guarded normal-only live smoke / normal-cooling calibration executor；必須同時指定 `--normal-only` 與 `CONFIRM_NORMAL_SMOKE=YES`，且不包含 fan、CoolerControl、cooling intervention 或 Kubernetes workload control。
+- open-loop client 會同時輸出 arrival-binned offered-load summary 與 completion-binned realized service activity summary，避免把 scheduled-bin completion count 誤稱為 realized completed RPS。
+- `offline_normal_load_calibration_analysis.py` 會比較候選 offered RPS 的 drop ratio、completion throughput、timeout/error rate、latency quantiles 與 GPU telemetry；不自動選定 low/medium/high。
+- 下一個資料里程碑是單一 normal-only smoke 資料鏈驗證；通過後才做 normal-cooling calibration，再建立 replicated normal high-load baseline dataset。現在不應直接跑完整 36-run campaign、cooling-constrained、LSTM/TCN 或新的 residual model。
+- Milestone 1 可從 `openloop_load_thermal_campaign/configs/normal_only_smoke.operator.template.json` 複製成 operator-reviewed config，並依 `docs/NORMAL_ONLY_SMOKE_OPERATOR_CHECKLIST.md` 檢查後再手動啟動。
+- `2026-07-03` 已完成一次 normal-only smoke：`0.5 RPS / 60s / max-inflight 4`，30/30 requests 成功、無 drop/timeout、GPU max temp 53C。輸出位於 `results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260703_082457/normal_smoke_20260703_082457/`。
+- 同次 smoke 的 VM sidecar sample-age 已完成檢查：per-query sample age p95 約 `0.512s`、max 約 `1.000s`，可作為 10-30s early-warning 的候選 telemetry。先前摘要中的 `116.0` 是 `queries_recorded`，不是 116 秒 sample age。
+- `2026-07-03` 已完成 normal-cooling calibration first pass：`0.5 / 1.0 / 1.5 RPS`，各 60s、`max-inflight 4`，三個 level 皆 completed，無 drop、timeout 或 error。GPU temp p95 約 `50C / 59C / 62C`，VM sample-age max 約 `0.385s / 0.491s / 0.761s`。輸出位於 `results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260703_093605/`。
+- Calibration first pass 只代表正常散熱下的初步可用 offered-load candidates；尚未自動選定正式 low/medium/high，也不能取代 replicated normal high-load baseline。下一步應做 replicate 或更細 RPS 掃描，再進入 normal-load residual false-alarm validation；仍不得直接跳 cooling-constrained。
+- 同次 calibration 已完成 VM-derived telemetry 候選特徵檢查：226 個 numeric VM 欄位中，23 個可列為 primary load candidates，主要是 CPU load average、namespace CPU rate、RAM / memory working set。GPU util 與 VRAM usage 在此短校準中為常數或近常數，VM `gpu_util_avg` 也與 nvidia-smi util 不一致，因此暫不作 primary load feature。報告位於 `dryrun_20260703_093605/vm_feature_candidate_check/`。
+- `2026-07-03` 已完成 replicated normal-cooling baseline first pass：`0.5 / 1.0 / 1.5 RPS` 各 3 次，共 9 個 normal-only runs，全部 completed，無 drop、timeout、error 或 abort。輸出位於 `results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260703_095642/`。
+- Replicated baseline 已建立 1 秒 load-conditioned dataset，共 540 rows，並完成 normal-only expected behavior baseline。正常資料中的 residual scale 初估為：GPU temp abs residual p95 約 `4.67C`、SM clock abs residual p95 約 `145 MHz`、latency p95 abs residual p95 約 `21.4 ms`。這是正常散熱下的 false-alarm / threshold 參考，不代表 cooling-constrained 或未知根因偵測已驗證。
+- `docs/OPENLOOP_LOAD_THERMAL_CAMPAIGN_DESIGN.md` 記錄 normal-high-load vs cooling-constrained 的實驗設計、安全防護、telemetry gap 與不可主張範圍。
+- `common/offline_load_conditioned_residual_analysis.py` 與 `common/offline_event_level_degradation_audit.py` 提供下一輪資料取得後的 residual bridge 與 event-level onset-only evaluation。
+- 目前這是實驗框架與方法學防護，尚未執行 cooling-constrained 正式 campaign，也不宣稱未知根因泛化。
+
 ## 實驗場景
 
 ### 1. `single_pod_serial/`

@@ -1,0 +1,22 @@
+{
+  "status": "completed",
+  "dataset": "autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260703_095642/load_conditioned_dataset/openloop_load_conditioned_1s_dataset.csv",
+  "train_condition": "normal_cooling",
+  "feature_columns": [
+    "target_offered_rps",
+    "scheduled_request_count",
+    "launched_request_count",
+    "inflight_count_max",
+    "vm_cluster_semantic__namespace_total__cpu_cores_rate",
+    "vm_target_node_semantic__node_compute_features__cpu_compute__cpu_user_percent",
+    "vm_target_node_semantic__node_compute_features__cpu_compute__load5",
+    "vm_target_node_semantic__node_compute_features__ram_capacity__memory_usage_percent"
+  ],
+  "target_columns": [
+    "gpu_temp_c",
+    "sm_clock_mhz",
+    "completion_latency_p95"
+  ],
+  "validation_note": "thresholds and residual scale are derived from training normal-cooling rows only",
+  "created_at_utc": "2026-07-03T02:08:47.420888+00:00"
+}
