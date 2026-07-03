@@ -1,0 +1,22 @@
+{
+  "decision": "method_ready_but_live_cooling_executor_still_fail_closed",
+  "normal_long_analysis_dir": "autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/normal_baseline_v2_long_r07_r09_analysis",
+  "replicates": [
+    "r07_long",
+    "r08_long",
+    "r09_long"
+  ],
+  "run_count": 3,
+  "eligible_rows": 2700,
+  "latency_episode_count_after_180s_calibration": 0,
+  "composite_episode_count_after_180s_calibration": 10,
+  "cooling_constrained_live_executor_status": "not_implemented_fail_closed",
+  "required_pilot_contract": {
+    "warmup_duration_s": 180,
+    "measurement_duration_s": 900,
+    "post_observation_duration_s": 30,
+    "run_local_healthy_calibration_window_s": 180,
+    "primary_latency_scoring_after_calibration_only": true,
+    "same_offered_rps_payload_model_endpoint": true
+  }
+}

@@ -64,6 +64,26 @@
         "restore_result": {"type": "string"}
       }
     },
-    "data_contract": {"type": "object"}
+    "data_contract": {"type": "object"},
+    "normal_baseline_v2": {"type": "object"},
+    "latency_target_policy": {"type": "object"},
+    "feature_schema": {"type": "object"},
+    "campaign_id": {"type": ["string", "null"]},
+    "replicate_id": {"type": ["string", "number", "integer", "null"]},
+    "target_offered_rps": {"type": ["number", "null"]},
+    "run_order": {"type": ["integer", "null"]},
+    "warmup_start_ts": {"type": ["string", "null"]},
+    "warmup_end_ts": {"type": ["string", "null"]},
+    "measurement_start_ts": {"type": ["string", "null"]},
+    "measurement_end_ts": {"type": ["string", "null"]},
+    "client_start_ts": {"type": ["string", "null"]},
+    "client_stop_ts": {"type": ["string", "null"]},
+    "endpoint_identity": {"type": "object"},
+    "model": {"type": ["string", "null"]},
+    "image_set_hash": {"type": ["string", "null"]},
+    "background_workload_state": {"type": "object"},
+    "telemetry_sample_age_summary": {"type": "object"},
+    "analysis_ineligible": {"type": "boolean"},
+    "analysis_ineligible_reason": {"type": "string"}
   }
 }

@@ -137,6 +137,29 @@ offered load / background load features
 - 必須包含 time-only negative control、offered-load-only baseline、thermal-only ablation、thermal + service-history ablation。
 - Event-level scorer 只負責 warning/event matching；若未提供 model manifest 或 feature list artifact，不得宣稱已完成 feature leakage audit。
 
+## Matched Cooling-Constrained Pilot Gate
+
+Pilot design must follow `MATCHED_COOLING_CONSTRAINED_PILOT_CONTRACT.md`.
+
+The current method gate requires:
+
+- at least 3 long normal-cooling replicates
+- `180s` warm-up / healthy calibration
+- `900s` formal measurement
+- `30s` post-observation
+- no safety abort
+- complete VM and nvidia-smi telemetry
+- zero `rolling_latency_p50` and `rolling_latency_p95` episodes after 180s run-local calibration
+- same endpoint, payload, model, offered RPS, max-inflight, node/GPU identity, and background workload state in matched pairs
+
+Current readiness audit result:
+
+```text
+method_ready_but_live_cooling_executor_still_fail_closed
+```
+
+This means the long normal baseline is sufficient to design a matched pilot contract, but the live cooling-constrained executor remains intentionally unavailable. `--run-campaign` must still fail closed until a separate reviewed executor is implemented.
+
 ## Normal-Cooling Calibration
 
 Calibration 不應作為第一個 live step。下一個實際資料里程碑必須先是單一 normal-only smoke，用保守低 offered RPS、短時間執行，目的只驗證資料鏈：
@@ -209,6 +232,13 @@ normal_cooling + high offered load
 - 不先訓練 LSTM / TCN。
 - 不先改 residual model。
 - 不將 completed RPS 當 external offered load。
+
+2026-07-03 quality-aware validation 更新：
+
+- 1-second latency p95/p99 在 `0.5 / 1.0 / 1.5 RPS` 下樣本不足；正式 residual validation 需使用 configurable rolling window latency target，且低於 `min_latency_samples` 的 window 不列入 latency scoring。
+- `Leave-One-Replicate-Per-Load-Level-Out` 只能使用 manifest 中明確保存的 replicate identity；不得用 run_id 排序推估。現有 9-run normal dataset 因 manifest 缺 explicit replicate，該 split 已標記 skipped。
+- VM `gpu_util_avg` 在 semantic / timestamp / unit 判定完成前不得列入 primary feature candidates；目前僅保留 nvidia-smi GPU util 作為 GPU telemetry 參考。
+- quality-aware rerun 仍顯示 `residual baseline unstable across runs`，尤其 0.5 RPS composite risk 偏高；rolling latency p95 的 debounced episode count 已降為 0，但仍不足以進入 matched cooling-constrained pilot。
 
 ## 不可主張的範圍
 

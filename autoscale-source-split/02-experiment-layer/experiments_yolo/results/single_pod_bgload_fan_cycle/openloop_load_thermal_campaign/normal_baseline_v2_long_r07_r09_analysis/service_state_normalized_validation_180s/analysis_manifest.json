@@ -1,0 +1,14 @@
+{
+  "validation_dir": "autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/normal_baseline_v2_long_r07_r09_analysis/heldout_long_normal_residual_validation",
+  "calibration_window_s": 180,
+  "min_episode_duration_s": 3,
+  "refractory_s": 5,
+  "no_future_leakage_policy": "offset uses only held-out run initial window and excludes that window from formal scoring",
+  "outputs": [
+    "service_state_normalized_scored_timeline.csv",
+    "service_state_latency_offsets.csv",
+    "service_state_normalized_run_metrics.csv",
+    "service_state_normalized_episode_summary.csv",
+    "SERVICE_STATE_NORMALIZED_VALIDATION.md"
+  ]
+}

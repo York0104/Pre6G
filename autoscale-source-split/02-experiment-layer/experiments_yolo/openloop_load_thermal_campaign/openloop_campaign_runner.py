@@ -18,7 +18,7 @@ import subprocess
 import sys
 import time
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -137,6 +137,7 @@ def validate_config(cfg: Dict[str, Any], strict: bool = False, live_normal: bool
         errors.append("fan-capable strict run requires safety.restore_mode == GPU_DEFAULT")
     if live_normal:
         normal = cfg.get("normal_live_smoke", {})
+        v2 = cfg.get("normal_baseline_v2", {})
         for cond_name, cond in cfg.get("cooling_conditions", {}).items():
             if bool(cond.get("fan_control_allowed")):
                 errors.append(
@@ -157,6 +158,21 @@ def validate_config(cfg: Dict[str, Any], strict: bool = False, live_normal: bool
             errors.append("normal_live_smoke.duration_s or calibration.duration_s is required")
         if int(normal.get("max_inflight", 0) or 0) <= 0 and int(cfg.get("calibration", {}).get("max_inflight", 0) or 0) <= 0:
             errors.append("normal_live_smoke.max_inflight or calibration.max_inflight must be positive")
+        for key in ("campaign_id", "replicate_id", "run_order"):
+            if v2.get(key) is None:
+                errors.append(f"normal_baseline_v2.{key} is required for v2 live normal collection")
+        for key in ("warmup_duration_s", "measurement_duration_s", "post_observation_duration_s"):
+            if v2.get(key) is None:
+                errors.append(f"normal_baseline_v2.{key} is required for v2 live normal collection")
+            elif float(v2.get(key, 0)) < 0:
+                errors.append(f"normal_baseline_v2.{key} must be non-negative")
+        if float(v2.get("measurement_duration_s", 0) or 0) <= 0:
+            errors.append("normal_baseline_v2.measurement_duration_s must be positive")
+        latency_policy = cfg.get("latency_target_policy", {})
+        if not latency_policy:
+            errors.append("latency_target_policy is required for v2 live normal collection")
+        elif str(latency_policy.get("primary_latency_target", "")).lower() not in {"rolling_median", "rolling_mean"}:
+            errors.append("latency_target_policy.primary_latency_target must be rolling_median or rolling_mean")
     return errors, warnings
 
 
@@ -248,6 +264,42 @@ def build_manifest(args: argparse.Namespace, cfg: Dict[str, Any], errors: List[s
             "worker_thermal_telemetry": "required_when_available",
             "control_event_log": "required",
         },
+        "normal_baseline_v2": cfg.get("normal_baseline_v2", {}),
+        "latency_target_policy": cfg.get("latency_target_policy", {}),
+        "feature_schema": cfg.get("feature_schema", {}),
+    }
+
+
+def image_set_hash(payload_mix: List[str]) -> str:
+    h = hashlib.sha256()
+    for item in sorted(str(x) for x in payload_mix):
+        path = Path(item).expanduser()
+        if not path.is_absolute():
+            path = ROOT / path
+        h.update(str(path).encode("utf-8"))
+        if path.exists() and path.is_file():
+            try:
+                h.update(path.read_bytes())
+            except OSError:
+                pass
+    return h.hexdigest()
+
+
+def boundary_timestamps(start: datetime, warmup_s: float, measurement_s: float, post_s: float) -> Dict[str, str]:
+    warmup_start = start
+    warmup_end = warmup_start + timedelta(seconds=warmup_s)
+    measurement_start = warmup_end
+    measurement_end = measurement_start + timedelta(seconds=measurement_s)
+    post_end = measurement_end + timedelta(seconds=post_s)
+    return {
+        "warmup_start_ts": warmup_start.isoformat(),
+        "warmup_end_ts": warmup_end.isoformat(),
+        "measurement_start_ts": measurement_start.isoformat(),
+        "measurement_end_ts": measurement_end.isoformat(),
+        "client_start_ts": warmup_start.isoformat(),
+        "client_stop_ts": post_end.isoformat(),
+        "measurement_start_elapsed_s": warmup_s,
+        "measurement_end_elapsed_s": warmup_s + measurement_s,
     }
 
 
@@ -487,31 +539,55 @@ def run_open_loop_client(cfg: Dict[str, Any], profile: Dict[str, Any], run_dir: 
 def run_normal_level(cfg: Dict[str, Any], out_root: Path, profile: Dict[str, Any], label: str) -> Tuple[Path, int]:
     run_dir = out_root / f"{label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     run_dir.mkdir(parents=True, exist_ok=False)
+    v2 = cfg.get("normal_baseline_v2", {})
+    warmup_s = float(v2.get("warmup_duration_s", 0) or 0)
+    measurement_s = float(v2.get("measurement_duration_s", profile.get("duration_s", 0)) or 0)
+    post_s = float(v2.get("post_observation_duration_s", cfg.get("telemetry_runtime", {}).get("tail_seconds", 0)) or 0)
+    collection_profile = dict(profile)
+    collection_profile["duration_s"] = warmup_s + measurement_s + post_s
+    collection_start = datetime.now(timezone.utc)
+    boundaries = boundary_timestamps(collection_start, warmup_s, measurement_s, post_s)
+    payload_mix = collection_profile.get("payload_mix") or cfg.get("normal_live_smoke", {}).get("payload_mix") or []
     write_json(
         run_dir / "run_manifest.json",
         {
-            "schema_version": "1.0",
+            "schema_version": "2.0",
             "run_id": run_dir.name,
             "created_at_utc": utc_now_iso(),
             "execution_mode": "normal_cooling_live_level",
             "cooling_condition": "normal_cooling",
+            "analysis_ineligible": False,
+            "campaign_id": v2.get("campaign_id"),
+            "replicate_id": v2.get("replicate_id"),
+            "target_offered_rps": collection_profile.get("target_rps"),
+            "run_order": v2.get("run_order"),
+            **boundaries,
             "no_fan_control_executed": True,
             "no_coolercontrol_executed": True,
             "no_kubernetes_scale_restart_delete_executed": True,
             "endpoint": cfg.get("endpoint", {}),
-            "offered_load_profile": profile,
+            "endpoint_identity": cfg.get("endpoint", {}),
+            "offered_load_profile": collection_profile,
             "safety": cfg.get("safety", {}),
             "telemetry_runtime": cfg.get("telemetry_runtime", {}),
+            "telemetry_source_availability": cfg.get("telemetry_sources", {}),
+            "telemetry_sample_age_summary": {},
+            "model": cfg.get("yolo_model", ""),
+            "container_image": cfg.get("container_image", ""),
+            "image_set_hash": image_set_hash(payload_mix),
+            "node_gpu_identity": cfg.get("node_gpu_identity", {}),
+            "background_workload_state": cfg.get("background_workload", {}),
+            "latency_target_policy": cfg.get("latency_target_policy", {}),
         },
     )
-    duration_s = int(float(profile["duration_s"])) + int(cfg.get("telemetry_runtime", {}).get("tail_seconds", 5))
+    duration_s = int(float(collection_profile["duration_s"])) + int(cfg.get("telemetry_runtime", {}).get("tail_seconds", 5))
     vm_proc = start_vm_collector(cfg, run_dir, duration_s)
     smi_proc = start_nvidia_smi_monitor(cfg, run_dir)
     abort = {"started_at_utc": utc_now_iso(), "abort_reason": "", "completed": False}
     write_json(run_dir / "safety_abort_record.json", abort)
     rc = 1
     try:
-        rc = run_open_loop_client(cfg, profile, run_dir)
+        rc = run_open_loop_client(cfg, collection_profile, run_dir)
         if rc != 0:
             append_abort(run_dir, "open_loop_client_failed", {"returncode": rc})
         time.sleep(float(cfg.get("telemetry_runtime", {}).get("post_client_wait_s", 1)))
@@ -524,7 +600,15 @@ def run_normal_level(cfg: Dict[str, Any], out_root: Path, profile: Dict[str, Any
         rc = rc or 1
     abort.update({"completed": rc == 0 and not should_abort, "finished_at_utc": utc_now_iso(), "abort_reason": ";".join(reasons) if should_abort else ""})
     write_json(run_dir / "safety_abort_record.json", abort)
-    write_json(run_dir / "telemetry_availability_summary.json", detail.get("telemetry", summarize_telemetry(run_dir)))
+    telemetry_summary = detail.get("telemetry", summarize_telemetry(run_dir))
+    write_json(run_dir / "telemetry_availability_summary.json", telemetry_summary)
+    manifest_path = run_dir / "run_manifest.json"
+    manifest = load_json(manifest_path)
+    manifest["telemetry_sample_age_summary"] = telemetry_summary
+    if should_abort:
+        manifest["analysis_ineligible"] = True
+        manifest["analysis_ineligible_reason"] = ";".join(reasons)
+    write_json(manifest_path, manifest)
     return run_dir, rc
 
 
@@ -644,11 +728,20 @@ def run(args: argparse.Namespace) -> int:
         "planned_runs": len(manifest["planned_matrix"]),
         "live_execution_started": False,
     }
-    print(json.dumps(status, indent=2, ensure_ascii=False))
     if errors:
+        print(json.dumps(status, indent=2, ensure_ascii=False))
         return 1
     if live_normal:
-        return run_live_normal(args, cfg, out_dir, manifest)
+        rc = run_live_normal(args, cfg, out_dir, manifest)
+        final_manifest = load_json(out_dir / "run_manifest.json")
+        status["live_execution_started"] = bool(final_manifest.get("live_execution_started"))
+        status["returncode"] = rc
+        normal_runs_path = out_dir / "normal_live_runs.json"
+        if normal_runs_path.exists():
+            status["normal_live_runs"] = load_json(normal_runs_path).get("runs", [])
+        print(json.dumps(status, indent=2, ensure_ascii=False))
+        return rc
+    print(json.dumps(status, indent=2, ensure_ascii=False))
     return 0
 
 

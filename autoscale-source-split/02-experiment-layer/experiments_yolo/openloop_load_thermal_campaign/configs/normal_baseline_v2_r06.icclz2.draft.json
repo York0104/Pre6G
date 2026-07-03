@@ -1,0 +1,134 @@
+{
+  "campaign_name": "normal_baseline_v2_icclz2_replicate_r06",
+  "endpoint": {
+    "url": "http://10.42.1.46:18080/infer?repeat=10",
+    "method": "POST",
+    "payload_field": "file",
+    "service_name": "yolo26n-focus",
+    "namespace": "intent-lab"
+  },
+  "node_gpu_identity": {
+    "node_name": "icclz1",
+    "gpu_uuid": "GPU-fd68ea02-5910-abaa-e4af-73fffdd8c14d",
+    "gpu_model": "NVIDIA GeForce GTX 1080 Ti",
+    "gpu_index": "0"
+  },
+  "container_image": "local/yolo26n:0.1",
+  "yolo_model": "yolo26m.pt",
+  "replicates": 1,
+  "normal_baseline_v2": {
+    "campaign_id": "normal_baseline_v2_20260703_icclz2",
+    "replicate_id": "r06",
+    "run_order": 6,
+    "warmup_duration_s": 60,
+    "measurement_duration_s": 300,
+    "post_observation_duration_s": 30
+  },
+  "normal_live_smoke": {
+    "target_rps": 0.5,
+    "duration_s": 390,
+    "max_inflight": 4,
+    "timeout_s": 10,
+    "payload_mix": [
+      "autoscale-source-split/02-experiment-layer/yolo26_workload/test_images/sanity_input.png"
+    ],
+    "description": "Normal Baseline v2 replicate r06. Normal cooling only. No fan control, CoolerControl, cooling intervention, Kubernetes control, or GPU stress."
+  },
+  "latency_target_policy": {
+    "primary_latency_target": "rolling_median",
+    "default_window_s": 60,
+    "default_min_samples": 10,
+    "default_min_tail_samples": 30,
+    "per_offered_rps": {
+      "0.5": {
+        "window_s": 60,
+        "min_samples": 10,
+        "min_tail_samples": 30
+      }
+    }
+  },
+  "feature_schema": {
+    "primary_load_features": [
+      "target_offered_rps",
+      "inflight_count_max",
+      "client_backlog_or_schedule_miss",
+      "background_workload_state"
+    ],
+    "forbidden_primary_features": [
+      "scheduled_request_count",
+      "vmagg.target_node_semantic.gpu_bound_features.gpu_compute.gpu_util_avg",
+      "phase",
+      "fan_mode",
+      "intervention_flag",
+      "run_id",
+      "cycle_id",
+      "elapsed_s"
+    ],
+    "gpu_state_reference": [
+      "gpu_util_pct",
+      "gpu_power_w",
+      "gpu_temp_c",
+      "sm_clock_mhz",
+      "mem_clock_mhz"
+    ]
+  },
+  "workload_profiles": {
+    "normal_v2_0p5rps": {
+      "target_rps": 0.5,
+      "duration_s": 390,
+      "max_inflight": 4,
+      "payload_mix": [
+        "autoscale-source-split/02-experiment-layer/yolo26_workload/test_images/sanity_input.png"
+      ],
+      "purpose": "Sixth normal-cooling v2 replicate at conservative offered load."
+    }
+  },
+  "cooling_conditions": {
+    "normal_cooling": {
+      "description": "No fan intervention; normal system cooling policy.",
+      "fan_control_allowed": false,
+      "primary_control": "none"
+    }
+  },
+  "background_workload": {
+    "enabled": false,
+    "profile": "none",
+    "allocation": "none",
+    "operator_note": "No background workload is controlled by this runner."
+  },
+  "safety": {
+    "operator_max_gpu_temp_c": 90,
+    "restore_mode": "GPU_DEFAULT",
+    "require_telemetry_freshness_s": 5,
+    "abort_on_service_total_failure_s": 30,
+    "timeout_rate_abort_fraction": 0.2,
+    "error_rate_abort_fraction": 0.2,
+    "max_inflight_saturation_abort_fraction": 0.05,
+    "abort_on_control_command_failure": true,
+    "abort_on_missing_gpu_telemetry": true
+  },
+  "telemetry_runtime": {
+    "namespace": "intent-lab",
+    "node": "icclz1",
+    "nvidia_smi_ssh_alias": "icclz1-gpu",
+    "mode": "fast",
+    "vm_agg_interval_s": 1.0,
+    "post_client_wait_s": 1,
+    "tail_seconds": 5,
+    "vm_url": "http://140.113.179.9:31888",
+    "netdata_url": "http://140.113.179.9:32163",
+    "netdata_child_url": "http://140.113.179.9:32163",
+    "netdata_parent_base_url": "http://140.113.179.9:32163",
+    "node_exporter_instance": ""
+  },
+  "telemetry_sources": {
+    "open_loop_client_log": true,
+    "open_loop_arrival_1s_summary": true,
+    "open_loop_completion_1s_summary": true,
+    "vm_aggregator_timeseries": true,
+    "vm_query_samples_with_sample_age": true,
+    "nvidia_smi_gpu_1s": true,
+    "worker_thermal_telemetry": false,
+    "control_event_log": false
+  }
+}

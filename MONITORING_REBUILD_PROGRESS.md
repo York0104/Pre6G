@@ -75,6 +75,68 @@ Control plane IP: `140.113.179.9`
   - 建立 `openloop_load_conditioned_1s_dataset.csv`，共 540 rows，未包含 phase/fan/intervention/run/cycle 作為 primary features
   - 完成 normal-only load-conditioned expected behavior baseline；正常資料 residual scale 初估為 GPU temp abs residual p95 約 4.67C、SM clock abs residual p95 約 145MHz、latency p95 abs residual p95 約 21.4ms
   - 這只建立 normal-load false-alarm / threshold 參考；尚未執行 cooling-constrained pilot，也尚未宣稱未知根因泛化
+- `2026-07-03` 已完成 held-out normal residual false-alarm validation：
+  - 初版驗證策略包含 9-fold Leave-One-Run-Out 與 3-fold Leave-One-Replicate-Per-Load-Level-Out；沒有 random row split，也沒有讓同一 run 的相鄰秒級資料跨 train/test
+  - 每 fold 只用 training normal-cooling runs fit expected behavior model，並只用 training residual distribution 建 threshold
+  - 結論分類為 `residual baseline unstable across runs` 與 `feature quality issue`
+  - 主要風險：0.5 RPS held-out composite false alarms 偏高，最高 median composite false alarms 出現在 offered_rps=0.5，並非隨 offered load 單調上升
+  - VM GPU util 與 nvidia-smi GPU util 品質不一致：corr 約 0.074、median absolute difference 約 21%；下階段不得將該 VM GPU util 當 primary feature
+  - 因此目前不應直接進 matched cooling-constrained pilot；需先排查 low-RPS warm-up / run-state 差異、強化 feature selection，或增加更穩定的 normal baseline replicates
+- `2026-07-03` 已完成 normal baseline measurement-validity and run-state audit：
+  - latency sample sufficiency：完整 60-second bins 納入後，`0.5 / 1.0 / 1.5 RPS` 每 bin completion 中位數為 `0.5 / 1.0 / 1.5`，`min_latency_samples=5` 下 sufficient_fraction 皆為 0；1-second p95/p99 不可作為穩定 tail-latency evidence
+  - warm-up/run-state：使用前 10 秒 measurement eligibility mask；held-out exceedance 有起始區段集中現象，且 0.5 RPS 有 debounced composite / GPU temp / SM clock episodes
+  - replicate identity：9 個 run manifest 皆缺 explicit replicate 與 warm-up metadata，已標記 `replicate_missing;warmup_metadata_missing`；不得以 run_id 排序當正式 replicate metadata
+  - VM GPU utilization semantic audit：5/9 runs 判定 `mismatched semantic metric`、4/9 為 `insufficient evidence`；sidecar 有 PromQL/sample-age，但無完整 labels/unit/aggregation-window metadata
+  - 結論分類：`low-RPS measurement sparsity`、`warm-up / run-state effect`、`telemetry semantic mismatch`、`true normal baseline instability`
+  - 因此在修正 measurement validity 前，不應啟動 cooling-constrained pilot；下一步應改用較長 rolling latency window、補 manifest replicate/warm-up metadata、修 VM GPU util semantic capture，並重新驗證 held-out normal false alarms
+- `2026-07-03` 已完成 quality-aware held-out normal residual validation rerun：
+  - `build_openloop_load_conditioned_dataset.py` 新增 10 秒 rolling latency target，`min_latency_samples=5`；低樣本 window 直接標為 insufficient，不再把 1-second single-completion p95 當正式 tail-latency target
+  - dataset builder 預設排除 VM `gpu_util_avg`，直到 semantic / timestamp / unit 判定完成；`offline_vm_feature_candidate_check.py` 也將該欄位標為 `telemetry_semantic_pending`
+  - held-out validator 不再用 run_id 排序推估 replicate；因 9 個 run manifest 皆缺 explicit replicate，正式 validation 只執行 9-fold Leave-One-Run-Out，replicate-per-load split 被標記為 skipped
+  - 新輸出目錄：
+    - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260703_095642/load_conditioned_dataset_quality_aware/`
+    - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260703_095642/heldout_normal_residual_validation_quality_aware/`
+    - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260703_095642/measurement_validity_audit_quality_aware/`
+    - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260703_095642/vm_feature_candidate_check_quality_aware/`
+  - quality-aware 結論仍為 `residual baseline unstable across runs`：0.5 RPS composite risk median false alarms 約 `300/h`，但 rolling latency p95 的 debounced episode count 已降為 0；不應進 cooling-constrained pilot
+  - 下一步不是新模型，而是補正式 manifest metadata（replicate、operator-defined warm-up）、延長 normal baseline run 或提高 latency sample sufficiency，並修 VM GPU util semantic capture 後再重跑 validation
+- `2026-07-03` 已完成 Normal Baseline v2 collection readiness：
+  - 升級 normal-only framework 的 v2 manifest contract，下一輪 run 必填 `campaign_id`、`replicate_id`、`target_offered_rps`、`run_order`、warm-up / measurement / post-observation boundary timestamp、client start/stop、endpoint identity、model/image-set hash、node/GPU UUID、background workload state、telemetry availability 與 sample-age summary
+  - normal-only executor 支援 operator-configured `warmup_duration_s`、`measurement_duration_s`、`post_observation_duration_s`，並在 manifest 內寫入正式 measurement window；仍不包含 fan、CoolerControl、cooling intervention 或 Kubernetes control
+  - `build_openloop_load_conditioned_dataset.py` 現在會讀取 manifest measurement window，輸出 `manifest_gap_summary.csv`、`latency_target_quality_summary.csv`、`feature_schema_audit.csv`；缺 metadata 的 run 標為 `analysis_ineligible`
+  - held-out validation 只使用 `eligible_for_formal_validation=true` 的 rows，並以 debounced anomaly episodes 作正式 false-alarm metric；point-wise exceedance / short-run FA/hour 只保留為 exploratory sensitivity
+  - 新增文件與 template：
+    - `autoscale-source-split/02-experiment-layer/experiments_yolo/docs/NORMAL_BASELINE_V2_DATA_CONTRACT.md`
+    - `autoscale-source-split/02-experiment-layer/experiments_yolo/docs/normal_baseline_v2.preflight_checklist.md`
+    - `autoscale-source-split/02-experiment-layer/experiments_yolo/openloop_load_thermal_campaign/configs/normal_baseline_v2.operator.template.json`
+  - 對既有 9-run v1 normal dataset 執行 v2 readiness audit，確認全部因缺 v2 manifest metadata 被標記 `analysis_ineligible`，不會進入正式 v2 held-out validation
+  - 本階段只完成 readiness、dry-run、preflight-only、schema sanity、unit tests 與 synthetic window extraction test；未執行任何 live normal-only run
+- `2026-07-03` 已取得第一筆有效 Normal Baseline v2 normal-cooling run：
+  - run root: `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260703_153757/`
+  - run dir: `normal_smoke_20260703_153757`
+  - 設定為 `0.5 RPS`、`60s warm-up + 300s measurement + 30s post-observation`、`max-inflight 4`
+  - request 結果：`195/195` success、`0` drop、`0` timeout/error、safety abort reason 空
+  - telemetry：VM rows `386`、nvidia-smi rows `388`、VM sample-age max 約 `1.001s`、GPU max temp `62C`
+  - v2 dataset audit: `normal_baseline_v2_dataset_audit/`，共 `390` rows，其中 manifest-defined measurement window `300` rows，formal eligible rows `300`
+  - 這是第一筆有效 v2 normal baseline；尚不能做 held-out cross-run validation 或宣稱 normal residual baseline 穩定，下一步需補相同條件 replicate
+- `2026-07-03` 已準備 Normal Baseline v2 `r02` / `r03` replicate configs：
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/openloop_load_thermal_campaign/configs/normal_baseline_v2_r02.icclz2.draft.json`
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/openloop_load_thermal_campaign/configs/normal_baseline_v2_r03.icclz2.draft.json`
+  - 兩者皆為 `0.5 RPS`、`60s warm-up + 300s measurement + 30s post-observation`、`max-inflight 4`
+  - 兩者 dry-run 與 preflight-only 均通過，無 warnings/errors；live run 需由 operator 在 tmux shell 手動執行
+- `2026-07-03` 已取得 Normal Baseline v2 `r02` / `r03`，並完成 r01-r03 combined validation：
+  - r02: `dryrun_20260703_172916/normal_smoke_20260703_172916`
+  - r03: `dryrun_20260703_173600/normal_smoke_20260703_173600`
+  - 三個 v2 runs 均為 `0.5 RPS`，各 `195/195` success、`0` fail/drop/timeout，各有 `300` formal eligible measurement rows
+  - telemetry quality：nvidia-smi rows 皆約 `388`，VM rows `386-389`，VM sample-age max 約 `0.70-1.01s`，GPU max temp `61-62C`
+  - combined dataset: `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/normal_baseline_v2_combined_r01_r03/`
+  - held-out validation 已啟用 `Leave-One-Run-Out` 與 `Leave-One-Replicate-Per-Load-Level-Out`，因 manifest replicate_id 完整
+  - 結論分類仍為 `insufficient normal replicates` 與 `residual baseline unstable across runs`；主要原因是 r02 rolling latency p50/p95 與 composite risk 有 debounced episodes
+  - 因此 Normal Baseline v2 已可分析，但 normal residual threshold 尚未穩定；不應進 cooling-constrained pilot，下一步需檢查 r02 latency shift 或增加更多 v2 normal replicates
+- `2026-07-03` 已新增 aggressive fan-cycle availability failure interpretation note：
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/docs/SINGLE_POD_BGCYCLE_AVAILABILITY_FAILURE_NOTE.md`
+  - 方法學結論：若 `single_pod_bgload_fan_cycle` 出現大量 `connection refused`、liveness/readiness failure 與 pod restart，該 run 應定位為 availability failure / resilience threshold，而不是乾淨的 thermal-induced latency degradation
+  - latency 與 availability 需分開報告；failed requests 不應被當作 latency degradation samples
 
 目前仍未完成的是 external node 的真實 telemetry 恢復：
 
@@ -480,3 +542,139 @@ Control plane IP: `140.113.179.9`
   - Framework and dry-run/preflight path are implemented.
   - No fan control, CoolerControl, Kubernetes scale/restart/delete, or cooling-constrained campaign was executed.
   - The previous closed-loop fan-cycle data remains useful for temporal evidence and method development, but it is not sufficient to claim open-loop unknown-root-cause generalization.
+
+## 2026-07-03 Normal Baseline v2 held-out validation
+
+- Collected first replicated normal-cooling v2 open-loop dataset at `0.5 RPS`:
+  - `dryrun_20260703_153757/normal_smoke_20260703_153757` (`r01`)
+  - `dryrun_20260703_172916/normal_smoke_20260703_172916` (`r02`)
+  - `dryrun_20260703_173600/normal_smoke_20260703_173600` (`r03`)
+- Built combined dataset:
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/normal_baseline_v2_combined_r01_r03/`
+- Held-out normal residual validation uses run-level folds and manifest replicate identity; no random row split is used.
+- Current conclusion:
+  - `insufficient normal replicates`
+  - `residual baseline unstable across runs`
+- r02 shift diagnosis:
+  - output: `normal_baseline_v2_combined_r01_r03/replicate_stability_diagnosis/`
+  - classification: `normal service baseline shift dominates`
+  - rolling latency p50 spread across r01/r02/r03: about `27.75 ms`
+  - GPU temperature p50 spread: about `1.0 C`
+  - SM clock p50 spread: about `13 MHz`
+- Research decision:
+  - Normal Baseline v2 is analyzable, but the normal residual threshold is not stable yet.
+  - Cooling-constrained pilot remains paused.
+  - Next step is to collect more normal-cooling v2 replicates at the same offered RPS, or extend measurement duration and rerun held-out validation.
+
+### Follow-up r04-r06 normal-cooling v2 replicates
+
+- Added configs:
+  - `normal_baseline_v2_r04.icclz2.draft.json`
+  - `normal_baseline_v2_r05.icclz2.draft.json`
+  - `normal_baseline_v2_r06.icclz2.draft.json`
+- A sandboxed r04 attempt failed as expected due to local sandbox network/SSH restrictions:
+  - `dryrun_20260703_193338/normal_smoke_20260703_193338`
+  - abort reason: `missing_gpu_telemetry;error_burst`
+  - request errors: `[Errno 1] Operation not permitted`
+  - This run is analysis-ineligible and was not included in the combined dataset.
+- Valid normal-only live replicates collected with normal cooling only:
+  - `dryrun_20260703_194100/normal_smoke_20260703_194100` (`r04`)
+  - `dryrun_20260703_194753/normal_smoke_20260703_194753` (`r05`)
+  - `dryrun_20260703_195451/normal_smoke_20260703_195451` (`r06`)
+- r04-r06 sanity results:
+  - each run: `195/195` successful completions, no safety abort
+  - VM rows: `386-389`
+  - nvidia-smi rows: `388`
+  - VM sample-age max: about `0.63-1.01s`
+  - GPU max temperature: `62C`
+- Rebuilt combined dataset:
+  - `normal_baseline_v2_combined_r01_r06/`
+  - `6` effective runs, `1800` formal measurement rows
+- Held-out validation update:
+  - composite risk max debounced episode count decreased to `1`
+  - r02 rolling latency p50 shift remains: r02 point exceedance rate `0.7733`, episode `130-359s`
+  - r01-r06 rolling latency p50 spread: about `28.90 ms`
+  - GPU temperature p50 spread: about `2.0 C`
+  - SM clock p50 spread: about `13 MHz`
+- Current research decision:
+  - Normal-cooling v2 data is now stronger for method development.
+  - Latency residual baseline is improved but not fully stable because r02 remains a normal service-state shift.
+  - Cooling-constrained pilot remains paused until longer normal runs or run-state normalization is added.
+
+### Service-state normalization and long normal run
+
+- Added offline service-state normalization analyzer:
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/common/offline_service_state_normalized_residual_validation.py`
+- Ran sensitivity over r01-r06 held-out validation:
+  - `service_state_normalized_validation/` (`60s`)
+  - `service_state_normalized_validation_120s/`
+  - `service_state_normalized_validation_180s/`
+  - `SERVICE_STATE_NORMALIZATION_SENSITIVITY.md`
+- Finding:
+  - `60s` calibration does not remove r02 rolling latency p50 episode.
+  - `120s` and `180s` calibration remove the r02 rolling latency p50 episode.
+  - Interpretation: r02 is likely a normal service-state transition/ramp, not thermal degradation evidence.
+- Added long normal config:
+  - `normal_baseline_v2_long_r07.icclz2.draft.json`
+- Executed one normal-only long run:
+  - `dryrun_20260703_211041/normal_smoke_20260703_211041`
+  - No fan control, CoolerControl, Kubernetes control, cooling-constrained pilot, or GPU stress.
+  - `555/555` successful completions.
+  - VM rows: `1107`; nvidia-smi rows: `1106`; VM sample-age max about `1.00s`; GPU max temp `62C`.
+  - Formal measurement: `900s` after `180s` warm-up.
+- Long r07 audit:
+  - `normal_baseline_v2_long_r07_analysis/LONG_R07_RUNSTATE_STABILITY_AUDIT.md`
+  - rolling latency p50 first-to-last third delta: about `-4.46 ms`
+  - rolling latency p95 first-to-last third delta: about `+0.66 ms`
+  - GPU temp / SM clock median first-to-last third delta: no material drift
+- Current decision:
+  - Long normal-cooling protocol looks more appropriate for stable latency residual baselines.
+  - One long run is not enough; collect at least two more long normal-cooling replicates before cooling-constrained pilot.
+
+### Long normal r08-r09 completion and long-baseline validation
+
+- Added configs:
+  - `normal_baseline_v2_long_r08.icclz2.draft.json`
+  - `normal_baseline_v2_long_r09.icclz2.draft.json`
+- Executed normal-only long runs:
+  - `dryrun_20260703_214750/normal_smoke_20260703_214750` (`r08_long`)
+  - `dryrun_20260703_220649/normal_smoke_20260703_220649` (`r09_long`)
+- Safety/data quality:
+  - r08/r09 each: `555/555` successful completions, no safety abort
+  - VM rows: `1109`
+  - nvidia-smi rows: `1106-1107`
+  - VM sample-age max: about `0.96-1.00s`
+  - GPU max temperature: `62-63C`
+- Built combined long baseline:
+  - `normal_baseline_v2_long_r07_r09_analysis/`
+  - `3` long runs, `2700` formal measurement rows
+- Long-run stability:
+  - r07/r08/r09 GPU temp median first-to-last third delta: `0C`
+  - r07/r08/r09 SM clock median first-to-last third delta: `0 MHz`
+  - after-120s latency p50 levels still differ across runs: about `185.5-202.4 ms`
+- Held-out raw latency residual:
+  - still unstable across runs because r08 has a higher normal latency level than r07/r09
+  - this is interpreted as service baseline level shift, not thermal degradation evidence
+- 180s run-local healthy calibration:
+  - rolling_latency_p50 episodes: `0`
+  - rolling_latency_p95 episodes: `0`
+  - composite risk retains small non-latency episodes
+- Current research decision:
+  - Long normal protocol is usable as a stronger baseline.
+  - Future matched cooling-constrained pilot should include the same long warm-up and a pre-registered run-local healthy calibration window.
+  - Raw cross-run latency residual without calibration should not be the primary warning signal.
+
+### Matched pilot readiness contract
+
+- Added pilot contract:
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/docs/MATCHED_COOLING_CONSTRAINED_PILOT_CONTRACT.md`
+- Added offline readiness audit:
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/common/offline_matched_pilot_readiness_audit.py`
+- Audit output:
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/matched_pilot_readiness_audit/`
+- Decision:
+  - `method_ready_but_live_cooling_executor_still_fail_closed`
+- Interpretation:
+  - The normal long baseline is method-ready for matched pilot design.
+  - Any pilot must use `180s` healthy calibration, `900s` measurement, and the same offered load / endpoint / payload / model / GPU identity.
+  - The live cooling-constrained executor is still intentionally not implemented; `--run-campaign` remains fail-closed.

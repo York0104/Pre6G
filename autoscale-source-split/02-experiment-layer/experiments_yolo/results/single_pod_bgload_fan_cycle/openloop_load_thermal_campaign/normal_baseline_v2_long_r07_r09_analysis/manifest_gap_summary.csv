@@ -1,0 +1,4 @@
+run_id,campaign_id,replicate_id,target_offered_rps,manifest_gap,analysis_ineligible,analysis_ineligible_reason
+r07_long_normal_smoke_20260703_211041,normal_baseline_v2_long_20260703_icclz2,r07_long,0.5,,False,
+r08_long_normal_smoke_20260703_214750,normal_baseline_v2_long_20260703_icclz2,r08_long,0.5,,False,
+r09_long_normal_smoke_20260703_220649,normal_baseline_v2_long_20260703_icclz2,r09_long,0.5,,False,

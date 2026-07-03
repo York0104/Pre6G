@@ -1,0 +1,7 @@
+check,status,observed,required,reason
+normal_long_replicates,pass,3.0,3,need multiple independent long normal-cooling runs
+formal_measurement_rows,pass,2700.0,2700,normal baseline must be long enough for held-out validation
+manifest_validity,pass,0.0,0,formal pilot requires complete manifest metadata
+gpu_temp_internal_drift,pass,0.0,<= 2.0,normal-cooling baseline should not contain large thermal drift
+sm_clock_internal_drift,pass,0.0,<= 50.0,normal-cooling baseline should not contain large clock-state drift
+service_state_normalized_latency_episodes,pass,0.0,0,latency residual baseline must be stable after run-local healthy calibration

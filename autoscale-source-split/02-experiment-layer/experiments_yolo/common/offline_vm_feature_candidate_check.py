@@ -85,6 +85,8 @@ def classify_feature(name: str) -> str:
         return "telemetry_quality"
     if "energy_mj_sum" in lower:
         return "thermal_clock_power_context"
+    if "gpu_compute.gpu_util_avg" in lower:
+        return "telemetry_semantic_pending"
     if any(token in lower for token in ("gpu_util", "gpu_compute.gpu_util", "gpu_pressure", "schedulable_gpu")):
         return "gpu_load_candidate"
     if any(token in lower for token in ("fb_used", "vram", "memory.used", "memory_working_set", "mem_used", "ram_capacity", "memcap")):
@@ -99,7 +101,7 @@ def classify_feature(name: str) -> str:
 
 
 def candidate_decision(role: str, missing_rate: float, unique_count: int, std: float | None) -> str:
-    if role in {"metadata_or_debug", "telemetry_quality"}:
+    if role in {"metadata_or_debug", "telemetry_quality", "telemetry_semantic_pending"}:
         return "exclude_primary_feature"
     if role in {"thermal_clock_power_context", "storage_context"}:
         return "target_or_context_not_external_load"
@@ -228,6 +230,7 @@ def write_report(out_dir: Path, input_root: Path, summary: List[Dict[str, Any]],
             "",
             "- External demand 仍以 open-loop `offered_rps` / scheduled arrivals 為準。",
             "- `completed RPS`、success rate、latency history 屬 observed service state，不可取代 offered load。",
+            "- VM `gpu_util_avg` 在 semantic/timestamp/unit 判定前標為 `telemetry_semantic_pending`，不得作為 primary load feature。",
             "- fan mode、phase、run ID、cycle ID、absolute elapsed time 不列入 primary operational features。",
             "- 目前只有 3 個 short calibration levels；相關係數只作 sanity check，不作正式 feature importance。",
         ]

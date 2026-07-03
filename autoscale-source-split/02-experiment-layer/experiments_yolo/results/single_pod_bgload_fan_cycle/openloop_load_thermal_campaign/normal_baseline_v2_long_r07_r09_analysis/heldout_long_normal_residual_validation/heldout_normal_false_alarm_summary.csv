@@ -1,0 +1,11 @@
+split,target,target_offered_rps,run_count,median_false_alarms_per_healthy_hour,p95_false_alarms_per_healthy_hour,median_threshold_exceedance_rate,p95_abs_residual_median
+leave_one_replicate_per_load_level_out,composite_risk_score,0.5,3,72.0,82.8,0.02,60.385516585358225
+leave_one_replicate_per_load_level_out,gpu_temp_c,0.5,3,8.0,22.4,0.0022222222222222222,2.1611111111111114
+leave_one_replicate_per_load_level_out,rolling_latency_p50,0.5,3,152.0,3255.2,0.042222222222222223,11.004498877656374
+leave_one_replicate_per_load_level_out,rolling_latency_p95,0.5,3,1592.0,2276.0,0.44222222222222224,15.538024600163482
+leave_one_replicate_per_load_level_out,sm_clock_mhz,0.5,3,0.0,0.0,0.0,208.8222222222223
+leave_one_run_out,composite_risk_score,0.5,3,72.0,82.8,0.02,60.385516585358225
+leave_one_run_out,gpu_temp_c,0.5,3,8.0,22.4,0.0022222222222222222,2.1611111111111114
+leave_one_run_out,rolling_latency_p50,0.5,3,152.0,3255.2,0.042222222222222223,11.004498877656374
+leave_one_run_out,rolling_latency_p95,0.5,3,1592.0,2276.0,0.44222222222222224,15.538024600163482
+leave_one_run_out,sm_clock_mhz,0.5,3,0.0,0.0,0.0,208.8222222222223

@@ -1,0 +1,108 @@
+{
+  "campaign_name": "normal_baseline_v2_operator_reviewed",
+  "endpoint": {
+    "url": "operator-fill-actual-yolo-endpoint",
+    "method": "POST",
+    "payload_field": "file",
+    "service_name": "operator-fill-service-name",
+    "namespace": "intent-lab"
+  },
+  "node_gpu_identity": {
+    "node_name": "operator-fill-node-name",
+    "gpu_uuid": "operator-fill-gpu-uuid",
+    "gpu_model": "operator-fill-gpu-model",
+    "gpu_index": "operator-fill-gpu-index"
+  },
+  "container_image": "operator-fill-yolo-container-image",
+  "yolo_model": "operator-fill-yolo-model",
+  "replicates": 1,
+  "normal_baseline_v2": {
+    "campaign_id": "operator-fill-campaign-id",
+    "replicate_id": "operator-fill-replicate-id",
+    "run_order": 1,
+    "warmup_duration_s": 60,
+    "measurement_duration_s": 300,
+    "post_observation_duration_s": 30
+  },
+  "normal_live_smoke": {
+    "target_rps": 0.5,
+    "duration_s": 390,
+    "max_inflight": 4,
+    "timeout_s": 10,
+    "payload_mix": ["operator-fill-image-list.txt"],
+    "description": "Normal Baseline v2 collection. Normal cooling only. No fan control, CoolerControl, cooling intervention, Kubernetes control, or GPU stress."
+  },
+  "latency_target_policy": {
+    "primary_latency_target": "rolling_median",
+    "default_window_s": 30,
+    "default_min_samples": 10,
+    "default_min_tail_samples": 30,
+    "per_offered_rps": {
+      "0.5": {"window_s": 60, "min_samples": 10, "min_tail_samples": 30},
+      "1.0": {"window_s": 30, "min_samples": 10, "min_tail_samples": 30},
+      "1.5": {"window_s": 30, "min_samples": 10, "min_tail_samples": 30}
+    }
+  },
+  "feature_schema": {
+    "primary_load_features": ["target_offered_rps", "inflight_count_max", "client_backlog_or_schedule_miss", "background_workload_state"],
+    "forbidden_primary_features": ["scheduled_request_count", "vmagg.target_node_semantic.gpu_bound_features.gpu_compute.gpu_util_avg", "phase", "fan_mode", "intervention_flag", "run_id", "cycle_id", "elapsed_s"],
+    "gpu_state_reference": ["gpu_util_pct", "gpu_power_w", "gpu_temp_c", "sm_clock_mhz", "mem_clock_mhz"]
+  },
+  "workload_profiles": {
+    "normal_v2_level": {
+      "target_rps": 0.5,
+      "duration_s": 390,
+      "max_inflight": 4,
+      "payload_mix": ["operator-fill-image-list.txt"],
+      "purpose": "Operator-selected normal-cooling offered load for baseline v2."
+    }
+  },
+  "cooling_conditions": {
+    "normal_cooling": {
+      "description": "No fan intervention; normal system cooling policy.",
+      "fan_control_allowed": false,
+      "primary_control": "none"
+    }
+  },
+  "background_workload": {
+    "enabled": false,
+    "profile": "none",
+    "allocation": "none",
+    "operator_note": "Record external/background workload state. Do not scale/restart/delete workloads from this runner."
+  },
+  "safety": {
+    "operator_max_gpu_temp_c": null,
+    "restore_mode": "GPU_DEFAULT",
+    "require_telemetry_freshness_s": 5,
+    "abort_on_service_total_failure_s": 30,
+    "timeout_rate_abort_fraction": 0.2,
+    "error_rate_abort_fraction": 0.2,
+    "max_inflight_saturation_abort_fraction": 0.05,
+    "abort_on_control_command_failure": true,
+    "abort_on_missing_gpu_telemetry": true
+  },
+  "telemetry_runtime": {
+    "namespace": "intent-lab",
+    "node": "operator-fill-node-name",
+    "nvidia_smi_ssh_alias": "operator-fill-worker-ssh-alias",
+    "mode": "fast",
+    "vm_agg_interval_s": 1.0,
+    "post_client_wait_s": 1,
+    "tail_seconds": 5,
+    "vm_url": "",
+    "netdata_url": "",
+    "netdata_child_url": "",
+    "netdata_parent_base_url": "",
+    "node_exporter_instance": ""
+  },
+  "telemetry_sources": {
+    "open_loop_client_log": true,
+    "open_loop_arrival_1s_summary": true,
+    "open_loop_completion_1s_summary": true,
+    "vm_aggregator_timeseries": true,
+    "vm_query_samples_with_sample_age": true,
+    "nvidia_smi_gpu_1s": true,
+    "worker_thermal_telemetry": false,
+    "control_event_log": false
+  }
+}

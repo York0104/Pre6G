@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "autoscale-source-split/02-experiment-layer/experiments_yolo/openloop_load_thermal_campaign/openloop_campaign_runner.py"
+DATASET_BUILDER = ROOT / "autoscale-source-split/02-experiment-layer/experiments_yolo/common/build_openloop_load_conditioned_dataset.py"
 
 
 def load_module(path):
@@ -22,6 +23,26 @@ def load_module(path):
 
 
 runner = load_module(RUNNER)
+dataset_builder = load_module(DATASET_BUILDER)
+
+
+def v2_config_fields():
+    return {
+        "normal_baseline_v2": {
+            "campaign_id": "c1",
+            "replicate_id": "r1",
+            "run_order": 1,
+            "warmup_duration_s": 1,
+            "measurement_duration_s": 3,
+            "post_observation_duration_s": 1,
+        },
+        "latency_target_policy": {
+            "primary_latency_target": "rolling_median",
+            "default_window_s": 3,
+            "default_min_samples": 1,
+            "default_min_tail_samples": 3,
+        },
+    }
 
 
 class CampaignRunnerValidationTest(unittest.TestCase):
@@ -115,6 +136,7 @@ class CampaignRunnerValidationTest(unittest.TestCase):
                 "max_inflight": 1,
                 "payload_mix": ["missing.jpg"],
             },
+            **v2_config_fields(),
         }
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / "cfg.json"
@@ -160,6 +182,7 @@ class CampaignRunnerValidationTest(unittest.TestCase):
                 "max_inflight": 1,
                 "payload_mix": ["missing.jpg"],
             },
+            **v2_config_fields(),
         }
         errors, _ = runner.validate_config(cfg, strict=True, live_normal=True)
         self.assertTrue(any("fan-control cooling condition" in e for e in errors))
@@ -179,10 +202,79 @@ class CampaignRunnerValidationTest(unittest.TestCase):
                 "max_inflight": 1,
                 "payload_mix": ["missing.jpg"],
             },
+            **v2_config_fields(),
         }
         errors, _ = runner.validate_config(cfg, strict=True, live_normal=True)
         self.assertTrue(any("endpoint.url" in e for e in errors))
         self.assertTrue(any("node_gpu_identity.node_name" in e for e in errors))
+
+    def test_normal_v2_requires_manifest_collection_fields_for_live(self):
+        cfg = {
+            "campaign_name": "x",
+            "endpoint": {"url": "http://example.invalid"},
+            "node_gpu_identity": {"node_name": "node", "gpu_uuid": "uuid"},
+            "workload_profiles": {"low": {"target_rps": 1, "duration_s": 10, "max_inflight": 1}},
+            "cooling_conditions": {"normal_cooling": {"fan_control_allowed": False, "primary_control": "none"}},
+            "replicates": 1,
+            "safety": {"operator_max_gpu_temp_c": 80},
+            "normal_live_smoke": {
+                "target_rps": 1,
+                "duration_s": 1,
+                "max_inflight": 1,
+                "payload_mix": ["missing.jpg"],
+            },
+        }
+        errors, _ = runner.validate_config(cfg, strict=True, live_normal=True)
+        self.assertTrue(any("normal_baseline_v2.campaign_id" in e for e in errors))
+        self.assertTrue(any("latency_target_policy" in e for e in errors))
+
+    def test_synthetic_run_window_extraction_marks_only_measurement_rows_eligible(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run1"
+            run_dir.mkdir()
+            (run_dir / "open_loop_arrival_1s_summary.csv").write_text(
+                "elapsed_s,scheduled_request_count,launched_request_count,dropped_max_inflight_count,inflight_count_max,client_backlog_or_schedule_miss,timeout_rate,fail_rate\n"
+                + "\n".join(f"{i},1,1,0,1,0,0,0" for i in range(6))
+                + "\n",
+                encoding="utf-8",
+            )
+            (run_dir / "open_loop_completion_1s_summary.csv").write_text(
+                "elapsed_s,realized_completed_rps,completed_request_count,successful_completion_count,latency_p50,latency_p95,latency_p99\n"
+                + "\n".join(f"{i},1,1,1,10,10,10" for i in range(6))
+                + "\n",
+                encoding="utf-8",
+            )
+            (run_dir / "open_loop_client_raw.csv").write_text(
+                "complete_elapsed_s,e2e_latency_ms,success\n"
+                + "\n".join(f"{i}.1,10,True" for i in range(6))
+                + "\n",
+                encoding="utf-8",
+            )
+            manifest = {
+                "campaign_id": "c1",
+                "replicate_id": "r1",
+                "target_offered_rps": 1.0,
+                "run_order": 1,
+                "warmup_start_ts": "2026-07-03T00:00:00+00:00",
+                "warmup_end_ts": "2026-07-03T00:00:02+00:00",
+                "measurement_start_ts": "2026-07-03T00:00:02+00:00",
+                "measurement_end_ts": "2026-07-03T00:00:05+00:00",
+                "client_start_ts": "2026-07-03T00:00:00+00:00",
+                "client_stop_ts": "2026-07-03T00:00:06+00:00",
+                "endpoint_identity": {"url": "http://example.invalid"},
+                "model": "m",
+                "image_set_hash": "hash",
+                "node_gpu_identity": {"gpu_uuid": "uuid"},
+                "background_workload_state": {"enabled": False},
+                "telemetry_source_availability": {"nvidia_smi_gpu_1s": True},
+                "telemetry_sample_age_summary": {"nvidia_smi_rows": 6},
+                "offered_load_profile": {"target_rps": 1.0},
+            }
+            (run_dir / "run_manifest.json").write_text(__import__("json").dumps(manifest), encoding="utf-8")
+            df = dataset_builder.run_rows(run_dir, latency_window_s=2, latency_min_samples=1)
+            eligible_elapsed = df[df["eligible_for_formal_validation"]]["elapsed_s"].tolist()
+            self.assertEqual(eligible_elapsed, [2, 3, 4])
+            self.assertFalse(df["analysis_ineligible"].any())
 
 
 if __name__ == "__main__":
