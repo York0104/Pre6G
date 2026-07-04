@@ -678,3 +678,120 @@ Control plane IP: `140.113.179.9`
   - The normal long baseline is method-ready for matched pilot design.
   - Any pilot must use `180s` healthy calibration, `900s` measurement, and the same offered load / endpoint / payload / model / GPU identity.
   - The live cooling-constrained executor is still intentionally not implemented; `--run-campaign` remains fail-closed.
+
+### Matched cooling pilot preflight/recovery framework
+
+- Added matched pilot config:
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/openloop_load_thermal_campaign/configs/matched_cooling_constrained_pilot.operator.template.json`
+- Extended `openloop_campaign_runner.py` so matched cooling pilot configs can be used for `--dry-run` and `--preflight-only`.
+- Added preflight/recovery artifacts:
+  - `matched_cooling_pilot_preflight.json`
+  - `matched_cooling_recovery_plan.json`
+  - `control_event_log.dryrun.jsonl`
+  - `MATCHED_COOLING_PILOT_PREFLIGHT.md`
+- Frozen pilot policy:
+  - `180s` run-local healthy calibration
+  - `900s` formal measurement
+  - `30s` post-observation
+  - latency residual scoring after the calibration window only
+  - `GPU_DEFAULT` restore target
+- Added live pilot executor path:
+  - `openloop_campaign_runner.py --run-campaign` can now use a cooling-only SSH supervisor when the matched pilot config sets `control_backend=cooling-only-ssh-supervisor`.
+  - This path uses the open-loop request client and the existing VM / nvidia-smi collectors.
+  - It does not reuse the legacy closed-loop/background-load fan-cycle runner.
+  - It does not start torch background GPU load and does not run Kubernetes scale/restart/delete.
+- Safety status:
+  - Live execution requires `CONFIRM_EXPERIMENT=YES` and `CC_PASSWORD`.
+  - If `CC_PASSWORD` is missing, `--run-campaign` fails closed before touching cooling control.
+  - The cooling supervisor always attempts `GPU_DEFAULT` restore and writes worker-side thermal/events logs.
+  - Formal cooling-constrained pilot data has not yet been successfully collected in this step.
+
+### First matched cooling-constrained pilot
+
+- Executed first live matched cooling-only pilot:
+  - root: `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260704_114703_944629/`
+  - run: `matched_cooling_pilot_20260704_114703_956095`
+- Execution boundary:
+  - open-loop request generator at `0.5 RPS`
+  - cooling-only SSH supervisor
+  - no legacy `single_pod_bgload_fan_cycle` runner
+  - no torch background GPU load
+  - no Kubernetes scale/restart/delete
+- Request result:
+  - `555/555` successful completions
+  - no max-inflight drops
+  - no timeout/error burst
+- Thermal/clock result:
+  - warm-up GPU temp p50/max: `56/61C`
+  - cooling-constrained GPU temp p50/max: `84/88C`
+  - warm-up SM clock p50: `1923 MHz`
+  - cooling-constrained SM clock p50/min: `1582/1556 MHz`
+  - operator max temp threshold: `90C`
+- Cleanup:
+  - safety abort reason empty
+  - `GPU_DEFAULT` restore succeeded
+- Research interpretation:
+  - Observed directly: at the same offered load, cooling-constrained mode produced temperature rise and SM clock reduction without service availability collapse.
+  - Still not claimable: cross-environment generalization, unknown-root-cause anomaly detection, and NVIDIA thermal throttling mechanism proof.
+  - Next step: build matched normal-control vs cooling-constrained residual analysis with the frozen 180s run-local healthy calibration policy.
+
+### First matched cooling pilot residual analysis
+
+- Analysis output:
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/matched_cooling_pilot_20260704_114703_residual_analysis/`
+- Dataset:
+  - normal-control: r07/r08/r09 long normal-cooling baseline, `2700` formal measurement rows
+  - cooling-constrained: first matched pilot, `900` formal measurement rows
+  - latency target policy: `60s` rolling p50/p95 with at least `10` completions
+  - primary features: `target_offered_rps`, `inflight_count_max`, `client_backlog_or_schedule_miss`
+  - excluded from primary features: phase, fan mode, fan speed, intervention flag, run ID, cycle ID, absolute time, VM gpu util
+- Formal residual result:
+  - cooling GPU temperature residual median: `+24.83C`
+  - cooling SM clock residual median: `-354.31 MHz`
+  - cooling rolling latency p50 residual median: `+13.30 ms`
+  - cooling rolling latency p95 residual median: `+18.62 ms`
+  - composite risk p95: normal `57.60`, cooling-constrained `104.22`
+- Debounced episode result:
+  - normal composite risk episodes: `0`
+  - cooling composite risk episodes: `13` with the current normal-derived p99 threshold
+- Current research decision:
+  - This is the first usable matched thermal-performance degradation pilot evidence.
+  - It supports method progression from normal-only baseline to matched residual comparison.
+  - It is not yet enough for event-level early-warning metrics or cross-run detection claims.
+  - Next step is to collect additional matched cooling-constrained replicates under the same offered load and then run event-level warning evaluation.
+
+### Matched cooling pilot replicate collection
+
+- Collected two additional matched cooling-constrained live pilot replicates:
+  - `dryrun_20260704_124944_233391/matched_cooling_pilot_20260704_124944_246463`
+  - `dryrun_20260704_130851_818125/matched_cooling_pilot_20260704_130851_832320`
+- Together with the first pilot, the current matched cooling set has `3` runs.
+- Safety/data quality:
+  - each run: `555/555` successful completions
+  - no max-inflight drops
+  - no timeout/error burst
+  - GPU max temperature: `87-88C`
+  - VM sample-age max: about `1.00-1.01s`
+  - `GPU_DEFAULT` restore succeeded for all runs
+- Updated replicated residual analysis:
+  - `autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/matched_cooling_pilot_replicates_20260704_analysis/`
+- Dataset:
+  - normal-control: r07/r08/r09 long normal-cooling baseline, `2700` formal rows
+  - cooling-constrained: three matched pilot replicates, `2700` formal rows
+  - offered load: `0.5 RPS`
+  - latency target: `60s` rolling p50/p95 with at least `10` completions
+- Formal residual result:
+  - cooling GPU temperature residual median: `+24.83C`
+  - cooling SM clock residual median: `-309.81 MHz`
+  - cooling rolling latency p50 residual median: `+14.24 ms`
+  - cooling rolling latency p95 residual median: `+17.75 ms`
+  - composite risk p95: normal `57.60`, cooling-constrained `104.48`
+- Debounced episode result:
+  - composite risk normal runs with episode: `0/3`
+  - composite risk cooling runs with episode: `3/3`
+  - cooling composite total episodes: `43`
+- Current research decision:
+  - Matched residual evidence is now replicated at the same offered load on this GPU/workload/profile.
+  - The result supports a controlled thermal-performance degradation residual comparison.
+  - It still does not support claims of unknown-root-cause generalization, cross-environment robustness, or NVIDIA thermal throttling mechanism proof.
+  - Next step should be event-level warning/lead-time evaluation on these matched pilots, followed by broader offered-load/cooling-profile/workload variation.

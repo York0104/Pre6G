@@ -160,6 +160,29 @@ method_ready_but_live_cooling_executor_still_fail_closed
 
 This means the long normal baseline is sufficient to design a matched pilot contract, but the live cooling-constrained executor remains intentionally unavailable. `--run-campaign` must still fail closed until a separate reviewed executor is implemented.
 
+The next implemented step is a matched-pilot preflight/recovery package, not a live thermal pilot:
+
+- config: `openloop_load_thermal_campaign/configs/matched_cooling_constrained_pilot.operator.template.json`
+- allowed modes now: `--dry-run` and `--preflight-only`
+- expected artifacts:
+  - `matched_cooling_pilot_preflight.json`
+  - `matched_cooling_recovery_plan.json`
+  - `control_event_log.dryrun.jsonl`
+  - `MATCHED_COOLING_PILOT_PREFLIGHT.md`
+- live `--run-campaign` is only available through the cooling-only SSH supervisor backend and requires `CONFIRM_EXPERIMENT=YES` plus `CC_PASSWORD`.
+
+The preflight package freezes the `180s` run-local healthy calibration policy and checks normal-readiness evidence, `GPU_DEFAULT` restore target, operator temperature threshold, control-event logging, and matched offered-load/payload/model metadata. It does not run fan control, CoolerControl, Kubernetes control, GPU stress, or a cooling-constrained pilot.
+
+The live pilot executor deliberately does not reuse the legacy `single_pod_bgload_fan_cycle` runner, because that runner uses closed-loop serial requests, Kubernetes scale operations, and torch background GPU load. The matched pilot path instead uses:
+
+```text
+open-loop request client
++ VM / nvidia-smi telemetry collectors
++ cooling-only SSH supervisor
+```
+
+The cooling-only supervisor changes only cooling mode (`GPU_DEFAULT -> GPU_FAULT_5 -> GPU_DEFAULT`) and records worker-side thermal/events logs. It does not start torch background load.
+
 ## Normal-Cooling Calibration
 
 Calibration 不應作為第一個 live step。下一個實際資料里程碑必須先是單一 normal-only smoke，用保守低 offered RPS、短時間執行，目的只驗證資料鏈：

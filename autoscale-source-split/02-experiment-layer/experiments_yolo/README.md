@@ -394,3 +394,50 @@ Matched pilot readiness gate 已補上：
 - decision: `method_ready_but_live_cooling_executor_still_fail_closed`
 
 這表示：方法學上可開始設計 matched cooling-constrained pilot，但 live cooling executor 仍故意 fail-closed；目前不可直接跑 `--run-campaign`。
+
+Matched cooling-constrained pilot preflight/recovery framework 已補上：
+
+- config template: `openloop_load_thermal_campaign/configs/matched_cooling_constrained_pilot.operator.template.json`
+- runner 允許對該 config 執行 `--dry-run` / `--preflight-only`
+- preflight 會輸出 `matched_cooling_pilot_preflight.json`、`matched_cooling_recovery_plan.json`、`control_event_log.dryrun.jsonl` 與 `MATCHED_COOLING_PILOT_PREFLIGHT.md`
+- preflight 會檢查 r07-r09 readiness evidence、`180s` run-local healthy calibration、`900s` measurement、`GPU_DEFAULT` restore target、operator safety threshold 與 matched offered-load metadata
+- live `--run-campaign` 已接到 cooling-only SSH supervisor，但必須同時具備 `CONFIRM_EXPERIMENT=YES` 與 `CC_PASSWORD`
+- live pilot 不使用舊 `single_pod_bgload_fan_cycle` runner，不啟動 torch background GPU load，不做 Kubernetes scale/restart/delete
+- 目前尚未取得正式 cooling-constrained pilot dataset；執行後需再做 normal-control vs cooling-constrained residual comparison
+
+`2026-07-04` 已完成第一筆 matched cooling-constrained live pilot：
+
+- run root: `results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/dryrun_20260704_114703_944629/`
+- run dir: `matched_cooling_pilot_20260704_114703_956095`
+- execution: open-loop `0.5 RPS` + cooling-only SSH supervisor
+- no legacy fan-cycle runner, no torch background GPU load, no Kubernetes scale/restart/delete
+- request result: `555/555` success, no max-inflight drop, no timeout/error burst
+- thermal result: warm-up temp p50/max `56/61C`; cooling-constrained temp p50/max `84/88C`
+- clock result: warm-up SM clock p50 `1923 MHz`; cooling-constrained p50/min `1582/1556 MHz`
+- restore: `GPU_DEFAULT` restore succeeded
+- residual analysis: `results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/matched_cooling_pilot_20260704_114703_residual_analysis/`
+- formal residual rows: normal-control `2700` rows（r07-r09, 3 x 900s）；cooling-constrained `900` rows
+- formal residual result:
+  - GPU temperature residual median: `+24.83C` under cooling-constrained
+  - SM clock residual median: `-354.31 MHz` under cooling-constrained
+  - rolling latency p50 residual median: `+13.30 ms` under cooling-constrained
+  - composite risk p95: normal `57.60`; cooling-constrained `104.22`
+- interpretation: 第一筆 pilot 已直接觀察到相同 offered load 下的 temperature rise、SM clock reduction 與 mild latency increase，且未出現 availability collapse。這是 matched pilot evidence；仍不能宣稱未知根因泛化、正式 early-warning performance 或已證明 NVIDIA thermal throttling mechanism。
+
+`2026-07-04` 已補齊 matched cooling-constrained pilot replicate，共三筆：
+
+- additional run dirs:
+  - `dryrun_20260704_124944_233391/matched_cooling_pilot_20260704_124944_246463`
+  - `dryrun_20260704_130851_818125/matched_cooling_pilot_20260704_130851_832320`
+- all cooling replicates: `555/555` successful completions, no max-inflight drop, no timeout/error burst
+- GPU max temperature: `87-88C`; `GPU_DEFAULT` restore succeeded for all runs
+- replicated residual analysis:
+  - `results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/matched_cooling_pilot_replicates_20260704_analysis/`
+- formal residual result over 3 normal-control vs 3 cooling-constrained runs:
+  - cooling GPU temperature residual median: `+24.83C`
+  - cooling SM clock residual median: `-309.81 MHz`
+  - cooling rolling latency p50 residual median: `+14.24 ms`
+  - cooling rolling latency p95 residual median: `+17.75 ms`
+  - composite risk p95: normal `57.60`; cooling-constrained `104.48`
+  - composite risk episodes: normal `0/3` runs; cooling-constrained `3/3` runs
+- current interpretation: matched cooling-constrained replicate evidence now supports a controlled thermal-performance residual comparison at `0.5 RPS`. It still remains single GPU / single workload / single offered-load / single cooling-profile evidence, so event-level early-warning and generalization claims remain future work.

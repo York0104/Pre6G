@@ -138,6 +138,7 @@ def manifest_metadata(run_dir: Path) -> Dict[str, Any]:
         gaps.append("measurement_elapsed_window_missing")
     analysis_ineligible = bool(manifest.get("analysis_ineligible")) or bool(gaps)
     return {
+        "cooling_condition": manifest.get("cooling_condition", "normal_cooling"),
         "campaign_id": manifest.get("campaign_id"),
         "replicate_id": replicate,
         "run_order": manifest.get("run_order"),
@@ -251,7 +252,6 @@ def run_rows(run_dir: Path, latency_window_s: int, latency_min_samples: int) -> 
     ]
     df = arrival[[c for c in base_cols if c in arrival.columns]].copy()
     df["target_offered_rps"] = target_rps
-    df["cooling_condition"] = "normal_cooling"
     df["run_id"] = run_dir.name
     for key, value in manifest_metadata(run_dir).items():
         df[key] = value
@@ -336,11 +336,14 @@ def write_feature_schema_audit(out_dir: Path, df: pd.DataFrame) -> None:
 def run(args: argparse.Namespace) -> int:
     root = Path(args.input_root)
     out_dir = Path(args.out_dir)
-    run_dirs = [
-        p
-        for p in sorted(root.iterdir())
-        if p.is_dir() and (p / "open_loop_arrival_1s_summary.csv").exists()
-    ]
+    if args.run_dir:
+        run_dirs = [Path(p) for p in args.run_dir]
+    else:
+        run_dirs = [
+            p
+            for p in sorted(root.iterdir())
+            if p.is_dir() and (p / "open_loop_arrival_1s_summary.csv").exists()
+        ]
     frames = [run_rows(p, args.latency_rolling_window_s, args.latency_min_samples) for p in run_dirs]
     frames = [f for f in frames if not f.empty]
     if not frames:
@@ -362,7 +365,7 @@ def run(args: argparse.Namespace) -> int:
         "rolling_latency_window_s": args.latency_rolling_window_s,
         "rolling_latency_min_samples": args.latency_min_samples,
         "columns": list(df.columns),
-        "notes": "normal-cooling only; no phase/fan/intervention features included; VM gpu_util_avg excluded pending semantic validation",
+        "notes": "cooling_condition is read from run_manifest; no phase/fan/intervention features included; VM gpu_util_avg excluded pending semantic validation",
     }
     (out_dir / "analysis_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(manifest, indent=2, ensure_ascii=False))
@@ -373,6 +376,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--input-root", required=True)
     p.add_argument("--out-dir", required=True)
+    p.add_argument("--run-dir", action="append", help="Explicit open-loop run directory. May be repeated; overrides input-root discovery.")
     p.add_argument("--latency-rolling-window-s", type=int, default=10)
     p.add_argument("--latency-min-samples", type=int, default=5)
     return p.parse_args()

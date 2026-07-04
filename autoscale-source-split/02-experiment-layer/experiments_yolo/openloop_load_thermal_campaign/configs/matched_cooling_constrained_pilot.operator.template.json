@@ -1,0 +1,151 @@
+{
+  "campaign_name": "matched_cooling_constrained_pilot_operator_template",
+  "endpoint": {
+    "url": "http://<POD_OR_SERVICE_ENDPOINT>/infer?repeat=<REPEAT>",
+    "method": "POST",
+    "payload_field": "file",
+    "service_name": "<SERVICE_NAME>",
+    "namespace": "<NAMESPACE>"
+  },
+  "node_gpu_identity": {
+    "node_name": "<GPU_NODE_NAME>",
+    "gpu_uuid": "<GPU_UUID>",
+    "gpu_model": "<GPU_MODEL>",
+    "gpu_index": "0"
+  },
+  "container_image": "<YOLO_CONTAINER_IMAGE>",
+  "yolo_model": "<YOLO_MODEL_FILE>",
+  "replicates": 1,
+  "matched_cooling_constrained_pilot": {
+    "pilot_id": "matched_cooling_pilot_0p5rps_operator_template",
+    "matched_normal_campaign_id": "normal_baseline_v2_long_<DATE>_<SITE>",
+    "control_condition": "normal_cooling",
+    "treatment_condition": "cooling_constrained",
+    "target_offered_rps": 0.5,
+    "max_inflight": 4,
+    "timeout_s": 10,
+    "payload_mix": [
+      "autoscale-source-split/02-experiment-layer/yolo26_workload/test_images/sanity_input.png"
+    ],
+    "warmup_duration_s": 180,
+    "measurement_duration_s": 900,
+    "post_observation_duration_s": 30,
+    "run_local_healthy_calibration_window_s": 180,
+    "normal_readiness_evidence": {
+      "analysis_manifest_path": "autoscale-source-split/02-experiment-layer/experiments_yolo/results/single_pod_bgload_fan_cycle/openloop_load_thermal_campaign/matched_pilot_readiness_audit/analysis_manifest.json",
+      "required_decision": "method_ready_but_live_cooling_executor_still_fail_closed"
+    },
+    "control_plan": {
+      "control_backend": "cooling-only-ssh-supervisor",
+      "live_control_implemented": true,
+      "cooling_profile_mode": "GPU_FAULT_5",
+      "baseline_mode": "GPU_DEFAULT",
+      "worker_repo": "<REMOTE_GPU_TEMPCTL_LAB_PATH>",
+      "sample_interval_s": 1.0,
+      "original_state_capture_required": true,
+      "restore_target": "GPU_DEFAULT",
+      "restore_on_abort_required": true,
+      "control_event_log_required": true,
+      "notes": "Operator template only. Fill endpoint, node/GPU identity, SSH alias, worker repo, and telemetry URLs in a private local copy before live execution."
+    },
+    "abort_conditions": {
+      "temperature_over_operator_limit": true,
+      "missing_gpu_telemetry": true,
+      "timeout_or_error_burst": true,
+      "client_max_inflight_saturation": true,
+      "control_command_failure": true,
+      "data_landing_failure": true
+    },
+    "analysis_policy": {
+      "primary_latency_scoring_after_calibration_only": true,
+      "raw_cross_run_latency_residual_primary": false,
+      "exclude_primary_features": [
+        "phase",
+        "fan_mode",
+        "fan_speed",
+        "intervention_flag",
+        "run_id",
+        "cycle_id",
+        "elapsed_s",
+        "profile_id"
+      ]
+    }
+  },
+  "workload_profiles": {
+    "matched_0p5rps_long": {
+      "target_rps": 0.5,
+      "duration_s": 1110,
+      "max_inflight": 4,
+      "payload_mix": [
+        "autoscale-source-split/02-experiment-layer/yolo26_workload/test_images/sanity_input.png"
+      ],
+      "purpose": "Matched offered load for normal-control versus cooling-constrained pilot."
+    }
+  },
+  "cooling_conditions": {
+    "normal_cooling": {
+      "description": "Matched control: normal system cooling policy.",
+      "fan_control_allowed": false,
+      "primary_control": "none"
+    },
+    "cooling_constrained": {
+      "description": "Matched treatment: operator-reviewed cooling-constrained condition; metadata/event alignment only, not an operational model feature.",
+      "fan_control_allowed": true,
+      "primary_control": "operator-reviewed-cooling-profile",
+      "requires_confirm_experiment": true
+    },
+    "recovery_observation": {
+      "description": "Post-treatment observation after restoring GPU_DEFAULT.",
+      "fan_control_allowed": true,
+      "primary_control": "restore_to_GPU_DEFAULT",
+      "requires_confirm_experiment": true
+    }
+  },
+  "background_workload": {
+    "enabled": false,
+    "control_enabled": false,
+    "profile": "none",
+    "allocation": "none",
+    "operator_note": "No background workload is controlled by this runner."
+  },
+  "safety": {
+    "operator_max_gpu_temp_c": 90,
+    "restore_mode": "GPU_DEFAULT",
+    "require_telemetry_freshness_s": 5,
+    "abort_on_service_total_failure_s": 30,
+    "timeout_rate_abort_fraction": 0.2,
+    "error_rate_abort_fraction": 0.2,
+    "max_inflight_saturation_abort_fraction": 0.05,
+    "abort_on_control_command_failure": true,
+    "abort_on_missing_gpu_telemetry": true
+  },
+  "telemetry_runtime": {
+    "namespace": "<NAMESPACE>",
+    "node": "<GPU_NODE_NAME>",
+    "nvidia_smi_ssh_alias": "<GPU_NODE_SSH_ALIAS>",
+    "mode": "fast",
+    "vm_agg_interval_s": 1.0,
+    "post_client_wait_s": 1,
+    "tail_seconds": 5,
+    "vm_url": "http://<VICTORIAMETRICS_URL>",
+    "netdata_url": "http://<NETDATA_URL>",
+    "netdata_child_url": "http://<NETDATA_CHILD_URL>",
+    "netdata_parent_base_url": "http://<NETDATA_PARENT_URL>",
+    "node_exporter_instance": ""
+  },
+  "telemetry_sources": {
+    "open_loop_client_log": true,
+    "open_loop_arrival_1s_summary": true,
+    "open_loop_completion_1s_summary": true,
+    "vm_aggregator_timeseries": true,
+    "vm_query_samples_with_sample_age": true,
+    "nvidia_smi_gpu_1s": true,
+    "worker_thermal_telemetry": false,
+    "control_event_log": true
+  },
+  "telemetry_gap": [
+    "P-state availability is not assumed.",
+    "Throttle reason / performance-cap reason are not assumed available.",
+    "Cooling-constrained pilot cannot claim NVIDIA thermal throttling mechanism without those telemetry fields."
+  ]
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util
 import argparse
+import json
 import os
 import sys
 import tempfile
@@ -43,6 +44,73 @@ def v2_config_fields():
             "default_min_tail_samples": 3,
         },
     }
+
+
+def matched_pilot_config(readiness_manifest):
+    return {
+        "campaign_name": "matched-pilot-test",
+        "endpoint": {"url": "http://example.invalid"},
+        "node_gpu_identity": {"node_name": "node", "gpu_uuid": "uuid"},
+        "workload_profiles": {"matched": {"target_rps": 0.5, "duration_s": 1110, "max_inflight": 4}},
+        "cooling_conditions": {
+            "normal_cooling": {"fan_control_allowed": False, "primary_control": "none"},
+            "cooling_constrained": {
+                "fan_control_allowed": True,
+                "primary_control": "operator-reviewed-cooling-profile",
+                "requires_confirm_experiment": True,
+            },
+        },
+        "replicates": 1,
+        "background_workload": {"enabled": False, "control_enabled": False},
+        "safety": {
+            "operator_max_gpu_temp_c": 80,
+            "restore_mode": "GPU_DEFAULT",
+            "abort_on_control_command_failure": True,
+            "abort_on_missing_gpu_telemetry": True,
+        },
+        "matched_cooling_constrained_pilot": {
+            "pilot_id": "pilot-test",
+            "matched_normal_campaign_id": "normal-long",
+            "target_offered_rps": 0.5,
+            "max_inflight": 4,
+            "timeout_s": 10,
+            "payload_mix": ["missing.jpg"],
+            "warmup_duration_s": 180,
+            "measurement_duration_s": 900,
+            "post_observation_duration_s": 30,
+            "run_local_healthy_calibration_window_s": 180,
+            "normal_readiness_evidence": {
+                "analysis_manifest_path": str(readiness_manifest),
+                "required_decision": "method_ready_but_live_cooling_executor_still_fail_closed",
+            },
+            "control_plan": {
+                "live_control_implemented": False,
+                "original_state_capture_required": True,
+                "restore_target": "GPU_DEFAULT",
+                "restore_on_abort_required": True,
+                "control_event_log_required": True,
+            },
+        },
+    }
+
+
+def write_readiness_manifest(path):
+    path.write_text(
+        json.dumps(
+            {
+                "decision": "method_ready_but_live_cooling_executor_still_fail_closed",
+                "latency_episode_count_after_180s_calibration": 0,
+                "cooling_constrained_live_executor_status": "not_implemented_fail_closed",
+                "required_pilot_contract": {
+                    "warmup_duration_s": 180,
+                    "measurement_duration_s": 900,
+                    "post_observation_duration_s": 30,
+                    "run_local_healthy_calibration_window_s": 180,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 class CampaignRunnerValidationTest(unittest.TestCase):
@@ -121,6 +189,75 @@ class CampaignRunnerValidationTest(unittest.TestCase):
                 else:
                     os.environ["CONFIRM_EXPERIMENT"] = old
             self.assertNotEqual(code, 0)
+
+    def test_matched_pilot_preflight_writes_recovery_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            readiness = tmp_path / "analysis_manifest.json"
+            write_readiness_manifest(readiness)
+            config_path = tmp_path / "cfg.json"
+            config_path.write_text(json.dumps(matched_pilot_config(readiness)), encoding="utf-8")
+            out_root = tmp_path / "out"
+            code = runner.run(
+                argparse.Namespace(
+                    config=str(config_path),
+                    out_root=str(out_root),
+                    dry_run=False,
+                    preflight_only=True,
+                    run_campaign=False,
+                    run_normal_smoke=False,
+                    calibrate_normal=False,
+                    normal_only=False,
+                )
+            )
+            self.assertEqual(code, 0)
+            out_dir = next(out_root.iterdir())
+            self.assertTrue((out_dir / "matched_cooling_pilot_preflight.json").exists())
+            self.assertTrue((out_dir / "matched_cooling_recovery_plan.json").exists())
+            self.assertTrue((out_dir / "control_event_log.dryrun.jsonl").exists())
+            payload = json.loads((out_dir / "matched_cooling_pilot_preflight.json").read_text(encoding="utf-8"))
+            self.assertFalse(payload["live_execution_authorized"])
+            self.assertEqual(payload["control_plan"]["restore_target"], "GPU_DEFAULT")
+
+    def test_matched_pilot_run_campaign_still_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            readiness = tmp_path / "analysis_manifest.json"
+            write_readiness_manifest(readiness)
+            config_path = tmp_path / "cfg.json"
+            config_path.write_text(json.dumps(matched_pilot_config(readiness)), encoding="utf-8")
+            old = os.environ.get("CONFIRM_EXPERIMENT")
+            os.environ["CONFIRM_EXPERIMENT"] = "YES"
+            try:
+                code = runner.run(
+                    argparse.Namespace(
+                        config=str(config_path),
+                        out_root=str(tmp_path / "out"),
+                        dry_run=False,
+                        preflight_only=False,
+                        run_campaign=True,
+                        run_normal_smoke=False,
+                        calibrate_normal=False,
+                        normal_only=False,
+                    )
+                )
+            finally:
+                if old is None:
+                    os.environ.pop("CONFIRM_EXPERIMENT", None)
+                else:
+                    os.environ["CONFIRM_EXPERIMENT"] = old
+            self.assertNotEqual(code, 0)
+
+    def test_matched_pilot_rejects_live_control_with_placeholder_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            readiness = tmp_path / "analysis_manifest.json"
+            write_readiness_manifest(readiness)
+            cfg = matched_pilot_config(readiness)
+            cfg["matched_cooling_constrained_pilot"]["control_plan"]["control_backend"] = "reviewed-operator-cooling-profile-placeholder"
+            cfg["matched_cooling_constrained_pilot"]["control_plan"]["live_control_implemented"] = True
+            errors, _ = runner.validate_matched_pilot_config(cfg)
+            self.assertTrue(any("live cooling control requires" in e for e in errors))
 
     def test_normal_smoke_requires_normal_only_and_confirm(self):
         cfg = {

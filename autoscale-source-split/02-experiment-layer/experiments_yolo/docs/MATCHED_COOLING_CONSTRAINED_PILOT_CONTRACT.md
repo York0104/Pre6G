@@ -4,7 +4,31 @@ This contract defines the minimum method requirements before any matched cooling
 
 ## Current Gate
 
-The current open-loop runner keeps cooling-constrained `--run-campaign` fail-closed. A pilot may be designed from this contract, but live execution requires a separately implemented and reviewed executor.
+The current open-loop runner supports a narrow cooling-only SSH supervisor for the matched pilot. It does not use the legacy background-load fan-cycle runner, does not start torch background load, and does not run Kubernetes scale/restart/delete.
+
+Live execution is still gated by `CONFIRM_EXPERIMENT=YES`, `CC_PASSWORD`, operator temperature threshold, r07-r09 readiness evidence, and `GPU_DEFAULT` restore policy. Without those gates, `--run-campaign` fails closed.
+
+The reviewed design path now starts from:
+
+```bash
+./iccl/bin/python autoscale-source-split/02-experiment-layer/experiments_yolo/openloop_load_thermal_campaign/openloop_campaign_runner.py \
+  --config autoscale-source-split/02-experiment-layer/experiments_yolo/openloop_load_thermal_campaign/configs/matched_cooling_constrained_pilot.operator.template.json \
+  --preflight-only
+```
+
+This writes a preflight/recovery review package only. It does not run fan control, CoolerControl, Kubernetes control, GPU stress, or a cooling-constrained pilot.
+The repository config is an operator template with placeholders; live execution requires a private local copy with site-specific endpoint, node/GPU identity, SSH alias, worker repo, and telemetry URLs filled in.
+
+The live pilot command is intentionally explicit:
+
+```bash
+CONFIRM_EXPERIMENT=YES CC_PASSWORD='operator-provided' \
+./iccl/bin/python autoscale-source-split/02-experiment-layer/experiments_yolo/openloop_load_thermal_campaign/openloop_campaign_runner.py \
+  --config autoscale-source-split/02-experiment-layer/experiments_yolo/openloop_load_thermal_campaign/configs/matched_cooling_constrained_pilot.operator.template.json \
+  --run-campaign
+```
+
+The runner must fail closed if `CC_PASSWORD` is absent.
 
 ## Required Matched Design
 
@@ -60,6 +84,24 @@ The only acceptable readiness outcome before design work is:
 ```text
 method_ready_but_live_cooling_executor_still_fail_closed
 ```
+
+## Required Preflight Artifacts
+
+A matched-pilot preflight must produce:
+
+- `matched_cooling_pilot_preflight.json`
+- `matched_cooling_recovery_plan.json`
+- `control_event_log.dryrun.jsonl`
+- `MATCHED_COOLING_PILOT_PREFLIGHT.md`
+
+The preflight must show:
+
+- `live_execution_authorized=false`
+- `live_execution_authorized=false` in dry-run/preflight artifacts
+- `live_executor_status=cooling_only_executor_available_requires_confirm_and_cc_password`
+- `restore_target=GPU_DEFAULT`
+- normal-readiness evidence loaded from the r07-r09 readiness audit
+- no primary-model use of phase, fan mode, fan speed, intervention flag, run ID, cycle ID, elapsed time, or profile ID
 
 ## Not Yet Claimable
 
