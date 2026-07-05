@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
-  Cell,
   Label,
   Line,
   LineChart,
@@ -398,7 +395,7 @@ const BENCHMARK_PROFILES = [
 const OFFLINE_THROUGHPUT_PROFILES = [
   {
     id: "pascal-smoke",
-    label: "pascal-smoke",
+    label: "Smoke",
     runtime: "llama.cpp CUDA",
     model: "Qwen2.5-1.5B-Instruct GGUF",
     promptSource: "Fixed llama-bench profile",
@@ -410,10 +407,11 @@ const OFFLINE_THROUGHPUT_PROFILES = [
     repetitions: 3,
     flashAttention: "off",
     gpuLayers: "all",
+    runMode: "Fixed repetition-count benchmark",
   },
   {
-    id: "pascal-throughput",
-    label: "pascal-throughput",
+    id: "pascal-continuous",
+    label: "Continuous",
     runtime: "llama.cpp CUDA",
     model: "Qwen2.5-1.5B-Instruct GGUF",
     promptSource: "Fixed llama-bench profile",
@@ -422,24 +420,10 @@ const OFFLINE_THROUGHPUT_PROFILES = [
     nDepth: 0,
     batchSize: 512,
     ubatchSize: 128,
-    repetitions: 5,
+    repetitions: 24,
     flashAttention: "off",
     gpuLayers: "all",
-  },
-  {
-    id: "pascal-context",
-    label: "pascal-context",
-    runtime: "llama.cpp CUDA",
-    model: "Qwen2.5-1.5B-Instruct GGUF",
-    promptSource: "Fixed llama-bench profile",
-    nPrompt: 512,
-    nGen: 128,
-    nDepth: 1024,
-    batchSize: 512,
-    ubatchSize: 128,
-    repetitions: 5,
-    flashAttention: "off",
-    gpuLayers: "all",
+    runMode: "Repeated offline benchmark with live progress",
   },
 ] as const;
 
@@ -537,6 +521,28 @@ type LlamacppOfflineBenchmarkResult = {
   error_summary?: string | null;
 };
 
+type LlamacppOfflineBenchmarkProgressBucket = {
+  step: number;
+  elapsed_seconds: number;
+  duration_seconds: number;
+  prompt_tps?: number | null;
+  generation_tps?: number | null;
+  prompt_generation_tps?: number | null;
+};
+
+type LlamacppOfflineBenchmarkProgressSnapshot = {
+  elapsed_seconds: number;
+  completed_steps: number;
+  total_steps: number;
+  current_prompt_tps?: number | null;
+  current_generation_tps?: number | null;
+  current_prompt_generation_tps?: number | null;
+  mean_prompt_tps?: number | null;
+  mean_generation_tps?: number | null;
+  mean_prompt_generation_tps?: number | null;
+  buckets: LlamacppOfflineBenchmarkProgressBucket[];
+};
+
 type LlamacppOfflineBenchmarkRunStateResponse = {
   schema: string;
   ts: number;
@@ -551,6 +557,7 @@ type LlamacppOfflineBenchmarkRunStateResponse = {
   node_name?: string | null;
   started_at_ts?: number | null;
   completed_at_ts?: number | null;
+  progress?: LlamacppOfflineBenchmarkProgressSnapshot | null;
   result?: LlamacppOfflineBenchmarkResult | null;
   error?: string | null;
 };
@@ -566,6 +573,13 @@ type LlamacppOfflineBenchmarkRunStartResponse = {
   status: string;
   namespace: string;
   target_pod: string;
+};
+
+type LlamacppOfflineBenchmarkRunCancelResponse = {
+  schema: string;
+  ts: number;
+  run_id: string;
+  status: string;
 };
 
 type Health = "healthy" | "degraded" | "offline";
@@ -1356,6 +1370,10 @@ function LlmServingLabPage({
   const selectedOfflineProfile =
     OFFLINE_THROUGHPUT_PROFILES.find((profile) => profile.id === offlineProfileId) || OFFLINE_THROUGHPUT_PROFILES[0];
   const offlineLatestResult = offlineLatestRun?.result || null;
+  const offlineRunInProgress =
+    offlineLatestRun?.status === "queued" ||
+    offlineLatestRun?.status === "running" ||
+    offlineLatestRun?.status === "cancelling";
   const shouldHideContinuousPercentiles = smokeResult?.profile_id === "continuous";
   const filteredRunHistory = runHistory.filter((item) => {
     if (historyFilter === "all") return true;
@@ -1475,7 +1493,11 @@ function LlmServingLabPage({
         "/api/v1/llm-lab/llamacpp/offline-benchmark/runs/latest",
       );
       setOfflineLatestRun(response);
-      if (response.status === "queued" || response.status === "running") {
+      if (
+        response.status === "queued" ||
+        response.status === "running" ||
+        response.status === "cancelling"
+      ) {
         setOfflineActiveRunId(response.run_id);
       } else if (offlineActiveRunId === response.run_id) {
         setOfflineActiveRunId("");
@@ -1495,7 +1517,11 @@ function LlmServingLabPage({
         `/api/v1/llm-lab/llamacpp/offline-benchmark/runs/${encodeURIComponent(runId)}`,
       );
       setOfflineLatestRun(response);
-      if (response.status !== "queued" && response.status !== "running") {
+      if (
+        response.status !== "queued" &&
+        response.status !== "running" &&
+        response.status !== "cancelling"
+      ) {
         setOfflineActiveRunId("");
         await loadRunHistory(primaryWorkload?.namespace);
       }
@@ -1523,6 +1549,20 @@ function LlmServingLabPage({
       setOfflineError(error instanceof Error ? error.message : "Failed to run offline hardware benchmark.");
     } finally {
       setOfflineLoading(false);
+    }
+  }
+
+  async function cancelOfflineThroughputBenchmark() {
+    if (!offlineActiveRunId) return;
+    setOfflineError("");
+    try {
+      await postJsonBody<LlamacppOfflineBenchmarkRunCancelResponse>(
+        `/api/v1/llm-lab/llamacpp/offline-benchmark/runs/${encodeURIComponent(offlineActiveRunId)}/cancel`,
+        {},
+      );
+      await loadOfflineRun(offlineActiveRunId);
+    } catch (error) {
+      setOfflineError(error instanceof Error ? error.message : "Failed to cancel offline benchmark.");
     }
   }
 
@@ -2204,6 +2244,7 @@ function LlmServingLabPage({
                 {observationLine("Context Depth", String(selectedOfflineProfile.nDepth))}
                 {observationLine("Batch Size", String(selectedOfflineProfile.batchSize))}
                 {observationLine("Repetitions", String(selectedOfflineProfile.repetitions))}
+                {observationLine("Run Mode", selectedOfflineProfile.runMode)}
               </div>
             </div>
 
@@ -2221,6 +2262,17 @@ function LlmServingLabPage({
             >
               {offlineLoading || !!offlineActiveRunId ? "Running Offline Benchmark..." : "Run Offline Benchmark"}
             </button>
+            {offlineActiveRunId && selectedOfflineProfile.id === "pascal-continuous" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  cancelOfflineThroughputBenchmark().catch(() => undefined);
+                }}
+                className="ml-3 inline-flex items-center rounded-full border border-rose-500/40 bg-rose-500/10 px-5 py-2.5 text-sm font-medium text-rose-100 transition hover:border-rose-400"
+              >
+                Cancel Run
+              </button>
+            ) : null}
           </div>
 
           <div className="space-y-4">
@@ -2235,127 +2287,274 @@ function LlmServingLabPage({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Latest Result</div>
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <SummaryCard
-                      label="Status"
-                      value={offlineLatestRun?.status || "N/A"}
-                      tone={
-                        offlineLatestRun?.status === "succeeded"
-                          ? "green"
-                          : offlineLatestRun?.status === "failed"
-                            ? "orange"
-                            : "blue"
-                      }
-                    />
-                    <SummaryCard
-                      label="Prompt TPS"
-                      value={
-                        offlineLatestResult?.prompt_tps_mean !== undefined &&
-                        offlineLatestResult?.prompt_tps_mean !== null
-                          ? `${offlineLatestResult.prompt_tps_mean.toFixed(1)} tok/s`
-                          : "N/A"
-                      }
-                      tone="blue"
-                    />
-                    <SummaryCard
-                      label="Generation TPS"
-                      value={
-                        offlineLatestResult?.generation_tps_mean !== undefined &&
-                        offlineLatestResult?.generation_tps_mean !== null
-                          ? `${offlineLatestResult.generation_tps_mean.toFixed(1)} tok/s`
-                          : "N/A"
-                      }
-                      tone="blue"
-                    />
-                    <SummaryCard
-                      label="Prompt + Generation TPS"
-                      value={
-                        offlineLatestResult?.prompt_generation_tps_mean !== undefined &&
-                        offlineLatestResult?.prompt_generation_tps_mean !== null
-                          ? `${offlineLatestResult.prompt_generation_tps_mean.toFixed(1)} tok/s`
-                          : "N/A"
-                      }
-                      tone="green"
-                    />
-                  </div>
-                  {offlineLatestResult ? (
-                    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-                      <div className="mb-3 text-sm font-medium text-slate-200">
-                        Offline Throughput Comparison
+                  {offlineLatestRun && offlineRunInProgress && offlineLatestRun.progress ? (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
+                      <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">
+                        Live Run Progress
                       </div>
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={[
-                              {
-                                metric: "Prompt TPS",
-                                value: offlineLatestResult.prompt_tps_mean ?? 0,
-                              },
-                              {
-                                metric: "Generation TPS",
-                                value: offlineLatestResult.generation_tps_mean ?? 0,
-                              },
-                              {
-                                metric: "Prompt + Generation TPS",
-                                value: offlineLatestResult.prompt_generation_tps_mean ?? 0,
-                              },
-                            ]}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                            <XAxis dataKey="metric" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                            <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
-                              <Label
-                                value="Throughput (tokens/s)"
-                                angle={-90}
-                                position="insideLeft"
-                                fill="#94a3b8"
-                                fontSize={12}
-                                style={{ textAnchor: "middle" }}
+                      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <SummaryCard
+                          label="Status"
+                          value={offlineLatestRun.status}
+                          tone={
+                            offlineLatestRun.status === "running"
+                              ? "green"
+                              : offlineLatestRun.status === "cancelling"
+                                ? "orange"
+                                : "blue"
+                          }
+                        />
+                        <SummaryCard
+                          label="Current Prompt TPS"
+                          value={
+                            offlineLatestRun.progress.current_prompt_tps !== undefined &&
+                            offlineLatestRun.progress.current_prompt_tps !== null
+                              ? `${offlineLatestRun.progress.current_prompt_tps.toFixed(1)} tok/s`
+                              : "N/A"
+                          }
+                          tone="blue"
+                        />
+                        <SummaryCard
+                          label="Current Gen TPS"
+                          value={
+                            offlineLatestRun.progress.current_generation_tps !== undefined &&
+                            offlineLatestRun.progress.current_generation_tps !== null
+                              ? `${offlineLatestRun.progress.current_generation_tps.toFixed(1)} tok/s`
+                              : "N/A"
+                          }
+                          tone="blue"
+                        />
+                        <SummaryCard
+                          label="Current Prompt+Gen TPS"
+                          value={
+                            offlineLatestRun.progress.current_prompt_generation_tps !== undefined &&
+                            offlineLatestRun.progress.current_prompt_generation_tps !== null
+                              ? `${offlineLatestRun.progress.current_prompt_generation_tps.toFixed(1)} tok/s`
+                              : "N/A"
+                          }
+                          tone="green"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        {observationLine("Active Run ID", offlineLatestRun.run_id)}
+                        {observationLine("Elapsed", `${offlineLatestRun.progress.elapsed_seconds.toFixed(1)} sec`)}
+                        {observationLine(
+                          "Completed Steps",
+                          `${offlineLatestRun.progress.completed_steps}/${offlineLatestRun.progress.total_steps}`,
+                        )}
+                        {observationLine(
+                          "Mean Prompt TPS",
+                          offlineLatestRun.progress.mean_prompt_tps !== undefined &&
+                            offlineLatestRun.progress.mean_prompt_tps !== null
+                            ? `${offlineLatestRun.progress.mean_prompt_tps.toFixed(1)} tok/s`
+                            : "N/A",
+                        )}
+                        {observationLine(
+                          "Mean Gen TPS",
+                          offlineLatestRun.progress.mean_generation_tps !== undefined &&
+                            offlineLatestRun.progress.mean_generation_tps !== null
+                            ? `${offlineLatestRun.progress.mean_generation_tps.toFixed(1)} tok/s`
+                            : "N/A",
+                        )}
+                        {observationLine(
+                          "Mean Prompt+Gen TPS",
+                          offlineLatestRun.progress.mean_prompt_generation_tps !== undefined &&
+                            offlineLatestRun.progress.mean_prompt_generation_tps !== null
+                            ? `${offlineLatestRun.progress.mean_prompt_generation_tps.toFixed(1)} tok/s`
+                            : "N/A",
+                        )}
+                      </div>
+                      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                        <div className="mb-3 text-sm font-medium text-slate-200">
+                          Per-Step Throughput
+                        </div>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={offlineLatestRun.progress.buckets}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                              <XAxis dataKey="step" tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                                <Label
+                                  value="Repetition Step"
+                                  position="insideBottom"
+                                  offset={-4}
+                                  fill="#94a3b8"
+                                  fontSize={12}
+                                />
+                              </XAxis>
+                              <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                                <Label
+                                  value="Throughput (tokens/s)"
+                                  angle={-90}
+                                  position="insideLeft"
+                                  fill="#94a3b8"
+                                  fontSize={12}
+                                  style={{ textAnchor: "middle" }}
+                                />
+                              </YAxis>
+                              <Tooltip />
+                              <Line
+                                type="monotone"
+                                dataKey="prompt_tps"
+                                stroke="#38bdf8"
+                                strokeWidth={2}
+                                dot={false}
+                                name="Prompt TPS"
                               />
-                            </YAxis>
-                            <Tooltip
-                              formatter={(value: number | string) =>
-                                typeof value === "number" ? `${value.toFixed(3)} tok/s` : value
-                              }
-                            />
-                            <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                              <Cell fill="#38bdf8" />
-                              <Cell fill="#34d399" />
-                              <Cell fill="#f59e0b" />
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
+                              <Line
+                                type="monotone"
+                                dataKey="generation_tps"
+                                stroke="#34d399"
+                                strokeWidth={2}
+                                dot={false}
+                                name="Generation TPS"
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="prompt_generation_tps"
+                                stroke="#f59e0b"
+                                strokeWidth={2}
+                                dot={false}
+                                name="Prompt + Generation TPS"
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
                     </div>
                   ) : null}
-                  <div className="space-y-2">
-                    {observationLine("Profile", offlineLatestRun?.profile || "N/A")}
-                    {observationLine("Run ID", offlineLatestRun?.run_id || "N/A")}
-                    {observationLine(
-                      "Observed At",
-                      formatObservedTimestamp(offlineLatestResult?.observed_at_ts),
-                    )}
-                    {observationLine(
-                      "Result Freshness",
-                      formatResultFreshnessFromTs(offlineLatestResult?.completed_at_ts),
-                    )}
-                    {observationLine(
-                      "GPU Preflight",
-                      offlineLatestResult?.gpu_preflight_status || "N/A",
-                    )}
-                    {observationLine(
-                      "Run Duration",
-                      offlineLatestResult?.duration_seconds !== undefined &&
-                        offlineLatestResult?.duration_seconds !== null
-                        ? `${offlineLatestResult.duration_seconds.toFixed(3)} sec`
-                        : "N/A",
-                    )}
-                  </div>
-                  {offlineLatestResult?.preflight_warning ? (
-                    <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
-                      {offlineLatestResult.preflight_warning}
-                    </div>
+                  {!offlineRunInProgress ? (
+                    <>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Latest Result</div>
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <SummaryCard
+                          label="Status"
+                          value={offlineLatestRun?.status || "N/A"}
+                          tone={
+                            offlineLatestRun?.status === "succeeded"
+                              ? "green"
+                              : offlineLatestRun?.status === "failed" || offlineLatestRun?.status === "cancelled"
+                                ? "orange"
+                                : "blue"
+                          }
+                        />
+                        <SummaryCard
+                          label="Prompt TPS"
+                          value={
+                            offlineLatestResult?.prompt_tps_mean !== undefined &&
+                            offlineLatestResult?.prompt_tps_mean !== null
+                              ? `${offlineLatestResult.prompt_tps_mean.toFixed(1)} tok/s`
+                              : "N/A"
+                          }
+                          tone="blue"
+                        />
+                        <SummaryCard
+                          label="Generation TPS"
+                          value={
+                            offlineLatestResult?.generation_tps_mean !== undefined &&
+                            offlineLatestResult?.generation_tps_mean !== null
+                              ? `${offlineLatestResult.generation_tps_mean.toFixed(1)} tok/s`
+                              : "N/A"
+                          }
+                          tone="blue"
+                        />
+                        <SummaryCard
+                          label="Prompt + Generation TPS"
+                          value={
+                            offlineLatestResult?.prompt_generation_tps_mean !== undefined &&
+                            offlineLatestResult?.prompt_generation_tps_mean !== null
+                              ? `${offlineLatestResult.prompt_generation_tps_mean.toFixed(1)} tok/s`
+                              : "N/A"
+                          }
+                          tone="green"
+                        />
+                      </div>
+                      {offlineLatestRun?.progress?.buckets?.length ? (
+                        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                          <div className="mb-3 text-sm font-medium text-slate-200">
+                            Per-Step Throughput
+                          </div>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={offlineLatestRun.progress.buckets}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                                <XAxis dataKey="step" tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                                  <Label
+                                    value="Repetition Step"
+                                    position="insideBottom"
+                                    offset={-4}
+                                    fill="#94a3b8"
+                                    fontSize={12}
+                                  />
+                                </XAxis>
+                                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                                  <Label
+                                    value="Throughput (tokens/s)"
+                                    angle={-90}
+                                    position="insideLeft"
+                                    fill="#94a3b8"
+                                    fontSize={12}
+                                    style={{ textAnchor: "middle" }}
+                                  />
+                                </YAxis>
+                                <Tooltip />
+                                <Line
+                                  type="monotone"
+                                  dataKey="prompt_tps"
+                                  stroke="#38bdf8"
+                                  strokeWidth={2}
+                                  dot={false}
+                                  name="Prompt TPS"
+                                />
+                                <Line
+                                  type="monotone"
+                                  dataKey="generation_tps"
+                                  stroke="#34d399"
+                                  strokeWidth={2}
+                                  dot={false}
+                                  name="Generation TPS"
+                                />
+                                <Line
+                                  type="monotone"
+                                  dataKey="prompt_generation_tps"
+                                  stroke="#f59e0b"
+                                  strokeWidth={2}
+                                  dot={false}
+                                  name="Prompt + Generation TPS"
+                                />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="space-y-2">
+                        {observationLine("Profile", offlineLatestRun?.profile || "N/A")}
+                        {observationLine("Run ID", offlineLatestRun?.run_id || "N/A")}
+                        {observationLine(
+                          "Observed At",
+                          formatObservedTimestamp(offlineLatestResult?.observed_at_ts),
+                        )}
+                        {observationLine(
+                          "Result Freshness",
+                          formatResultFreshnessFromTs(offlineLatestResult?.completed_at_ts),
+                        )}
+                        {observationLine(
+                          "GPU Preflight",
+                          offlineLatestResult?.gpu_preflight_status || "N/A",
+                        )}
+                        {observationLine(
+                          "Run Duration",
+                          offlineLatestResult?.duration_seconds !== undefined &&
+                            offlineLatestResult?.duration_seconds !== null
+                            ? `${offlineLatestResult.duration_seconds.toFixed(3)} sec`
+                            : "N/A",
+                        )}
+                      </div>
+                      {offlineLatestResult?.preflight_warning ? (
+                        <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
+                          {offlineLatestResult.preflight_warning}
+                        </div>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
               )}

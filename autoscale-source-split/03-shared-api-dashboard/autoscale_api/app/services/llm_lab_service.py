@@ -3,6 +3,7 @@ import time
 import json
 import hashlib
 import subprocess
+import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event, Lock, Thread
@@ -104,7 +105,7 @@ class LlmLabService:
     }
     LLAMACPP_OFFLINE_PROFILES: dict[str, dict[str, Any]] = {
         "pascal-smoke": {
-            "display_name": "pascal-smoke",
+            "display_name": "Smoke",
             "description": "CUDA, GGUF, GPU offload, and parser verification.",
             "n_prompt": 128,
             "n_gen": 64,
@@ -116,29 +117,16 @@ class LlmLabService:
             "flash_attention": "off",
             "gpu_layers": -1,
         },
-        "pascal-throughput": {
-            "display_name": "pascal-throughput",
-            "description": "Main offline PP/TG throughput baseline.",
+        "pascal-continuous": {
+            "display_name": "Continuous",
+            "description": "Repeated offline throughput benchmark for live progress observation and longer hardware capacity tracking.",
             "n_prompt": 512,
             "n_gen": 128,
             "pg_pair": "512,128",
             "n_depth": 0,
             "batch_size": 512,
             "ubatch_size": 128,
-            "repetitions": 5,
-            "flash_attention": "off",
-            "gpu_layers": -1,
-        },
-        "pascal-context": {
-            "display_name": "pascal-context",
-            "description": "Throughput with prefilled context.",
-            "n_prompt": 512,
-            "n_gen": 128,
-            "pg_pair": "512,128",
-            "n_depth": 1024,
-            "batch_size": 512,
-            "ubatch_size": 128,
-            "repetitions": 5,
+            "repetitions": 24,
             "flash_attention": "off",
             "gpu_layers": -1,
         },
@@ -497,9 +485,33 @@ class LlmLabService:
             "node_name": self.llamacpp_offline_node_name,
             "started_at_ts": None,
             "completed_at_ts": None,
+            "progress": {
+                "elapsed_seconds": 0.0,
+                "completed_steps": 0,
+                "total_steps": int(profile_config["repetitions"]),
+                "current_prompt_tps": None,
+                "current_generation_tps": None,
+                "current_prompt_generation_tps": None,
+                "mean_prompt_tps": None,
+                "mean_generation_tps": None,
+                "mean_prompt_generation_tps": None,
+                "buckets": [],
+            },
             "result": None,
             "error": None,
         }
+
+    @staticmethod
+    def _terminate_process(process: Any) -> None:
+        if process is None or getattr(process, "poll", None) is None:
+            return
+        if process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
 
     def _build_llamacpp_preflight_exec_command(self) -> list[str]:
         return [
@@ -514,8 +526,15 @@ class LlmLabService:
             "nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader || true",
         ]
 
-    def _build_llamacpp_exec_command(self, *, profile_config: dict[str, Any], run_id: str) -> list[str]:
+    def _build_llamacpp_exec_command(
+        self,
+        *,
+        profile_config: dict[str, Any],
+        run_id: str,
+        repetitions_override: int | None = None,
+    ) -> list[str]:
         result_path, log_path = self._benchmark_result_paths(run_id)
+        repetitions = int(repetitions_override or profile_config["repetitions"])
         shell_cmd = (
             f"rm -f {result_path} {log_path}; "
             "llama-bench "
@@ -528,7 +547,7 @@ class LlmLabService:
             f"--ubatch-size {int(profile_config['ubatch_size'])} "
             f"--n-gpu-layers {int(profile_config['gpu_layers'])} "
             f"--flash-attn {profile_config['flash_attention']} "
-            f"--repetitions {int(profile_config['repetitions'])} "
+            f"--repetitions {repetitions} "
             "--output json "
             f">{result_path} 2>{log_path}; "
             f"cat {result_path}"
@@ -1737,6 +1756,58 @@ class LlmLabService:
             "error_summary": error_summary,
         }
 
+    @staticmethod
+    def _llamacpp_mean(values: list[float]) -> float | None:
+        if not values:
+            return None
+        return round(sum(values) / len(values), 3)
+
+    @staticmethod
+    def _llamacpp_stddev(values: list[float]) -> float | None:
+        if len(values) < 2:
+            return None
+        return round(float(statistics.pstdev(values)), 3)
+
+    def _update_llamacpp_progress(
+        self,
+        *,
+        run_id: str,
+        step: int,
+        total_steps: int,
+        step_duration_seconds: float,
+        started_monotonic: float,
+        parsed_result: dict[str, Any],
+        prompt_samples: list[float],
+        generation_samples: list[float],
+        pg_samples: list[float],
+    ) -> None:
+        state = self._read_run_state(run_id)
+        progress = state.get("progress") or {}
+        progress["elapsed_seconds"] = round(max(time.monotonic() - started_monotonic, 0.0), 3)
+        progress["completed_steps"] = step
+        progress["total_steps"] = total_steps
+        progress["current_prompt_tps"] = parsed_result.get("prompt_tps_mean")
+        progress["current_generation_tps"] = parsed_result.get("generation_tps_mean")
+        progress["current_prompt_generation_tps"] = parsed_result.get("prompt_generation_tps_mean")
+        progress["mean_prompt_tps"] = self._llamacpp_mean(prompt_samples)
+        progress["mean_generation_tps"] = self._llamacpp_mean(generation_samples)
+        progress["mean_prompt_generation_tps"] = self._llamacpp_mean(pg_samples)
+        buckets = list(progress.get("buckets") or [])
+        buckets.append(
+            {
+                "step": step,
+                "elapsed_seconds": progress["elapsed_seconds"],
+                "duration_seconds": round(step_duration_seconds, 3),
+                "prompt_tps": parsed_result.get("prompt_tps_mean"),
+                "generation_tps": parsed_result.get("generation_tps_mean"),
+                "prompt_generation_tps": parsed_result.get("prompt_generation_tps_mean"),
+            }
+        )
+        progress["buckets"] = buckets
+        state["ts"] = int(time.time())
+        state["progress"] = progress
+        self._write_run_state(run_id, state)
+
     def _mark_llamacpp_run_failed(
         self,
         *,
@@ -1744,8 +1815,9 @@ class LlmLabService:
         profile_id: str,
         profile_config: dict[str, Any],
         started_at_ts: int | None,
-        error_summary: str,
+        error_summary: str | None,
         gpu_processes_before: list[dict[str, Any]] | None = None,
+        status: str = "failed",
     ) -> None:
         state = self._read_run_state(run_id)
         completed_at_ts = int(time.time())
@@ -1761,11 +1833,11 @@ class LlmLabService:
             started_at_ts=started_at_ts or completed_at_ts,
             completed_at_ts=completed_at_ts,
             duration_seconds=duration_seconds,
-            status="failed",
+            status=status,
             error_summary=error_summary,
         )
         state["ts"] = completed_at_ts
-        state["status"] = "failed"
+        state["status"] = status
         state["completed_at_ts"] = completed_at_ts
         state["result"] = result
         state["error"] = error_summary
@@ -1778,7 +1850,7 @@ class LlmLabService:
                 "benchmark_mode": self.llamacpp_benchmark_mode,
                 "namespace": self.llamacpp_offline_namespace,
                 "workload": self.llamacpp_offline_target_pod,
-                "status": "failed",
+                "status": status,
                 "run_id": run_id,
                 "profile": str(profile_config["display_name"]),
                 "profile_id": profile_id,
@@ -1792,7 +1864,11 @@ class LlmLabService:
     def _run_llamacpp_offline_background(self, *, run_id: str, profile_id: str) -> None:
         profile_config = self._resolve_llamacpp_profile(profile_id)
         started_at_ts = int(time.time())
+        started_monotonic = time.monotonic()
         gpu_processes_before: list[dict[str, Any]] = []
+        with self._run_state_lock:
+            control = self._active_run_controls.get(run_id) or {}
+            cancel_event = control.get("cancel_event") or Event()
         state = self._read_run_state(run_id)
         state["status"] = "running"
         state["started_at_ts"] = started_at_ts
@@ -1801,25 +1877,102 @@ class LlmLabService:
 
         try:
             gpu_processes_before = self._run_llamacpp_gpu_preflight()
-            command = self._build_llamacpp_exec_command(profile_config=profile_config, run_id=run_id)
-            completed = subprocess.run(
-                command,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=self.benchmark_timeout_seconds,
-            )
-            if completed.returncode != 0:
-                raise LlmInferenceError(
-                    502,
-                    f"llama-bench failed: {completed.stderr.strip() or completed.stdout.strip() or f'exit code {completed.returncode}'}",
-                )
-            try:
-                payload = json.loads(completed.stdout)
-            except json.JSONDecodeError as exc:
-                raise LlmInferenceError(502, "llama-bench output was not valid JSON") from exc
+            repetitions = int(profile_config["repetitions"])
+            prompt_samples: list[float] = []
+            generation_samples: list[float] = []
+            prompt_generation_samples: list[float] = []
+            final_step_result: dict[str, Any] | None = None
+            timeout_per_step = max(self.benchmark_timeout_seconds / max(repetitions, 1), 60)
 
-            parsed_result = self._parse_llamacpp_benchmark_payload(payload)
+            for step in range(1, repetitions + 1):
+                if cancel_event.is_set():
+                    break
+                step_run_id = f"{run_id}-step-{step}"
+                command = self._build_llamacpp_exec_command(
+                    profile_config=profile_config,
+                    run_id=step_run_id,
+                    repetitions_override=1,
+                )
+                step_started = time.monotonic()
+                process = subprocess.Popen(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                with self._run_state_lock:
+                    control = self._active_run_controls.get(run_id)
+                    if control is not None:
+                        control["process"] = process
+
+                timed_out = False
+                step_deadline = time.monotonic() + timeout_per_step
+                while process.poll() is None:
+                    if cancel_event.is_set():
+                        self._terminate_process(process)
+                        break
+                    if time.monotonic() >= step_deadline:
+                        timed_out = True
+                        self._terminate_process(process)
+                        break
+                    time.sleep(0.2)
+
+                if cancel_event.is_set():
+                    break
+                if timed_out:
+                    raise LlmInferenceError(504, "llama-bench step timed out")
+                stdout_text = process.stdout.read() if process.stdout else ""
+                stderr_text = process.stderr.read() if process.stderr else ""
+                if process.returncode != 0:
+                    raise LlmInferenceError(
+                        502,
+                        f"llama-bench failed: {stderr_text.strip() or stdout_text.strip() or f'exit code {process.returncode}'}",
+                    )
+                try:
+                    payload = json.loads(stdout_text)
+                except json.JSONDecodeError as exc:
+                    raise LlmInferenceError(502, "llama-bench output was not valid JSON") from exc
+
+                parsed_result = self._parse_llamacpp_benchmark_payload(payload)
+                final_step_result = parsed_result
+                if parsed_result.get("prompt_tps_mean") is not None:
+                    prompt_samples.append(float(parsed_result["prompt_tps_mean"]))
+                if parsed_result.get("generation_tps_mean") is not None:
+                    generation_samples.append(float(parsed_result["generation_tps_mean"]))
+                if parsed_result.get("prompt_generation_tps_mean") is not None:
+                    prompt_generation_samples.append(float(parsed_result["prompt_generation_tps_mean"]))
+
+                self._update_llamacpp_progress(
+                    run_id=run_id,
+                    step=step,
+                    total_steps=repetitions,
+                    step_duration_seconds=max(time.monotonic() - step_started, 0.001),
+                    started_monotonic=started_monotonic,
+                    parsed_result=parsed_result,
+                    prompt_samples=prompt_samples,
+                    generation_samples=generation_samples,
+                    pg_samples=prompt_generation_samples,
+                )
+
+            if cancel_event.is_set():
+                raise LlmInferenceError(499, "llama.cpp offline benchmark cancelled")
+
+            parsed_result = {
+                "prompt_tps_mean": self._llamacpp_mean(prompt_samples),
+                "prompt_tps_stddev": self._llamacpp_stddev(prompt_samples),
+                "generation_tps_mean": self._llamacpp_mean(generation_samples),
+                "generation_tps_stddev": self._llamacpp_stddev(generation_samples),
+                "prompt_generation_tps_mean": self._llamacpp_mean(prompt_generation_samples),
+                "prompt_generation_tps_stddev": self._llamacpp_stddev(prompt_generation_samples),
+                "n_prompt": (final_step_result or {}).get("n_prompt") or profile_config["n_prompt"],
+                "n_gen": (final_step_result or {}).get("n_gen") or profile_config["n_gen"],
+                "n_depth": (final_step_result or {}).get("n_depth") or profile_config["n_depth"],
+                "batch_size": (final_step_result or {}).get("batch_size") or profile_config["batch_size"],
+                "ubatch_size": (final_step_result or {}).get("ubatch_size") or profile_config["ubatch_size"],
+                "n_gpu_layers": (final_step_result or {}).get("n_gpu_layers") or profile_config["gpu_layers"],
+                "repetitions": repetitions,
+                "flash_attention": (final_step_result or {}).get("flash_attention") or profile_config["flash_attention"],
+            }
             completed_at_ts = int(time.time())
             duration_seconds = max(completed_at_ts - started_at_ts, 0.001)
             result = self._build_llamacpp_result(
@@ -1837,6 +1990,8 @@ class LlmLabService:
             state["ts"] = completed_at_ts
             state["status"] = "succeeded"
             state["completed_at_ts"] = completed_at_ts
+            if state.get("progress"):
+                state["progress"]["elapsed_seconds"] = round(max(time.monotonic() - started_monotonic, 0.0), 3)
             state["result"] = result
             state["error"] = None
             self._write_run_state(run_id, state)
@@ -1866,13 +2021,15 @@ class LlmLabService:
             with self._run_state_lock:
                 self._active_run_controls.pop(run_id, None)
         except Exception as exc:
+            status = "cancelled" if cancel_event.is_set() else "failed"
             self._mark_llamacpp_run_failed(
                 run_id=run_id,
                 profile_id=profile_id,
                 profile_config=profile_config,
                 started_at_ts=started_at_ts,
-                error_summary=str(exc),
+                error_summary=None if status == "cancelled" else str(exc),
                 gpu_processes_before=gpu_processes_before,
+                status=status,
             )
 
     def start_llamacpp_offline_run(self, *, profile: str) -> dict[str, Any]:
@@ -1891,8 +2048,13 @@ class LlmLabService:
             profile_config=profile_config,
         )
         self._write_run_state(run_id, state)
+        cancel_event = Event()
         with self._run_state_lock:
-            self._active_run_controls[run_id] = {"kind": "llamacpp_offline"}
+            self._active_run_controls[run_id] = {
+                "kind": "llamacpp_offline",
+                "cancel_event": cancel_event,
+                "process": None,
+            }
         thread = Thread(
             target=self._run_llamacpp_offline_background,
             kwargs={"run_id": run_id, "profile_id": profile},
@@ -1910,6 +2072,32 @@ class LlmLabService:
             "status": "queued",
             "namespace": self.llamacpp_offline_namespace,
             "target_pod": self.llamacpp_offline_target_pod,
+        }
+
+    def cancel_llamacpp_offline_run(self, *, run_id: str) -> dict[str, Any]:
+        with self._run_state_lock:
+            control = self._active_run_controls.get(run_id)
+        if control is None:
+            state = self._read_run_state(run_id)
+            return {
+                "schema": "pre6g.llamacpp_offline_benchmark_run_cancel.v1",
+                "ts": int(time.time()),
+                "run_id": run_id,
+                "status": str(state.get("status") or "unknown"),
+            }
+        cancel_event = control.get("cancel_event")
+        if cancel_event is not None:
+            cancel_event.set()
+        self._terminate_process(control.get("process"))
+        state = self._read_run_state(run_id)
+        state["status"] = "cancelling"
+        state["ts"] = int(time.time())
+        self._write_run_state(run_id, state)
+        return {
+            "schema": "pre6g.llamacpp_offline_benchmark_run_cancel.v1",
+            "ts": int(time.time()),
+            "run_id": run_id,
+            "status": "cancelling",
         }
 
     def get_llamacpp_offline_run(self, *, run_id: str) -> dict[str, Any]:
@@ -2063,6 +2251,61 @@ class LlmLabService:
                         ),
                     ]
                 )
+                progress = active_state.get("progress") or {}
+                active_specs: list[tuple[str, str, Any]] = [
+                    (
+                        "pre6g_llamacpp_offline_benchmark_progress_completed_steps",
+                        "Completed repetition steps of the currently active llama.cpp offline benchmark run.",
+                        progress.get("completed_steps"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_progress_total_steps",
+                        "Total repetition steps configured for the currently active llama.cpp offline benchmark run.",
+                        progress.get("total_steps"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_progress_current_prompt_tps",
+                        "Current prompt throughput from the latest completed repetition of the active llama.cpp offline benchmark run.",
+                        progress.get("current_prompt_tps"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_progress_current_generation_tps",
+                        "Current generation throughput from the latest completed repetition of the active llama.cpp offline benchmark run.",
+                        progress.get("current_generation_tps"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_progress_current_prompt_generation_tps",
+                        "Current prompt-plus-generation throughput from the latest completed repetition of the active llama.cpp offline benchmark run.",
+                        progress.get("current_prompt_generation_tps"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_progress_mean_prompt_tps",
+                        "Rolling mean prompt throughput across completed repetitions of the active llama.cpp offline benchmark run.",
+                        progress.get("mean_prompt_tps"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_progress_mean_generation_tps",
+                        "Rolling mean generation throughput across completed repetitions of the active llama.cpp offline benchmark run.",
+                        progress.get("mean_generation_tps"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_progress_mean_prompt_generation_tps",
+                        "Rolling mean prompt-plus-generation throughput across completed repetitions of the active llama.cpp offline benchmark run.",
+                        progress.get("mean_prompt_generation_tps"),
+                    ),
+                ]
+                for metric_name, help_text, metric_value in active_specs:
+                    if metric_value is None:
+                        continue
+                    lines.append(f"# HELP {metric_name} {help_text}")
+                    lines.append(f"# TYPE {metric_name} gauge")
+                    lines.append(
+                        self._prometheus_metric_line(
+                            metric_name,
+                            float(metric_value),
+                            run_labels,
+                        )
+                    )
 
             result = latest_run.get("result") or {}
             if result:

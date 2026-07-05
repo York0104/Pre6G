@@ -299,6 +299,28 @@ class LlamacppOfflineBenchmarkResult(BaseModel):
     error_summary: Optional[str] = None
 
 
+class LlamacppOfflineBenchmarkProgressBucket(BaseModel):
+    step: int
+    elapsed_seconds: float
+    duration_seconds: float
+    prompt_tps: Optional[float] = None
+    generation_tps: Optional[float] = None
+    prompt_generation_tps: Optional[float] = None
+
+
+class LlamacppOfflineBenchmarkProgressSnapshot(BaseModel):
+    elapsed_seconds: float
+    completed_steps: int
+    total_steps: int
+    current_prompt_tps: Optional[float] = None
+    current_generation_tps: Optional[float] = None
+    current_prompt_generation_tps: Optional[float] = None
+    mean_prompt_tps: Optional[float] = None
+    mean_generation_tps: Optional[float] = None
+    mean_prompt_generation_tps: Optional[float] = None
+    buckets: list[LlamacppOfflineBenchmarkProgressBucket] = Field(default_factory=list)
+
+
 class LlamacppOfflineBenchmarkRunStateResponse(BaseModel):
     schema: str
     ts: int
@@ -313,6 +335,7 @@ class LlamacppOfflineBenchmarkRunStateResponse(BaseModel):
     node_name: Optional[str] = None
     started_at_ts: Optional[int] = None
     completed_at_ts: Optional[int] = None
+    progress: Optional[LlamacppOfflineBenchmarkProgressSnapshot] = None
     result: Optional[LlamacppOfflineBenchmarkResult] = None
     error: Optional[str] = None
 
@@ -328,6 +351,13 @@ class LlamacppOfflineBenchmarkRunStartResponse(BaseModel):
     status: str
     namespace: str
     target_pod: str
+
+
+class LlamacppOfflineBenchmarkRunCancelResponse(BaseModel):
+    schema: str
+    ts: int
+    run_id: str
+    status: str
 
 
 class LlamacppOfflineBenchmarkRunsResponse(BaseModel):

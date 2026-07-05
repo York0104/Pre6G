@@ -14,6 +14,7 @@ from app.schemas.llm_lab import (
     LlmSmokeBenchmarkRequest,
     LlmSmokeBenchmarkResponse,
     LlamacppOfflineBenchmarkProfilesResponse,
+    LlamacppOfflineBenchmarkRunCancelResponse,
     LlamacppOfflineBenchmarkRunRequest,
     LlamacppOfflineBenchmarkRunStartResponse,
     LlamacppOfflineBenchmarkRunStateResponse,
@@ -175,6 +176,18 @@ def get_llamacpp_offline_run(run_id: str) -> LlamacppOfflineBenchmarkRunStateRes
     try:
         payload = llm_lab_service.get_llamacpp_offline_run(run_id=run_id)
         return LlamacppOfflineBenchmarkRunStateResponse(**payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"unknown llama.cpp offline benchmark run: {run_id}")
+
+
+@router.post(
+    "/llamacpp/offline-benchmark/runs/{run_id}/cancel",
+    response_model=LlamacppOfflineBenchmarkRunCancelResponse,
+)
+def cancel_llamacpp_offline_run(run_id: str) -> LlamacppOfflineBenchmarkRunCancelResponse:
+    try:
+        payload = llm_lab_service.cancel_llamacpp_offline_run(run_id=run_id)
+        return LlamacppOfflineBenchmarkRunCancelResponse(**payload)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"unknown llama.cpp offline benchmark run: {run_id}")
 
