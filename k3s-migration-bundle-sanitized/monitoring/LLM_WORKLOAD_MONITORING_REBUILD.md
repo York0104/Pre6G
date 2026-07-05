@@ -21,6 +21,11 @@ Target workload: `Gemma 4 vLLM`
 - `vmagent-config-gpu-1s.yaml`
 - `vmagent-config-auto-discovery.yaml`
 
+已在下列檔案加入 `autoscale-api-llamacpp-benchmark` scrape job：
+
+- `vmagent-config-gpu-1s.yaml`
+- `vmagent-config-auto-discovery.yaml`
+
 設計重點：
 
 - `role: pod` 自動發現
@@ -28,6 +33,9 @@ Target workload: `Gemma 4 vLLM`
 - container port 名稱匹配 `.*metrics.*`
 - `1s` scrape interval
 - 保留 Kubernetes 自動 discovery labels，不要求 workload 額外手寫一批自訂 labels
+- `llama.cpp offline benchmark` 不直接 scrape benchmark target pod，而是 scrape `autoscale_api /metrics`
+- `autoscale_api /metrics` 暴露 `run lifecycle` 與 `final throughput result`
+- `vmagent` 對 `autoscale-api` 採 `1s` scrape interval，讓 `VictoriaMetrics` 可與 `DCGM` / `node-exporter` 對齊 benchmark active window
 
 ## Live Deployment Notes
 

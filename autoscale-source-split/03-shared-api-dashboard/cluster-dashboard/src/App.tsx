@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
+  Cell,
   Label,
   Line,
   LineChart,
@@ -1326,7 +1329,7 @@ function LlmServingLabPage({
   const [smokeResult, setSmokeResult] = useState<LlmSmokeBenchmarkResponse | null>(null);
   const [offlineLoading, setOfflineLoading] = useState(false);
   const [offlineError, setOfflineError] = useState("");
-  const [offlineProfiles, setOfflineProfiles] = useState<LlamacppOfflineBenchmarkProfile[]>([]);
+  const [, setOfflineProfiles] = useState<LlamacppOfflineBenchmarkProfile[]>([]);
   const [offlineLatestRun, setOfflineLatestRun] = useState<LlamacppOfflineBenchmarkRunStateResponse | null>(null);
   const [offlineActiveRunId, setOfflineActiveRunId] = useState("");
   const [activeBenchmarkRun, setActiveBenchmarkRun] = useState<LlmBenchmarkRunStatusResponse | null>(null);
@@ -1352,8 +1355,6 @@ function LlmServingLabPage({
     BENCHMARK_PROFILES.find((profile) => profile.id === benchmarkProfileId) || BENCHMARK_PROFILES[0];
   const selectedOfflineProfile =
     OFFLINE_THROUGHPUT_PROFILES.find((profile) => profile.id === offlineProfileId) || OFFLINE_THROUGHPUT_PROFILES[0];
-  const selectedOfflineProfileApi =
-    offlineProfiles.find((profile) => profile.profile_id === offlineProfileId) || null;
   const offlineLatestResult = offlineLatestRun?.result || null;
   const shouldHideContinuousPercentiles = smokeResult?.profile_id === "continuous";
   const filteredRunHistory = runHistory.filter((item) => {
@@ -2171,47 +2172,6 @@ function LlmServingLabPage({
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
           <div className="space-y-4">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-              <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
-                Runtime / Hardware Overview
-              </div>
-              <div className="space-y-2">
-                {observationLine("Runtime", offlineLatestResult?.runtime_overview.runtime || selectedOfflineProfile.runtime)}
-                {observationLine(
-                  "GPU",
-                  offlineLatestResult?.runtime_overview.gpu_model || "NVIDIA GeForce GTX 1080 Ti",
-                )}
-                {observationLine(
-                  "Architecture",
-                  (offlineLatestResult?.runtime_overview.gpu_arch || "sm61").toUpperCase(),
-                )}
-                {observationLine(
-                  "Node",
-                  offlineLatestResult?.runtime_overview.node_name || "icclz1",
-                )}
-                {observationLine(
-                  "CUDA",
-                  offlineLatestResult?.runtime_overview.cuda_version || "11.8",
-                )}
-                {observationLine(
-                  "Model",
-                  offlineLatestResult?.runtime_overview.model_name || selectedOfflineProfile.model,
-                )}
-                {observationLine(
-                  "Quantization",
-                  offlineLatestResult?.runtime_overview.quantization || "Q4_K_M",
-                )}
-                {observationLine(
-                  "GPU Layers",
-                  offlineLatestResult?.runtime_overview.gpu_layers || "all",
-                )}
-                {observationLine(
-                  "Runtime Image",
-                  offlineLatestResult?.runtime_overview.runtime_image || "pre6g/llamacpp-cuda118-sm61:qwen25-15b-q4km",
-                )}
-              </div>
-            </div>
-
             <label className="block text-sm text-slate-300">
               <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
                 Fixed Benchmark Profile
@@ -2239,18 +2199,11 @@ function LlmServingLabPage({
               <div className="space-y-2">
                 {observationLine("Profile", selectedOfflineProfile.label)}
                 {observationLine("Benchmark Engine", "llama-bench")}
-                {observationLine("Prompt Source", selectedOfflineProfile.promptSource)}
-                {observationLine(
-                  "Description",
-                  selectedOfflineProfileApi?.description || "Fixed offline hardware benchmark profile.",
-                )}
                 {observationLine("Prompt Tokens", String(selectedOfflineProfile.nPrompt))}
                 {observationLine("Generation Tokens", String(selectedOfflineProfile.nGen))}
                 {observationLine("Context Depth", String(selectedOfflineProfile.nDepth))}
                 {observationLine("Batch Size", String(selectedOfflineProfile.batchSize))}
-                {observationLine("uBatch Size", String(selectedOfflineProfile.ubatchSize))}
                 {observationLine("Repetitions", String(selectedOfflineProfile.repetitions))}
-                {observationLine("Flash Attention", selectedOfflineProfile.flashAttention)}
               </div>
             </div>
 
@@ -2281,64 +2234,124 @@ function LlmServingLabPage({
                   {offlineError}
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {observationLine("Profile", offlineLatestRun?.profile || "N/A")}
-                  {observationLine("Run ID", offlineLatestRun?.run_id || "N/A")}
-                  {observationLine("Status", offlineLatestRun?.status || "N/A")}
-                  {observationLine(
-                    "Observed At",
-                    formatObservedTimestamp(offlineLatestResult?.observed_at_ts),
-                  )}
-                  {observationLine(
-                    "Result Freshness",
-                    formatResultFreshnessFromTs(offlineLatestResult?.completed_at_ts),
-                  )}
-                  {observationLine(
-                    "Prompt TPS",
-                    offlineLatestResult?.prompt_tps_mean !== undefined && offlineLatestResult?.prompt_tps_mean !== null
-                      ? `${offlineLatestResult.prompt_tps_mean.toFixed(3)} tok/s`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "Generation TPS",
-                    offlineLatestResult?.generation_tps_mean !== undefined && offlineLatestResult?.generation_tps_mean !== null
-                      ? `${offlineLatestResult.generation_tps_mean.toFixed(3)} tok/s`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "Prompt + Generation TPS",
-                    offlineLatestResult?.prompt_generation_tps_mean !== undefined && offlineLatestResult?.prompt_generation_tps_mean !== null
-                      ? `${offlineLatestResult.prompt_generation_tps_mean.toFixed(3)} tok/s`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "Prompt TPS Standard Deviation",
-                    offlineLatestResult?.prompt_tps_stddev !== undefined && offlineLatestResult?.prompt_tps_stddev !== null
-                      ? `${offlineLatestResult.prompt_tps_stddev.toFixed(3)} tok/s`
-                      : "N/A",
-                  )}
-                  {observationLine(
-                    "Generation TPS Standard Deviation",
-                    offlineLatestResult?.generation_tps_stddev !== undefined && offlineLatestResult?.generation_tps_stddev !== null
-                      ? `${offlineLatestResult.generation_tps_stddev.toFixed(3)} tok/s`
-                      : "N/A",
-                  )}
-                  {observationLine("Context Depth", String(offlineLatestResult?.n_depth ?? "N/A"))}
-                  {observationLine("Batch Size", String(offlineLatestResult?.batch_size ?? "N/A"))}
-                  {observationLine("GPU Layers", String(offlineLatestResult?.n_gpu_layers ?? "N/A"))}
-                  {observationLine("Repetitions", String(offlineLatestResult?.repetitions ?? "N/A"))}
-                  {observationLine(
-                    "GPU Preflight",
-                    offlineLatestResult?.gpu_preflight_status || "N/A",
-                  )}
-                  {observationLine(
-                    "Run Duration",
-                    offlineLatestResult?.duration_seconds !== undefined && offlineLatestResult?.duration_seconds !== null
-                      ? `${offlineLatestResult.duration_seconds.toFixed(3)} sec`
-                      : "N/A",
-                  )}
-                  {observationLine("Waiting Requests", "N/A — offline benchmark")}
-                  {observationLine("KV Cache Usage", "N/A — offline benchmark")}
+                <div className="space-y-4">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Latest Result</div>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <SummaryCard
+                      label="Status"
+                      value={offlineLatestRun?.status || "N/A"}
+                      tone={
+                        offlineLatestRun?.status === "succeeded"
+                          ? "green"
+                          : offlineLatestRun?.status === "failed"
+                            ? "orange"
+                            : "blue"
+                      }
+                    />
+                    <SummaryCard
+                      label="Prompt TPS"
+                      value={
+                        offlineLatestResult?.prompt_tps_mean !== undefined &&
+                        offlineLatestResult?.prompt_tps_mean !== null
+                          ? `${offlineLatestResult.prompt_tps_mean.toFixed(1)} tok/s`
+                          : "N/A"
+                      }
+                      tone="blue"
+                    />
+                    <SummaryCard
+                      label="Generation TPS"
+                      value={
+                        offlineLatestResult?.generation_tps_mean !== undefined &&
+                        offlineLatestResult?.generation_tps_mean !== null
+                          ? `${offlineLatestResult.generation_tps_mean.toFixed(1)} tok/s`
+                          : "N/A"
+                      }
+                      tone="blue"
+                    />
+                    <SummaryCard
+                      label="Prompt + Generation TPS"
+                      value={
+                        offlineLatestResult?.prompt_generation_tps_mean !== undefined &&
+                        offlineLatestResult?.prompt_generation_tps_mean !== null
+                          ? `${offlineLatestResult.prompt_generation_tps_mean.toFixed(1)} tok/s`
+                          : "N/A"
+                      }
+                      tone="green"
+                    />
+                  </div>
+                  {offlineLatestResult ? (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                      <div className="mb-3 text-sm font-medium text-slate-200">
+                        Offline Throughput Comparison
+                      </div>
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={[
+                              {
+                                metric: "Prompt TPS",
+                                value: offlineLatestResult.prompt_tps_mean ?? 0,
+                              },
+                              {
+                                metric: "Generation TPS",
+                                value: offlineLatestResult.generation_tps_mean ?? 0,
+                              },
+                              {
+                                metric: "Prompt + Generation TPS",
+                                value: offlineLatestResult.prompt_generation_tps_mean ?? 0,
+                              },
+                            ]}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                            <XAxis dataKey="metric" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                            <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                              <Label
+                                value="Throughput (tokens/s)"
+                                angle={-90}
+                                position="insideLeft"
+                                fill="#94a3b8"
+                                fontSize={12}
+                                style={{ textAnchor: "middle" }}
+                              />
+                            </YAxis>
+                            <Tooltip
+                              formatter={(value: number | string) =>
+                                typeof value === "number" ? `${value.toFixed(3)} tok/s` : value
+                              }
+                            />
+                            <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                              <Cell fill="#38bdf8" />
+                              <Cell fill="#34d399" />
+                              <Cell fill="#f59e0b" />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="space-y-2">
+                    {observationLine("Profile", offlineLatestRun?.profile || "N/A")}
+                    {observationLine("Run ID", offlineLatestRun?.run_id || "N/A")}
+                    {observationLine(
+                      "Observed At",
+                      formatObservedTimestamp(offlineLatestResult?.observed_at_ts),
+                    )}
+                    {observationLine(
+                      "Result Freshness",
+                      formatResultFreshnessFromTs(offlineLatestResult?.completed_at_ts),
+                    )}
+                    {observationLine(
+                      "GPU Preflight",
+                      offlineLatestResult?.gpu_preflight_status || "N/A",
+                    )}
+                    {observationLine(
+                      "Run Duration",
+                      offlineLatestResult?.duration_seconds !== undefined &&
+                        offlineLatestResult?.duration_seconds !== null
+                        ? `${offlineLatestResult.duration_seconds.toFixed(3)} sec`
+                        : "N/A",
+                    )}
+                  </div>
                   {offlineLatestResult?.preflight_warning ? (
                     <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
                       {offlineLatestResult.preflight_warning}

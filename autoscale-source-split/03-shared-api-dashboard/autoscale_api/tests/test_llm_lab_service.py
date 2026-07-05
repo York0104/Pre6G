@@ -227,6 +227,76 @@ class LlmLabServiceTests(unittest.TestCase):
                 )
         self.assertEqual(ctx.exception.status_code, 502)
 
+    def test_render_prometheus_metrics_for_active_llamacpp_run(self) -> None:
+        service = self._make_service()
+        run_id = "llamacpp-pascal-smoke-run-20260705T010000Z"
+        state = {
+            "schema": "pre6g.llamacpp_offline_benchmark_run.v1",
+            "ts": 1710001000,
+            "run_id": run_id,
+            "runtime": "llamacpp",
+            "benchmark_mode": "offline",
+            "profile": "pascal-smoke",
+            "profile_id": "pascal-smoke",
+            "status": "running",
+            "namespace": "ai-serving",
+            "target_pod": "llamacpp-qwen25-15b-q4km-bench",
+            "node_name": "icclz1",
+            "started_at_ts": 1710000990,
+            "completed_at_ts": None,
+            "result": None,
+            "error": None,
+        }
+        service._write_run_state(run_id, state)
+        metrics = service.render_prometheus_metrics()
+        self.assertIn("pre6g_llamacpp_offline_benchmark_run_active", metrics)
+        self.assertIn('state="running"', metrics)
+        self.assertIn("pre6g_llamacpp_offline_benchmark_run_elapsed_seconds", metrics)
+
+    def test_render_prometheus_metrics_for_completed_llamacpp_result(self) -> None:
+        service = self._make_service()
+        run_id = "llamacpp-pascal-throughput-run-20260705T010500Z"
+        state = {
+            "schema": "pre6g.llamacpp_offline_benchmark_run.v1",
+            "ts": 1710001100,
+            "run_id": run_id,
+            "runtime": "llamacpp",
+            "benchmark_mode": "offline",
+            "profile": "pascal-throughput",
+            "profile_id": "pascal-throughput",
+            "status": "succeeded",
+            "namespace": "ai-serving",
+            "target_pod": "llamacpp-qwen25-15b-q4km-bench",
+            "node_name": "icclz1",
+            "started_at_ts": 1710001089,
+            "completed_at_ts": 1710001100,
+            "result": {
+                "duration_seconds": 11.0,
+                "prompt_tps_mean": 3610.145,
+                "generation_tps_mean": 156.691,
+                "prompt_generation_tps_mean": 619.87,
+                "prompt_tps_stddev": None,
+                "generation_tps_stddev": None,
+                "prompt_generation_tps_stddev": None,
+                "gpu_process_count_before": 0,
+                "gpu_contended": False,
+                "n_prompt": 512,
+                "n_gen": 128,
+                "n_depth": 0,
+                "batch_size": 512,
+                "ubatch_size": 128,
+                "n_gpu_layers": -1,
+                "repetitions": 5,
+            },
+            "error": None,
+        }
+        service._write_run_state(run_id, state)
+        metrics = service.render_prometheus_metrics()
+        self.assertIn("pre6g_llamacpp_offline_benchmark_prompt_tps_mean", metrics)
+        self.assertIn("3610.145", metrics)
+        self.assertIn("pre6g_llamacpp_offline_benchmark_gpu_contended", metrics)
+        self.assertIn("pre6g_llamacpp_offline_benchmark_result_freshness_seconds", metrics)
+
     def test_run_benchmark_profile_uses_vllm_bench_payload_mapping(self) -> None:
         service = self._make_service()
         profile_id = "test-bench"

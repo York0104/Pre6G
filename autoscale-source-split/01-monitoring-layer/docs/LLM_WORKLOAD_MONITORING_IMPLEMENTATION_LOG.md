@@ -135,6 +135,52 @@ Feature: `Gemma 4 vLLM Serving Workload Monitoring`
 - `VictoriaMetrics search.latencyOffset = 3s`
 - `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS = 3`
 
+### llama.cpp offline benchmark -> VictoriaMetrics bridge
+
+後續已補上 `llama.cpp offline benchmark` 的第一版 `Prometheus -> vmagent -> VictoriaMetrics` bridge：
+
+```text
+llama-bench final run state / result
+-> autoscale_api /metrics
+-> vmagent 1s scrape
+-> VictoriaMetrics
+```
+
+這一版進入 VM 的不是 fake live queue，而是：
+
+- benchmark active window
+- latest run status
+- latest completed prompt / generation / prompt+generation throughput
+- GPU preflight process count
+- GPU contention flag
+- benchmark parameter gauges
+
+代表性 PromQL：
+
+```promql
+pre6g_llamacpp_offline_benchmark_run_active{runtime="llamacpp"}
+pre6g_llamacpp_offline_benchmark_prompt_tps_mean{runtime="llamacpp"}
+pre6g_llamacpp_offline_benchmark_generation_tps_mean{runtime="llamacpp"}
+pre6g_llamacpp_offline_benchmark_prompt_generation_tps_mean{runtime="llamacpp"}
+pre6g_llamacpp_offline_benchmark_gpu_contended{runtime="llamacpp"}
+```
+
+這讓 `GTX 1080 Ti` 的 offline benchmark 可以和：
+
+- `DCGM_FI_DEV_GPU_UTIL`
+- `DCGM_FI_DEV_FB_USED`
+- `DCGM_FI_DEV_POWER_USAGE`
+- `DCGM_FI_DEV_GPU_TEMP`
+
+在 `Grafana / VictoriaMetrics` 內做時間對齊。
+
+但目前仍**不是**：
+
+- benchmark 執行中的逐秒 token stream
+- vLLM-style live request metrics
+
+若要做到那一層，需要後續再補 dedicated progress exporter。
+
 ### Cold-start fixes found during live deploy
 
 實際部署過程中確認了兩個 manifest 細節必須修正：

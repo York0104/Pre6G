@@ -143,6 +143,40 @@ kubectl -n ai-serving exec deploy/llamacpp-qwen25-15b-q4km-bench -- /bin/bash -l
 - `KV Cache Usage` = `N/A — offline benchmark`
 - `Result Freshness` = benchmark completion age
 
+## VictoriaMetrics Bridge
+
+這條 `llama.cpp offline benchmark` 不是長駐 serving runtime，因此不會像 `vLLM` 一樣原生暴露 `/metrics`。
+
+目前採用的 bridge 是：
+
+```text
+llama-bench run state / final result
+-> autoscale_api /metrics
+-> vmagent 1s scrape
+-> VictoriaMetrics
+```
+
+已暴露的 Prometheus metrics 包括：
+
+- `pre6g_llamacpp_offline_benchmark_run_active`
+- `pre6g_llamacpp_offline_benchmark_run_status{state=...}`
+- `pre6g_llamacpp_offline_benchmark_run_started_timestamp_seconds`
+- `pre6g_llamacpp_offline_benchmark_run_completed_timestamp_seconds`
+- `pre6g_llamacpp_offline_benchmark_run_elapsed_seconds`
+- `pre6g_llamacpp_offline_benchmark_result_duration_seconds`
+- `pre6g_llamacpp_offline_benchmark_result_freshness_seconds`
+- `pre6g_llamacpp_offline_benchmark_prompt_tps_mean`
+- `pre6g_llamacpp_offline_benchmark_generation_tps_mean`
+- `pre6g_llamacpp_offline_benchmark_prompt_generation_tps_mean`
+- `pre6g_llamacpp_offline_benchmark_gpu_preflight_process_count`
+- `pre6g_llamacpp_offline_benchmark_gpu_contended`
+
+注意：
+
+- 這些 metrics 會保存 `run lifecycle` 與 `final benchmark result`
+- 目前**不會偽裝成** `llama-bench` 執行中的逐秒 token throughput
+- 若未來要做到執行中 token curve，需另補 benchmark progress exporter
+
 ## 2026-07-05 Measured Baseline
 
 本 image 與 target pod 已完成 live cluster 驗證。

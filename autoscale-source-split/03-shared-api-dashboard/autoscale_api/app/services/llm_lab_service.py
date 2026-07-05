@@ -1952,6 +1952,241 @@ class LlmLabService:
             "items": trimmed,
         }
 
+    @staticmethod
+    def _prometheus_escape_label(value: Any) -> str:
+        text = str(value if value is not None else "")
+        return text.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+    def _prometheus_metric_line(
+        self,
+        name: str,
+        value: float | int,
+        labels: dict[str, Any] | None = None,
+    ) -> str:
+        if labels:
+            encoded = ",".join(
+                f'{key}="{self._prometheus_escape_label(raw)}"'
+                for key, raw in sorted(labels.items())
+            )
+            return f"{name}{{{encoded}}} {value}"
+        return f"{name} {value}"
+
+    def render_prometheus_metrics(self) -> str:
+        now_ts = int(time.time())
+        base_labels = {
+            "runtime": self.llamacpp_runtime,
+            "benchmark_mode": self.llamacpp_benchmark_mode,
+            "namespace": self.llamacpp_offline_namespace,
+            "target_pod": self.llamacpp_offline_target_pod,
+            "node_name": self.llamacpp_offline_node_name,
+            "gpu_model": self.llamacpp_gpu_model,
+            "gpu_arch": self.llamacpp_gpu_arch,
+            "quantization": self.llamacpp_quantization,
+        }
+
+        latest_run: dict[str, Any] | None = None
+        try:
+            latest_run = self.get_llamacpp_offline_latest_run()
+        except KeyError:
+            latest_run = None
+
+        active_state = None
+        if latest_run and latest_run.get("status") in {"queued", "running"}:
+            active_state = latest_run
+
+        lines = [
+            "# HELP pre6g_llamacpp_offline_benchmark_run_active Whether a llama.cpp offline benchmark run is currently active.",
+            "# TYPE pre6g_llamacpp_offline_benchmark_run_active gauge",
+            self._prometheus_metric_line(
+                "pre6g_llamacpp_offline_benchmark_run_active",
+                1 if active_state else 0,
+                base_labels,
+            ),
+            "# HELP pre6g_llamacpp_offline_benchmark_run_status Latest llama.cpp offline benchmark run status as a one-hot gauge.",
+            "# TYPE pre6g_llamacpp_offline_benchmark_run_status gauge",
+        ]
+
+        latest_status = str((latest_run or {}).get("status") or "none")
+        for state_name in ("queued", "running", "succeeded", "failed", "none"):
+            labels = dict(base_labels)
+            labels["state"] = state_name
+            lines.append(
+                self._prometheus_metric_line(
+                    "pre6g_llamacpp_offline_benchmark_run_status",
+                    1 if latest_status == state_name else 0,
+                    labels,
+                )
+            )
+
+        if latest_run:
+            profile_id = str(latest_run.get("profile_id") or "")
+            run_labels = dict(base_labels)
+            if profile_id:
+                run_labels["profile_id"] = profile_id
+
+            started_at_ts = latest_run.get("started_at_ts")
+            completed_at_ts = latest_run.get("completed_at_ts")
+            if started_at_ts is not None:
+                lines.extend(
+                    [
+                        "# HELP pre6g_llamacpp_offline_benchmark_run_started_timestamp_seconds Latest llama.cpp offline benchmark run start timestamp.",
+                        "# TYPE pre6g_llamacpp_offline_benchmark_run_started_timestamp_seconds gauge",
+                        self._prometheus_metric_line(
+                            "pre6g_llamacpp_offline_benchmark_run_started_timestamp_seconds",
+                            int(started_at_ts),
+                            run_labels,
+                        ),
+                    ]
+                )
+            if completed_at_ts is not None:
+                lines.extend(
+                    [
+                        "# HELP pre6g_llamacpp_offline_benchmark_run_completed_timestamp_seconds Latest llama.cpp offline benchmark run completion timestamp.",
+                        "# TYPE pre6g_llamacpp_offline_benchmark_run_completed_timestamp_seconds gauge",
+                        self._prometheus_metric_line(
+                            "pre6g_llamacpp_offline_benchmark_run_completed_timestamp_seconds",
+                            int(completed_at_ts),
+                            run_labels,
+                        ),
+                    ]
+                )
+
+            if active_state and started_at_ts is not None:
+                lines.extend(
+                    [
+                        "# HELP pre6g_llamacpp_offline_benchmark_run_elapsed_seconds Elapsed runtime of the currently active llama.cpp offline benchmark run.",
+                        "# TYPE pre6g_llamacpp_offline_benchmark_run_elapsed_seconds gauge",
+                        self._prometheus_metric_line(
+                            "pre6g_llamacpp_offline_benchmark_run_elapsed_seconds",
+                            max(now_ts - int(started_at_ts), 0),
+                            run_labels,
+                        ),
+                    ]
+                )
+
+            result = latest_run.get("result") or {}
+            if result:
+                result_labels = dict(run_labels)
+                lines.extend(
+                    [
+                        "# HELP pre6g_llamacpp_offline_benchmark_result_duration_seconds Duration of the latest completed llama.cpp offline benchmark run.",
+                        "# TYPE pre6g_llamacpp_offline_benchmark_result_duration_seconds gauge",
+                    ]
+                )
+                duration_seconds = result.get("duration_seconds")
+                if duration_seconds is not None:
+                    lines.append(
+                        self._prometheus_metric_line(
+                            "pre6g_llamacpp_offline_benchmark_result_duration_seconds",
+                            float(duration_seconds),
+                            result_labels,
+                        )
+                    )
+                if completed_at_ts is not None:
+                    lines.extend(
+                        [
+                            "# HELP pre6g_llamacpp_offline_benchmark_result_freshness_seconds Age of the latest completed llama.cpp offline benchmark result.",
+                            "# TYPE pre6g_llamacpp_offline_benchmark_result_freshness_seconds gauge",
+                            self._prometheus_metric_line(
+                                "pre6g_llamacpp_offline_benchmark_result_freshness_seconds",
+                                max(now_ts - int(completed_at_ts), 0),
+                                result_labels,
+                            ),
+                        ]
+                    )
+
+                metric_specs: list[tuple[str, str, Any]] = [
+                    (
+                        "pre6g_llamacpp_offline_benchmark_prompt_tps_mean",
+                        "Latest completed llama.cpp offline benchmark prompt processing throughput.",
+                        result.get("prompt_tps_mean"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_generation_tps_mean",
+                        "Latest completed llama.cpp offline benchmark text generation throughput.",
+                        result.get("generation_tps_mean"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_prompt_generation_tps_mean",
+                        "Latest completed llama.cpp offline benchmark prompt-plus-generation throughput.",
+                        result.get("prompt_generation_tps_mean"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_prompt_tps_stddev",
+                        "Latest completed llama.cpp offline benchmark prompt throughput standard deviation.",
+                        result.get("prompt_tps_stddev"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_generation_tps_stddev",
+                        "Latest completed llama.cpp offline benchmark generation throughput standard deviation.",
+                        result.get("generation_tps_stddev"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_prompt_generation_tps_stddev",
+                        "Latest completed llama.cpp offline benchmark prompt-plus-generation throughput standard deviation.",
+                        result.get("prompt_generation_tps_stddev"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_gpu_preflight_process_count",
+                        "GPU process count observed during benchmark preflight.",
+                        result.get("gpu_process_count_before"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_gpu_contended",
+                        "Whether GPU contention was detected before the latest completed llama.cpp offline benchmark run.",
+                        1 if result.get("gpu_contended") else 0,
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_n_prompt",
+                        "Prompt token count configured for the latest completed llama.cpp offline benchmark run.",
+                        result.get("n_prompt"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_n_gen",
+                        "Generation token count configured for the latest completed llama.cpp offline benchmark run.",
+                        result.get("n_gen"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_n_depth",
+                        "Context depth configured for the latest completed llama.cpp offline benchmark run.",
+                        result.get("n_depth"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_batch_size",
+                        "Batch size configured for the latest completed llama.cpp offline benchmark run.",
+                        result.get("batch_size"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_ubatch_size",
+                        "Micro-batch size configured for the latest completed llama.cpp offline benchmark run.",
+                        result.get("ubatch_size"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_n_gpu_layers",
+                        "Number of GPU layers configured for the latest completed llama.cpp offline benchmark run.",
+                        result.get("n_gpu_layers"),
+                    ),
+                    (
+                        "pre6g_llamacpp_offline_benchmark_repetitions",
+                        "Repetitions configured for the latest completed llama.cpp offline benchmark run.",
+                        result.get("repetitions"),
+                    ),
+                ]
+                for metric_name, help_text, metric_value in metric_specs:
+                    if metric_value is None:
+                        continue
+                    lines.append(f"# HELP {metric_name} {help_text}")
+                    lines.append(f"# TYPE {metric_name} gauge")
+                    lines.append(
+                        self._prometheus_metric_line(
+                            metric_name,
+                            float(metric_value),
+                            result_labels,
+                        )
+                    )
+
+        return "\n".join(lines) + "\n"
+
     def _append_history(self, item: dict[str, Any]) -> None:
         with self.history_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(item, ensure_ascii=True) + "\n")

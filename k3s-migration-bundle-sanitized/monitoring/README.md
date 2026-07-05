@@ -32,7 +32,62 @@
 若已啟用 LLM workload 監控，還應可看到：
 
 - vmagent `vllm-serving-pods` target
+- vmagent `autoscale-api-llamacpp-benchmark` target
 - `vllm:generation_tokens_total`
 - `vllm:prompt_tokens_total`
 - `vllm:num_requests_waiting`
 - `vllm:kv_cache_usage_perc`
+- `pre6g_llamacpp_offline_benchmark_prompt_tps_mean`
+- `pre6g_llamacpp_offline_benchmark_generation_tps_mean`
+
+## llama.cpp Offline Benchmark PromQL
+
+以下查詢可直接用於 `GTX 1080 Ti llama.cpp offline benchmark` 與 `DCGM` 對齊觀察：
+
+### 1. Benchmark active window
+
+```promql
+pre6g_llamacpp_offline_benchmark_run_active{runtime="llamacpp", namespace="ai-serving"}
+```
+
+### 2. Latest prompt throughput
+
+```promql
+pre6g_llamacpp_offline_benchmark_prompt_tps_mean{runtime="llamacpp", namespace="ai-serving"}
+```
+
+### 3. Latest generation throughput
+
+```promql
+pre6g_llamacpp_offline_benchmark_generation_tps_mean{runtime="llamacpp", namespace="ai-serving"}
+```
+
+### 4. Latest prompt+generation throughput
+
+```promql
+pre6g_llamacpp_offline_benchmark_prompt_generation_tps_mean{runtime="llamacpp", namespace="ai-serving"}
+```
+
+### 5. GPU contention preflight
+
+```promql
+pre6g_llamacpp_offline_benchmark_gpu_contended{runtime="llamacpp", namespace="ai-serving"}
+```
+
+### 6. 與 DCGM GPU util 對齊
+
+```promql
+DCGM_FI_DEV_GPU_UTIL{kubernetes_node="icclz1"}
+```
+
+搭配：
+
+```promql
+pre6g_llamacpp_offline_benchmark_run_active{node_name="icclz1"}
+```
+
+就能在 Grafana 上看出：
+
+- benchmark 何時開始/結束
+- benchmark active window 期間 GPU util 是否同步升高
+- 完成後 final throughput 結果是多少

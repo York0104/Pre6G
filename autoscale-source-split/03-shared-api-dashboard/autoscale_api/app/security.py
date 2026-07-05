@@ -27,7 +27,7 @@ def extract_request_token(request: Request) -> Optional[str]:
 
 
 def is_exempt_path(path: str) -> bool:
-    if path in {"/", "/docs", "/redoc", "/openapi.json"}:
+    if path in {"/", "/docs", "/redoc", "/openapi.json", "/metrics"}:
         return True
     return path.startswith("/docs/") or path.startswith("/redoc/")
 

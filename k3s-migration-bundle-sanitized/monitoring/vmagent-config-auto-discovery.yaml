@@ -86,3 +86,28 @@ data:
             target_label: kubernetes_pod
           - source_labels: [__meta_kubernetes_pod_container_name]
             target_label: kubernetes_container
+
+      - job_name: autoscale-api-llamacpp-benchmark
+        scrape_interval: 1s
+        scrape_timeout: 800ms
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - pre6g-dashboard
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name]
+            regex: pre6g-dashboard;autoscale-api
+            action: keep
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            regex: http
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: kubernetes_node
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: kubernetes_pod
+          - target_label: pre6g_metrics_source
+            replacement: autoscale_api

@@ -239,6 +239,15 @@ class LlmLabRouterTests(unittest.TestCase):
         self.assertEqual(response.runtime, "llamacpp")
         self.assertEqual(response.profiles[0].profile_id, "pascal-throughput")
 
+    def test_metrics_route_returns_prometheus_text(self) -> None:
+        from app.routers import metrics as metrics_router
+
+        payload = "# HELP pre6g_llamacpp_offline_benchmark_run_active test\npre6g_llamacpp_offline_benchmark_run_active 0\n"
+        with patch.object(metrics_router.llm_lab_service, "render_prometheus_metrics", return_value=payload):
+            response = metrics_router.get_prometheus_metrics()
+        self.assertEqual(response.media_type, "text/plain; version=0.0.4; charset=utf-8")
+        self.assertEqual(response.body.decode(), payload)
+
     def test_start_llamacpp_offline_run_route_returns_payload(self) -> None:
         payload = {
             "schema": "pre6g.llamacpp_offline_benchmark_run_start.v1",
