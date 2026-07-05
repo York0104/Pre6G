@@ -169,6 +169,26 @@ kubectl -n ai-serving exec deploy/llamacpp-qwen25-15b-q4km-bench -- /bin/bash -l
 - 因此目前最適合將它們解讀為 `shared GPU usable baseline`
 - 若要做正式對外報告的 hardware baseline，仍建議在較乾淨的 isolation 條件下重跑
 
+## 2026-07-05 Isolated Baseline
+
+後續已在同一個 target pod 上完成一輪 isolation rerun：
+
+- temporary scale down:
+  - `intent-lab/yolo26n-focus`
+  - `intent-lab/yolo26n-bg-2`
+- benchmark preflight after scale-down:
+  - `gpu_process_count_before = 0`
+  - `gpu_contended = false`
+  - `gpu_preflight_status = Idle`
+- rerun 完成後，兩個 YOLO deployment 已恢復
+
+建議正式引用的 baseline：
+
+| Profile | Run ID | Duration | Prompt TPS (`pp`) | Generation TPS (`tg`) | Prompt + Generation TPS (`pg`) | GPU Preflight |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `pascal-smoke` | `llamacpp-pascal-smoke-run-20260705T020757Z` | `4.0 sec` | `3653.644` | `156.710` | `432.436` | `Idle` |
+| `pascal-throughput` | `llamacpp-pascal-throughput-run-20260705T020802Z` | `11.0 sec` | `3610.145` | `156.691` | `619.870` | `Idle` |
+
 ## Shared GPU Caveat
 
 這個 target 使用：

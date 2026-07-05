@@ -84,6 +84,52 @@
 
 後續若要產出正式 baseline，建議先排空 `icclz1` 上其他 compute process，再重跑同一組 fixed profiles。
 
+## 2026-07-05 Isolated Baseline
+
+後續已實際完成一輪較乾淨的 isolation rerun：
+
+- temporary scale down:
+  - `intent-lab/yolo26n-focus`
+  - `intent-lab/yolo26n-bg-2`
+- benchmark preflight after scale-down:
+  - `gpu_process_count_before = 0`
+  - `gpu_contended = false`
+  - `gpu_preflight_status = Idle`
+- benchmark 完成後，兩個 YOLO deployment 已恢復到 `readyReplicas = 1`
+
+### Isolated `pascal-smoke`
+
+- run id: `llamacpp-pascal-smoke-run-20260705T020757Z`
+- status: `succeeded`
+- duration: `4.0 sec`
+- Prompt TPS (`pp`): `3653.644 tok/s`
+- Generation TPS (`tg`): `156.710 tok/s`
+- Prompt + Generation TPS (`pg`): `432.436 tok/s`
+
+### Isolated `pascal-throughput`
+
+- run id: `llamacpp-pascal-throughput-run-20260705T020802Z`
+- status: `succeeded`
+- duration: `11.0 sec`
+- Prompt TPS (`pp`): `3610.145 tok/s`
+- Generation TPS (`tg`): `156.691 tok/s`
+- Prompt + Generation TPS (`pg`): `619.870 tok/s`
+
+### Recommended Baseline Interpretation
+
+目前最適合作為正式 `GTX 1080 Ti / llama.cpp / Qwen2.5-1.5B Q4_K_M` baseline 的，是這組 isolated rerun，而不是前一組 shared-GPU 結果。
+
+建議後續引用時優先使用：
+
+- `pascal-smoke`
+  - `pp = 3653.644 tok/s`
+  - `tg = 156.710 tok/s`
+  - `pg = 432.436 tok/s`
+- `pascal-throughput`
+  - `pp = 3610.145 tok/s`
+  - `tg = 156.691 tok/s`
+  - `pg = 619.870 tok/s`
+
 ## Dashboard Semantics
 
 - `Prompt TPS` = `pp` mean tokens/s

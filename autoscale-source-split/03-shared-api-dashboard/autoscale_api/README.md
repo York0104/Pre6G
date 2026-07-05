@@ -269,6 +269,28 @@ response summary:
 - 因此目前最嚴謹的定位是：
   `llama.cpp` 路徑已正式可用，但現有 baseline 屬於 shared-GPU baseline，不是 isolated peak baseline
 
+同日後續已完成 isolated rerun：
+
+- temporary scale down `icclz1` 上兩個 YOLO GPU deployments
+- benchmark preflight 變為：
+  - `gpu_process_count_before = 0`
+  - `gpu_contended = false`
+  - `gpu_preflight_status = Idle`
+- isolated baseline：
+  - `pascal-smoke`
+    - `pp = 3653.644 tok/s`
+    - `tg = 156.710 tok/s`
+    - `pg = 432.436 tok/s`
+  - `pascal-throughput`
+    - `pp = 3610.145 tok/s`
+    - `tg = 156.691 tok/s`
+    - `pg = 619.870 tok/s`
+
+因此目前 `GTX 1080 Ti` 這條 `llama.cpp` offline benchmark path 已同時具備：
+
+- shared-GPU usable baseline
+- isolated rerun baseline
+
 ### `/api/v1/llm-lab/benchmarks/runs`
 
 `2026-06-30` 新增 benchmark background run v2。
