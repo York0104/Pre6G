@@ -40,16 +40,16 @@
 - `Tasks & Runs`
   - `Single Inference`
   - `Serving Benchmark`
-- `Offline Throughput Benchmark`
+- `Offline Hardware Benchmark`
 - fixed serving benchmark profiles (`Smoke` / `Continuous`)
-- fixed offline throughput profiles (`Offline Smoke` / `Offline Steady`)
+- fixed offline hardware benchmark profiles (`pascal-smoke` / `pascal-throughput` / `pascal-context`)
 - `Recent Runtime History` with filterable recent events
 
 目前這一頁的語意邊界是：
 
 - `Single Inference`：功能驗證、token usage 驗證、單次 latency 觀測
 - `Serving Benchmark`：固定 profile 的官方 `vllm bench serve` serving benchmark
-- `Offline Throughput Benchmark`：固定 profile 的官方 `vllm bench throughput` offline batch benchmark
+- `Offline Hardware Benchmark`：固定 profile 的 `llama-bench` Pascal offline hardware benchmark
 - 目前同時支援：
   - 同步 benchmark summary
   - background run progress polling
@@ -71,15 +71,14 @@
 | UI 區塊 | Official Tool | Target | Capacity View |
 | --- | --- | --- | --- |
 | `Serving Benchmark` | `vllm bench serve` | live `Gemma 4` serving pod | `Serving Capacity View` |
-| `Offline Throughput Benchmark` | `vllm bench throughput` | dedicated supported-GPU benchmark pod | `Hardware Capacity View` |
+| `Offline Hardware Benchmark` | `llama-bench` | dedicated `GTX 1080 Ti` benchmark pod | `Hardware Capacity View` |
 
 目前 live 驗證狀態：
 
 - `Serving Benchmark` path 可正常保留在 live `Gemma 4` serving 模型
-- `Offline Throughput Benchmark` path 曾實際打到 `icclz1` dedicated target
-- 但 `vllm/vllm-openai:v0.23.0` 在 `GTX 1080 Ti` 上有 CUDA 初始化相容性問題
-- 因此 `1080 Ti` 已從正式 offline throughput target 候選中排除
-- 若要恢復正式 offline throughput，建議改成 `RTX 4090 dedicated benchmark target`
+- 舊的 `vLLM bench throughput` Pascal 路徑已保留為不相容紀錄
+- `1080 Ti` 目前正式改走 `llama.cpp + llama-bench`
+- 這條路徑提供的是 `Hardware Capacity View`，不可直接與 `4090 + vLLM` live serving metrics 混合加總
 
 這次 external nodes 進 dashboard 的方式是擴充 API 層，不是重寫 React 卡片元件；因此 API 更新完成後，前端重新整理頁面即可看到新節點。
 
@@ -202,8 +201,19 @@ bash run_local_dashboard_preview.sh
 - `Single Inference` result
 - `Target Service`
 - `Serving Benchmark` result
-- `Offline Throughput Benchmark` result
+- `Offline Hardware Benchmark` result
+- `Result Freshness`
+- `GPU Preflight`
+- `Waiting Requests = N/A — offline benchmark`
+- `KV Cache Usage = N/A — offline benchmark`
 - recent `Runtime History`
+
+`2026-07-05` 補充：
+
+- `Offline Hardware Benchmark` 已完成 live validation
+- `pascal-smoke` 與 `pascal-throughput` 會顯示實際 `pp / tg / pg` 結果
+- `Result Freshness` 顯示的是 benchmark 完成後經過多久，不是 scrape freshness
+- 若 `GPU Preflight = Contended`，代表本次結果可能受 shared GPU 其他 process 影響
 
 benchmark result 目前應包含：
 

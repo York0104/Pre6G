@@ -1,5 +1,10 @@
 # icclz1 Offline Throughput Benchmark Validation Record
 
+> 2026-07-04 update:
+> `GTX 1080 Ti` 的正式 offline benchmark 路徑已改為 `llama.cpp + llama-bench`。
+> 本文件保留的是先前 `vLLM bench throughput` 在 Pascal 上失敗的驗證紀錄。
+> 新的正式設計請改看 [LLAMACPP_OFFLINE_BENCHMARK_1080TI.md](./LLAMACPP_OFFLINE_BENCHMARK_1080TI.md)。
+
 本文件記錄 `LLM Serving Lab` 內 `Offline Throughput Benchmark` 在 `icclz1` / `GTX 1080 Ti` 上的實測結果與支援結論。
 
 ## 驗證目標

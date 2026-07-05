@@ -2,6 +2,7 @@ import tempfile
 import threading
 import time
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -102,6 +103,8 @@ class LlmLabServiceTests(unittest.TestCase):
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         service.history_path = Path(tempdir.name) / "history.jsonl"
+        service.runs_root = Path(tempdir.name) / "runs"
+        service.runs_root.mkdir(parents=True, exist_ok=True)
         return service
 
     def test_run_inference_returns_usage_and_text(self) -> None:
@@ -444,6 +447,91 @@ class LlmLabServiceTests(unittest.TestCase):
         self.assertEqual(seconds, list(range(seconds[0], seconds[-1] + 1)))
         zero_buckets = [bucket for bucket in buckets[:-1] if bucket["total_tokens"] == 0.0]
         self.assertTrue(len(zero_buckets) >= 1)
+
+    def test_parse_llamacpp_benchmark_payload_maps_pp_tg_pg(self) -> None:
+        service = self._make_service()
+        fixture_path = Path(__file__).parent / "fixtures" / "llama_bench_pascal_output.json"
+        payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+        result = service._parse_llamacpp_benchmark_payload(payload)
+        self.assertEqual(result["prompt_tps_mean"], 1188.432)
+        self.assertEqual(result["generation_tps_mean"], 302.615)
+        self.assertEqual(result["prompt_generation_tps_mean"], 254.881)
+        self.assertEqual(result["n_prompt"], 512)
+        self.assertEqual(result["n_gpu_layers"], -1)
+
+    def test_parse_llamacpp_benchmark_payload_allows_missing_pg(self) -> None:
+        service = self._make_service()
+        payload = {
+            "repetitions": 3,
+            "results": [
+                {"test": "pp", "avg_ts": 900.0, "stdev_ts": 10.0, "n_prompt": 128, "n_gen": 64},
+                {"test": "tg", "avg_ts": 220.0, "stdev_ts": 4.0, "n_prompt": 128, "n_gen": 64},
+            ],
+        }
+        result = service._parse_llamacpp_benchmark_payload(payload)
+        self.assertEqual(result["prompt_generation_tps_mean"], None)
+        self.assertEqual(result["prompt_generation_tps_stddev"], None)
+
+    def test_parse_llamacpp_benchmark_payload_rejects_malformed_shape(self) -> None:
+        service = self._make_service()
+        with self.assertRaises(LlmInferenceError) as ctx:
+            service._parse_llamacpp_benchmark_payload({"results": "nope"})
+        self.assertEqual(ctx.exception.status_code, 502)
+
+    def test_parse_gpu_preflight_output(self) -> None:
+        service = self._make_service()
+        output = "5791, python3, 402 MiB\n8123, another-proc, 128 MiB\n"
+        processes = service._parse_gpu_preflight_output(output)
+        self.assertEqual(len(processes), 2)
+        self.assertEqual(processes[0]["pid"], 5791)
+        self.assertEqual(processes[0]["used_memory"], "402 MiB")
+
+    def test_start_llamacpp_offline_run_returns_latest_result(self) -> None:
+        service = self._make_service()
+        fixture_path = Path(__file__).parent / "fixtures" / "llama_bench_pascal_output.json"
+        fixture_stdout = fixture_path.read_text(encoding="utf-8")
+        with patch.object(
+            service,
+            "_run_llamacpp_gpu_preflight",
+            return_value=[{"pid": 5791, "process_name": "python3", "used_memory": "402 MiB"}],
+        ), patch("app.services.llm_lab_service.subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout=fixture_stdout, stderr="")
+            started = service.start_llamacpp_offline_run(profile="pascal-throughput")
+            run_id = started["run_id"]
+            deadline = time.time() + 2.0
+            snapshot = service.get_llamacpp_offline_run(run_id=run_id)
+            while snapshot["status"] in {"queued", "running"} and time.time() < deadline:
+                time.sleep(0.05)
+                snapshot = service.get_llamacpp_offline_run(run_id=run_id)
+
+        self.assertEqual(snapshot["status"], "succeeded")
+        self.assertIsNotNone(snapshot["result"])
+        self.assertTrue(snapshot["result"]["gpu_contended"])
+        self.assertEqual(snapshot["result"]["prompt_tps_mean"], 1188.432)
+
+    def test_start_llamacpp_offline_run_rejects_when_active_run_exists(self) -> None:
+        service = self._make_service()
+        with service._run_state_lock:
+            service._active_run_controls["llamacpp-run-1"] = {"kind": "llamacpp_offline"}
+        with self.assertRaises(LlmInferenceError) as ctx:
+            service.start_llamacpp_offline_run(profile="pascal-smoke")
+        self.assertEqual(ctx.exception.status_code, 409)
+
+    def test_llamacpp_offline_run_marks_failed_on_command_error(self) -> None:
+        service = self._make_service()
+        with patch.object(service, "_run_llamacpp_gpu_preflight", return_value=[]), patch(
+            "app.services.llm_lab_service.subprocess.run"
+        ) as mock_run:
+            mock_run.return_value = Mock(returncode=2, stdout="", stderr="boom")
+            started = service.start_llamacpp_offline_run(profile="pascal-smoke")
+            run_id = started["run_id"]
+            deadline = time.time() + 2.0
+            snapshot = service.get_llamacpp_offline_run(run_id=run_id)
+            while snapshot["status"] in {"queued", "running"} and time.time() < deadline:
+                time.sleep(0.05)
+                snapshot = service.get_llamacpp_offline_run(run_id=run_id)
+        self.assertEqual(snapshot["status"], "failed")
+        self.assertIn("llama-bench failed", snapshot["error"])
 
 
 if __name__ == "__main__":

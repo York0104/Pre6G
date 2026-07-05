@@ -39,6 +39,11 @@
 - `POST /api/v1/llm-lab/benchmarks/runs/{run_id}/cancel`
 - `POST /api/v1/llm-lab/benchmarks/{profile}`
 - `POST /api/v1/llm-lab/offline-throughput`
+- `GET /api/v1/llm-lab/llamacpp/offline-benchmark/profiles`
+- `POST /api/v1/llm-lab/llamacpp/offline-benchmark/runs`
+- `GET /api/v1/llm-lab/llamacpp/offline-benchmark/runs/latest`
+- `GET /api/v1/llm-lab/llamacpp/offline-benchmark/runs/{run_id}`
+- `GET /api/v1/llm-lab/llamacpp/offline-benchmark/runs`
 - `GET /api/v1/llm-lab/history`
 - `GET /api/v1/experiments/fan-cycle/latest`
 - `GET /api/v1/experiments/fan-cycle/live`
@@ -236,6 +241,7 @@ response summary:
 | --- | --- | --- | --- |
 | `POST /api/v1/llm-lab/benchmarks/{profile}` | `vllm bench serve` | live `Gemma 4` serving pod | `Serving Capacity View` |
 | `POST /api/v1/llm-lab/offline-throughput` | `vllm bench throughput` | dedicated supported-GPU benchmark pod | `Hardware Capacity View` |
+| `POST /api/v1/llm-lab/llamacpp/offline-benchmark/runs` | `llama-bench` | `GTX 1080 Ti` dedicated benchmark pod | `Hardware Capacity View` |
 
 `2026-07-02` live 驗證補充：
 
@@ -244,6 +250,24 @@ response summary:
 - 因此 `GTX 1080 Ti (CC 6.1)` 已被排除為目前平台下的受支援 offline throughput target
 - 之後若 API 未配置 `PRE6G_LLM_OFFLINE_BENCH_*`，`/api/v1/llm-lab/offline-throughput` 應回 `409` 表示未配置，而不是 route 缺失
 - 若要保留 `k3s` / `kubectl exec` 這條正式平台路徑，建議改用 `RTX 4090` dedicated benchmark target
+
+`2026-07-05` live 驗證補充：
+
+- `GTX 1080 Ti` 的正式 offline 路徑已改為
+  `POST /api/v1/llm-lab/llamacpp/offline-benchmark/runs`
+- `autoscale_api -> kubectl exec -> llama-bench -> parser -> history` 已實際跑通
+- 已完成成功實測：
+  - `pascal-smoke`
+    - `pp = 3356.873 tok/s`
+    - `tg = 161.313 tok/s`
+    - `pg = 443.227 tok/s`
+  - `pascal-throughput`
+    - `pp = 3600.395 tok/s`
+    - `tg = 160.452 tok/s`
+    - `pg = 632.824 tok/s`
+- 但兩次 run 都有 `gpu_contended = true`
+- 因此目前最嚴謹的定位是：
+  `llama.cpp` 路徑已正式可用，但現有 baseline 屬於 shared-GPU baseline，不是 isolated peak baseline
 
 ### `/api/v1/llm-lab/benchmarks/runs`
 
@@ -292,6 +316,12 @@ response summary:
 ### `/api/v1/llm-lab/history`
 
 `Run History v2` 會把 `Single Inference` 與 `Serving Benchmark` 摘要 append 到本機 `jsonl`，並提供最近紀錄查詢。
+
+`2026-07-04` 起也會一併記錄：
+
+- `llama.cpp` offline benchmark runtime
+- `GPU preflight` contention flag
+- `Prompt TPS / Generation TPS / Prompt+Generation TPS`
 
 query params:
 

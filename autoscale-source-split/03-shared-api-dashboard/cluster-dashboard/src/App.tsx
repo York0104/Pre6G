@@ -213,10 +213,8 @@ type LlmBenchmarkRunRequest = {
   profile_id: string;
 };
 
-type LlmOfflineThroughputRequest = {
-  namespace: string;
-  workload: string;
-  profile_id: string;
+type LlamacppOfflineBenchmarkRunRequest = {
+  profile: string;
 };
 
 type LlmSmokeBenchmarkResponse = {
@@ -317,6 +315,8 @@ type LlmBenchmarkRunCancelResponse = {
 type LlmRunHistoryItem = {
   ts: number;
   event_type: string;
+  runtime?: string | null;
+  benchmark_mode?: string | null;
   namespace: string;
   workload: string;
   status: string;
@@ -352,6 +352,16 @@ type LlmRunHistoryItem = {
   p95_tpot_seconds?: number | null;
   mean_itl_seconds?: number | null;
   p95_itl_seconds?: number | null;
+  prompt_tps_mean?: number | null;
+  prompt_tps_stddev?: number | null;
+  generation_tps_mean?: number | null;
+  generation_tps_stddev?: number | null;
+  prompt_generation_tps_mean?: number | null;
+  prompt_generation_tps_stddev?: number | null;
+  duration_seconds?: number | null;
+  observed_at_ts?: number | null;
+  gpu_contended?: boolean | null;
+  error_summary?: string | null;
 };
 
 type LlmRunHistoryResponse = {
@@ -384,26 +394,183 @@ const BENCHMARK_PROFILES = [
 
 const OFFLINE_THROUGHPUT_PROFILES = [
   {
-    id: "smoke",
-    label: "Offline Smoke",
-    model: "Qwen/Qwen2.5-1.5B-Instruct",
-    promptSource: "vLLM random synthetic dataset",
-    maxTokens: 64,
-    temperature: 0.0,
-    concurrency: 1,
-    requestCount: 16,
+    id: "pascal-smoke",
+    label: "pascal-smoke",
+    runtime: "llama.cpp CUDA",
+    model: "Qwen2.5-1.5B-Instruct GGUF",
+    promptSource: "Fixed llama-bench profile",
+    nPrompt: 128,
+    nGen: 64,
+    nDepth: 0,
+    batchSize: 256,
+    ubatchSize: 128,
+    repetitions: 3,
+    flashAttention: "off",
+    gpuLayers: "all",
   },
   {
-    id: "steady",
-    label: "Offline Steady",
-    model: "Qwen/Qwen2.5-1.5B-Instruct",
-    promptSource: "vLLM random synthetic dataset",
-    maxTokens: 128,
-    temperature: 0.0,
-    concurrency: 1,
-    requestCount: 48,
+    id: "pascal-throughput",
+    label: "pascal-throughput",
+    runtime: "llama.cpp CUDA",
+    model: "Qwen2.5-1.5B-Instruct GGUF",
+    promptSource: "Fixed llama-bench profile",
+    nPrompt: 512,
+    nGen: 128,
+    nDepth: 0,
+    batchSize: 512,
+    ubatchSize: 128,
+    repetitions: 5,
+    flashAttention: "off",
+    gpuLayers: "all",
+  },
+  {
+    id: "pascal-context",
+    label: "pascal-context",
+    runtime: "llama.cpp CUDA",
+    model: "Qwen2.5-1.5B-Instruct GGUF",
+    promptSource: "Fixed llama-bench profile",
+    nPrompt: 512,
+    nGen: 128,
+    nDepth: 1024,
+    batchSize: 512,
+    ubatchSize: 128,
+    repetitions: 5,
+    flashAttention: "off",
+    gpuLayers: "all",
   },
 ] as const;
+
+type LlamacppOfflineBenchmarkProfile = {
+  profile_id: string;
+  display_name: string;
+  description: string;
+  runtime: string;
+  benchmark_mode: string;
+  n_prompt: number;
+  n_gen: number;
+  n_depth: number;
+  batch_size: number;
+  ubatch_size: number;
+  repetitions: number;
+  flash_attention: string;
+  gpu_layers: number;
+};
+
+type LlamacppOfflineBenchmarkProfilesResponse = {
+  schema: string;
+  ts: number;
+  runtime: string;
+  benchmark_mode: string;
+  profiles: LlamacppOfflineBenchmarkProfile[];
+};
+
+type LlamacppOfflineGpuProcess = {
+  pid?: number | null;
+  process_name?: string | null;
+  used_memory?: string | null;
+};
+
+type LlamacppOfflineRuntimeOverview = {
+  runtime: string;
+  benchmark_mode: string;
+  runtime_image?: string | null;
+  runtime_image_tag?: string | null;
+  llama_cpp_ref?: string | null;
+  llama_cpp_commit?: string | null;
+  cuda_version?: string | null;
+  gpu_model?: string | null;
+  gpu_arch?: string | null;
+  gpu_resource_request?: string | null;
+  namespace: string;
+  target_pod: string;
+  node_name?: string | null;
+  model_name?: string | null;
+  model_source?: string | null;
+  gguf_filename?: string | null;
+  gguf_path?: string | null;
+  gguf_sha256?: string | null;
+  quantization?: string | null;
+  gpu_layers?: string | null;
+};
+
+type LlamacppOfflineBenchmarkResult = {
+  schema: string;
+  ts: number;
+  run_id: string;
+  runtime: string;
+  benchmark_mode: string;
+  profile: string;
+  profile_id: string;
+  status: string;
+  namespace: string;
+  target_pod: string;
+  node_name?: string | null;
+  runtime_overview: LlamacppOfflineRuntimeOverview;
+  observed_at_ts?: number | null;
+  started_at_ts?: number | null;
+  completed_at_ts?: number | null;
+  duration_seconds?: number | null;
+  prompt_tps_mean?: number | null;
+  prompt_tps_stddev?: number | null;
+  generation_tps_mean?: number | null;
+  generation_tps_stddev?: number | null;
+  prompt_generation_tps_mean?: number | null;
+  prompt_generation_tps_stddev?: number | null;
+  waiting_requests?: number | null;
+  kv_cache_usage_percent?: number | null;
+  n_prompt: number;
+  n_gen: number;
+  n_depth: number;
+  batch_size: number;
+  ubatch_size: number;
+  n_gpu_layers: number;
+  repetitions: number;
+  flash_attention: string;
+  gpu_processes_before: LlamacppOfflineGpuProcess[];
+  gpu_process_count_before: number;
+  gpu_contended: boolean;
+  gpu_preflight_status: string;
+  preflight_warning?: string | null;
+  error_summary?: string | null;
+};
+
+type LlamacppOfflineBenchmarkRunStateResponse = {
+  schema: string;
+  ts: number;
+  run_id: string;
+  runtime: string;
+  benchmark_mode: string;
+  profile: string;
+  profile_id: string;
+  status: string;
+  namespace: string;
+  target_pod: string;
+  node_name?: string | null;
+  started_at_ts?: number | null;
+  completed_at_ts?: number | null;
+  result?: LlamacppOfflineBenchmarkResult | null;
+  error?: string | null;
+};
+
+type LlamacppOfflineBenchmarkRunStartResponse = {
+  schema: string;
+  ts: number;
+  run_id: string;
+  runtime: string;
+  benchmark_mode: string;
+  profile: string;
+  profile_id: string;
+  status: string;
+  namespace: string;
+  target_pod: string;
+};
+
+type LlamacppOfflineBenchmarkRunsResponse = {
+  schema: string;
+  ts: number;
+  count: number;
+  items: LlamacppOfflineBenchmarkRunStateResponse[];
+};
 
 type Health = "healthy" | "degraded" | "offline";
 type ActiveTab = "monitor" | "fan-experiment" | "llm-serving";
@@ -822,9 +989,20 @@ function formatFreshness(value?: number | null): string {
   return `${value.toFixed(1)} sec`;
 }
 
+function formatResultFreshnessFromTs(ts?: number | null): string {
+  if (!ts) return "N/A";
+  return formatFreshness(Math.max(Date.now() / 1000 - ts, 0));
+}
+
 function formatReadyCondition(value?: boolean | null): string {
   if (value === undefined || value === null) return "Unknown";
   return value ? "True" : "False";
+}
+
+function runtimeBadge(runtime?: string | null): string {
+  if (runtime === "llamacpp") return "llama.cpp";
+  if (runtime === "vllm") return "vLLM";
+  return runtime || "runtime";
 }
 
 function observationLine(label: string, value: string) {
@@ -1166,11 +1344,14 @@ function LlmServingLabPage({
   const [smokeResult, setSmokeResult] = useState<LlmSmokeBenchmarkResponse | null>(null);
   const [offlineLoading, setOfflineLoading] = useState(false);
   const [offlineError, setOfflineError] = useState("");
-  const [offlineResult, setOfflineResult] = useState<LlmSmokeBenchmarkResponse | null>(null);
+  const [offlineProfiles, setOfflineProfiles] = useState<LlamacppOfflineBenchmarkProfile[]>([]);
+  const [offlineLatestRun, setOfflineLatestRun] = useState<LlamacppOfflineBenchmarkRunStateResponse | null>(null);
+  const [offlineRuns, setOfflineRuns] = useState<LlamacppOfflineBenchmarkRunStateResponse[]>([]);
+  const [offlineActiveRunId, setOfflineActiveRunId] = useState("");
   const [activeBenchmarkRun, setActiveBenchmarkRun] = useState<LlmBenchmarkRunStatusResponse | null>(null);
   const [activeBenchmarkRunId, setActiveBenchmarkRunId] = useState("");
   const [benchmarkProfileId, setBenchmarkProfileId] = useState<(typeof BENCHMARK_PROFILES)[number]["id"]>("smoke");
-  const [offlineProfileId, setOfflineProfileId] = useState<(typeof OFFLINE_THROUGHPUT_PROFILES)[number]["id"]>("smoke");
+  const [offlineProfileId, setOfflineProfileId] = useState<(typeof OFFLINE_THROUGHPUT_PROFILES)[number]["id"]>("pascal-smoke");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [runHistory, setRunHistory] = useState<LlmRunHistoryItem[]>([]);
@@ -1193,11 +1374,19 @@ function LlmServingLabPage({
     BENCHMARK_PROFILES.find((profile) => profile.id === benchmarkProfileId) || BENCHMARK_PROFILES[0];
   const selectedOfflineProfile =
     OFFLINE_THROUGHPUT_PROFILES.find((profile) => profile.id === offlineProfileId) || OFFLINE_THROUGHPUT_PROFILES[0];
+  const selectedOfflineProfileApi =
+    offlineProfiles.find((profile) => profile.profile_id === offlineProfileId) || null;
+  const offlineLatestResult = offlineLatestRun?.result || null;
   const shouldHideContinuousPercentiles = smokeResult?.profile_id === "continuous";
   const filteredRunHistory = runHistory.filter((item) => {
     if (historyFilter === "all") return true;
     if (historyFilter === "single_inference") return item.event_type === "single_inference";
-    return item.event_type === "serving_benchmark" || item.event_type === "controlled_batch";
+    return (
+      item.event_type === "serving_benchmark" ||
+      item.event_type === "controlled_batch" ||
+      item.event_type === "offline_throughput_benchmark" ||
+      item.event_type === "llamacpp_offline_benchmark"
+    );
   });
   const historySummary = {
     total: filteredRunHistory.length,
@@ -1225,7 +1414,7 @@ function LlmServingLabPage({
       );
       setInferenceResult(response);
       await onRefreshWorkloads();
-      await loadRunHistory(primaryWorkload.namespace, primaryWorkload.workload);
+      await loadRunHistory(primaryWorkload.namespace);
     } catch (error) {
       setInferenceError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1243,7 +1432,7 @@ function LlmServingLabPage({
     }
     if (response.status !== "queued" && response.status !== "running" && response.status !== "cancelling") {
       setActiveBenchmarkRunId("");
-      await loadRunHistory(response.namespace, response.workload);
+      await loadRunHistory(response.namespace);
     }
     return response;
   }
@@ -1286,35 +1475,98 @@ function LlmServingLabPage({
     }
   }
 
+  async function loadOfflineProfiles() {
+    try {
+      const response = await fetchJson<LlamacppOfflineBenchmarkProfilesResponse>(
+        "/api/v1/llm-lab/llamacpp/offline-benchmark/profiles",
+      );
+      setOfflineProfiles(response.profiles || []);
+    } catch (error) {
+      setOfflineError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function loadOfflineLatestRun() {
+    try {
+      const response = await fetchJson<LlamacppOfflineBenchmarkRunStateResponse>(
+        "/api/v1/llm-lab/llamacpp/offline-benchmark/runs/latest",
+      );
+      setOfflineLatestRun(response);
+      if (response.status === "queued" || response.status === "running") {
+        setOfflineActiveRunId(response.run_id);
+      } else if (offlineActiveRunId === response.run_id) {
+        setOfflineActiveRunId("");
+      }
+      return response;
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        setOfflineError(error instanceof Error ? error.message : String(error));
+      }
+      return null;
+    }
+  }
+
+  async function loadOfflineRun(runId: string) {
+    try {
+      const response = await fetchJson<LlamacppOfflineBenchmarkRunStateResponse>(
+        `/api/v1/llm-lab/llamacpp/offline-benchmark/runs/${encodeURIComponent(runId)}`,
+      );
+      setOfflineLatestRun(response);
+      if (response.status !== "queued" && response.status !== "running") {
+        setOfflineActiveRunId("");
+        await loadOfflineRunHistory();
+        await loadRunHistory(primaryWorkload?.namespace);
+      }
+      return response;
+    } catch (error) {
+      setOfflineError(error instanceof Error ? error.message : String(error));
+      return null;
+    }
+  }
+
+  async function loadOfflineRunHistory() {
+    try {
+      const response = await fetchJson<LlamacppOfflineBenchmarkRunsResponse>(
+        "/api/v1/llm-lab/llamacpp/offline-benchmark/runs?limit=6",
+      );
+      setOfflineRuns(response.items || []);
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        setOfflineError(error instanceof Error ? error.message : String(error));
+      }
+    }
+  }
+
   async function startOfflineThroughputBenchmark() {
-    if (!primaryWorkload) return;
     setOfflineLoading(true);
     setOfflineError("");
-    setOfflineResult(null);
+    setOfflineLatestRun(null);
     try {
-      const response = await postJsonBody<LlmSmokeBenchmarkResponse>(
-        "/api/v1/llm-lab/offline-throughput",
+      const response = await postJsonBody<LlamacppOfflineBenchmarkRunStartResponse>(
+        "/api/v1/llm-lab/llamacpp/offline-benchmark/runs",
         {
-          namespace: primaryWorkload.namespace,
-          workload: primaryWorkload.workload,
-          profile_id: offlineProfileId,
-        } satisfies LlmOfflineThroughputRequest,
+          profile: offlineProfileId,
+        } satisfies LlamacppOfflineBenchmarkRunRequest,
       );
-      setOfflineResult(response);
-      await loadRunHistory(primaryWorkload.namespace, primaryWorkload.workload);
+      setOfflineActiveRunId(response.run_id);
+      await loadOfflineRun(response.run_id);
     } catch (error) {
-      setOfflineError(error instanceof Error ? error.message : "Failed to run offline throughput benchmark.");
+      setOfflineError(error instanceof Error ? error.message : "Failed to run offline hardware benchmark.");
     } finally {
       setOfflineLoading(false);
     }
   }
 
-  async function loadRunHistory(namespace: string, workload: string) {
+  async function loadRunHistory(namespace?: string, workload?: string) {
     setHistoryLoading(true);
     setHistoryError("");
     try {
+      const params = new URLSearchParams();
+      if (namespace) params.set("namespace", namespace);
+      if (workload) params.set("workload", workload);
+      params.set("limit", "16");
       const response = await fetchJson<LlmRunHistoryResponse>(
-        `/api/v1/llm-lab/history?namespace=${encodeURIComponent(namespace)}&workload=${encodeURIComponent(workload)}&limit=12`,
+        `/api/v1/llm-lab/history?${params.toString()}`,
       );
       setRunHistory(response.items || []);
     } catch (error) {
@@ -1325,11 +1577,17 @@ function LlmServingLabPage({
   }
 
   useEffect(() => {
+    loadOfflineProfiles().catch(() => undefined);
+    loadOfflineLatestRun().catch(() => undefined);
+    loadOfflineRunHistory().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     if (!primaryWorkload) {
-      setRunHistory([]);
+      loadRunHistory().catch(() => undefined);
       return;
     }
-    loadRunHistory(primaryWorkload.namespace, primaryWorkload.workload).catch(() => undefined);
+    loadRunHistory(primaryWorkload.namespace).catch(() => undefined);
   }, [primaryKey]);
 
   useEffect(() => {
@@ -1340,6 +1598,15 @@ function LlmServingLabPage({
     loadBenchmarkRun(activeBenchmarkRunId).catch(() => undefined);
     return () => window.clearInterval(timer);
   }, [activeBenchmarkRunId]);
+
+  useEffect(() => {
+    if (!offlineActiveRunId) return;
+    const timer = window.setInterval(() => {
+      loadOfflineRun(offlineActiveRunId).catch(() => undefined);
+    }, 2000);
+    loadOfflineRun(offlineActiveRunId).catch(() => undefined);
+    return () => window.clearInterval(timer);
+  }, [offlineActiveRunId]);
 
   return (
     <section className="space-y-6">
@@ -2057,68 +2324,120 @@ function LlmServingLabPage({
         </SectionCard>
       )}
 
-      {primaryWorkload && (
-        <SectionCard title="Offline Throughput Benchmark">
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-            <div className="space-y-4">
-              <label className="block text-sm text-slate-300">
-                <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Benchmark Profile
-                </span>
-                <select
-                  value={offlineProfileId}
-                  onChange={(event) =>
-                    setOfflineProfileId(event.target.value as (typeof OFFLINE_THROUGHPUT_PROFILES)[number]["id"])
-                  }
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-sky-500/60"
-                >
-                  {OFFLINE_THROUGHPUT_PROFILES.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+      <SectionCard title="Offline Hardware Benchmark">
+        <div className="mb-4">
+          <div className="text-sm text-slate-300">llama.cpp · GTX 1080 Ti · Pascal SM61</div>
+          <div className="mt-1 text-sm text-slate-500">
+            Offline hardware throughput view. This does not use vLLM live queue or KV cache semantics.
+          </div>
+        </div>
 
-              <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-                <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Selected Profile
-                </div>
-                <div className="space-y-2">
-                  {observationLine("Profile", selectedOfflineProfile.label)}
-                  {observationLine("Benchmark Engine", "vllm bench throughput")}
-                  {observationLine("Target Model", selectedOfflineProfile.model)}
-                  {observationLine("Prompt Source", selectedOfflineProfile.promptSource)}
-                  {observationLine("Max Output Tokens", String(selectedOfflineProfile.maxTokens))}
-                  {observationLine("Temperature", selectedOfflineProfile.temperature.toFixed(1))}
-                  {observationLine("Concurrency", String(selectedOfflineProfile.concurrency))}
-                  {observationLine("Request Count", String(selectedOfflineProfile.requestCount))}
-                  {observationLine("Recommended Target", "icclz1 dedicated offline benchmark pod")}
-                  {observationLine("View", "Hardware Capacity View")}
-                </div>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+              <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+                Runtime / Hardware Overview
               </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  startOfflineThroughputBenchmark().catch(() => undefined);
-                }}
-                disabled={offlineLoading || !primaryDetail || primaryDetail.replica_summary.ready <= 0}
-                className={`inline-flex items-center rounded-full border px-5 py-2.5 text-sm font-medium transition ${
-                  offlineLoading || !primaryDetail || primaryDetail.replica_summary.ready <= 0
-                    ? "cursor-not-allowed border-slate-700 bg-slate-900/60 text-slate-500"
-                    : "border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-100 hover:border-fuchsia-400"
-                }`}
-              >
-                {offlineLoading ? "Running Offline Benchmark..." : "Start Offline Benchmark"}
-              </button>
+              <div className="space-y-2">
+                {observationLine("Runtime", offlineLatestResult?.runtime_overview.runtime || selectedOfflineProfile.runtime)}
+                {observationLine(
+                  "GPU",
+                  offlineLatestResult?.runtime_overview.gpu_model || "NVIDIA GeForce GTX 1080 Ti",
+                )}
+                {observationLine(
+                  "Architecture",
+                  (offlineLatestResult?.runtime_overview.gpu_arch || "sm61").toUpperCase(),
+                )}
+                {observationLine(
+                  "Node",
+                  offlineLatestResult?.runtime_overview.node_name || "icclz1",
+                )}
+                {observationLine(
+                  "CUDA",
+                  offlineLatestResult?.runtime_overview.cuda_version || "11.8",
+                )}
+                {observationLine(
+                  "Model",
+                  offlineLatestResult?.runtime_overview.model_name || selectedOfflineProfile.model,
+                )}
+                {observationLine(
+                  "Quantization",
+                  offlineLatestResult?.runtime_overview.quantization || "Q4_K_M",
+                )}
+                {observationLine(
+                  "GPU Layers",
+                  offlineLatestResult?.runtime_overview.gpu_layers || "all",
+                )}
+                {observationLine(
+                  "Runtime Image",
+                  offlineLatestResult?.runtime_overview.runtime_image || "pre6g/llamacpp-cuda118-sm61:qwen25-15b-q4km",
+                )}
+              </div>
             </div>
 
+            <label className="block text-sm text-slate-300">
+              <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                Fixed Benchmark Profile
+              </span>
+              <select
+                value={offlineProfileId}
+                onChange={(event) =>
+                  setOfflineProfileId(event.target.value as (typeof OFFLINE_THROUGHPUT_PROFILES)[number]["id"])
+                }
+                disabled={offlineLoading || !!offlineActiveRunId}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-sky-500/60 disabled:cursor-not-allowed disabled:text-slate-500"
+              >
+                {OFFLINE_THROUGHPUT_PROFILES.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-              {!offlineResult && !offlineError ? (
+              <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+                Selected Profile
+              </div>
+              <div className="space-y-2">
+                {observationLine("Profile", selectedOfflineProfile.label)}
+                {observationLine("Benchmark Engine", "llama-bench")}
+                {observationLine("Prompt Source", selectedOfflineProfile.promptSource)}
+                {observationLine(
+                  "Description",
+                  selectedOfflineProfileApi?.description || "Fixed offline hardware benchmark profile.",
+                )}
+                {observationLine("Prompt Tokens", String(selectedOfflineProfile.nPrompt))}
+                {observationLine("Generation Tokens", String(selectedOfflineProfile.nGen))}
+                {observationLine("Context Depth", String(selectedOfflineProfile.nDepth))}
+                {observationLine("Batch Size", String(selectedOfflineProfile.batchSize))}
+                {observationLine("uBatch Size", String(selectedOfflineProfile.ubatchSize))}
+                {observationLine("Repetitions", String(selectedOfflineProfile.repetitions))}
+                {observationLine("Flash Attention", selectedOfflineProfile.flashAttention)}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                startOfflineThroughputBenchmark().catch(() => undefined);
+              }}
+              disabled={offlineLoading || !!offlineActiveRunId}
+              className={`inline-flex items-center rounded-full border px-5 py-2.5 text-sm font-medium transition ${
+                offlineLoading || !!offlineActiveRunId
+                  ? "cursor-not-allowed border-slate-700 bg-slate-900/60 text-slate-500"
+                  : "border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-100 hover:border-fuchsia-400"
+              }`}
+            >
+              {offlineLoading || !!offlineActiveRunId ? "Running Offline Benchmark..." : "Run Offline Benchmark"}
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+              {!offlineLatestRun && !offlineError ? (
                 <div className="text-slate-400">
-                  Runs the official `vllm bench throughput` CLI for offline batch inference throughput. This reflects
-                  hardware-oriented batch capacity rather than live serving behavior.
+                  Runs fixed `llama-bench` Pascal SM61 profiles on the dedicated GTX 1080 Ti target pod.
                 </div>
               ) : offlineError ? (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
@@ -2126,47 +2445,136 @@ function LlmServingLabPage({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {observationLine("Profile", offlineResult?.profile || "N/A")}
-                  {observationLine("Run ID", offlineResult?.run_id || "N/A")}
-                  {observationLine("Status", offlineResult?.status || "N/A")}
-                  {observationLine("Completed Requests", offlineResult?.completed_requests?.toString() || "0")}
+                  {observationLine("Profile", offlineLatestRun?.profile || "N/A")}
+                  {observationLine("Run ID", offlineLatestRun?.run_id || "N/A")}
+                  {observationLine("Status", offlineLatestRun?.status || "N/A")}
                   {observationLine(
-                    "Run Elapsed",
-                    offlineResult?.run_elapsed_seconds !== undefined && offlineResult?.run_elapsed_seconds !== null
-                      ? `${offlineResult.run_elapsed_seconds.toFixed(3)} sec`
+                    "Observed At",
+                    formatObservedTimestamp(offlineLatestResult?.observed_at_ts),
+                  )}
+                  {observationLine(
+                    "Result Freshness",
+                    formatResultFreshnessFromTs(offlineLatestResult?.completed_at_ts),
+                  )}
+                  {observationLine(
+                    "Prompt TPS",
+                    offlineLatestResult?.prompt_tps_mean !== undefined && offlineLatestResult?.prompt_tps_mean !== null
+                      ? `${offlineLatestResult.prompt_tps_mean.toFixed(3)} tok/s`
                       : "N/A",
                   )}
                   {observationLine(
-                    "Request Throughput",
-                    offlineResult?.request_throughput_rps !== undefined && offlineResult?.request_throughput_rps !== null
-                      ? `${offlineResult.request_throughput_rps.toFixed(3)} req/s`
+                    "Generation TPS",
+                    offlineLatestResult?.generation_tps_mean !== undefined && offlineLatestResult?.generation_tps_mean !== null
+                      ? `${offlineLatestResult.generation_tps_mean.toFixed(3)} tok/s`
                       : "N/A",
                   )}
                   {observationLine(
-                    "Offline Throughput",
-                    offlineResult?.aggregate_total_tps !== undefined && offlineResult?.aggregate_total_tps !== null
-                      ? `${offlineResult.aggregate_total_tps.toFixed(3)} tok/s`
+                    "Prompt + Generation TPS",
+                    offlineLatestResult?.prompt_generation_tps_mean !== undefined && offlineLatestResult?.prompt_generation_tps_mean !== null
+                      ? `${offlineLatestResult.prompt_generation_tps_mean.toFixed(3)} tok/s`
                       : "N/A",
                   )}
                   {observationLine(
-                    "Mean Input Tokens",
-                    offlineResult?.mean_prompt_tokens !== undefined && offlineResult?.mean_prompt_tokens !== null
-                      ? offlineResult.mean_prompt_tokens.toFixed(1)
+                    "Prompt TPS Standard Deviation",
+                    offlineLatestResult?.prompt_tps_stddev !== undefined && offlineLatestResult?.prompt_tps_stddev !== null
+                      ? `${offlineLatestResult.prompt_tps_stddev.toFixed(3)} tok/s`
                       : "N/A",
                   )}
                   {observationLine(
-                    "Mean Output Tokens",
-                    offlineResult?.mean_completion_tokens !== undefined &&
-                      offlineResult?.mean_completion_tokens !== null
-                      ? offlineResult.mean_completion_tokens.toFixed(1)
+                    "Generation TPS Standard Deviation",
+                    offlineLatestResult?.generation_tps_stddev !== undefined && offlineLatestResult?.generation_tps_stddev !== null
+                      ? `${offlineLatestResult.generation_tps_stddev.toFixed(3)} tok/s`
                       : "N/A",
                   )}
+                  {observationLine("Context Depth", String(offlineLatestResult?.n_depth ?? "N/A"))}
+                  {observationLine("Batch Size", String(offlineLatestResult?.batch_size ?? "N/A"))}
+                  {observationLine("GPU Layers", String(offlineLatestResult?.n_gpu_layers ?? "N/A"))}
+                  {observationLine("Repetitions", String(offlineLatestResult?.repetitions ?? "N/A"))}
+                  {observationLine(
+                    "GPU Preflight",
+                    offlineLatestResult?.gpu_preflight_status || "N/A",
+                  )}
+                  {observationLine(
+                    "Run Duration",
+                    offlineLatestResult?.duration_seconds !== undefined && offlineLatestResult?.duration_seconds !== null
+                      ? `${offlineLatestResult.duration_seconds.toFixed(3)} sec`
+                      : "N/A",
+                  )}
+                  {observationLine("Waiting Requests", "N/A — offline benchmark")}
+                  {observationLine("KV Cache Usage", "N/A — offline benchmark")}
+                  {offlineLatestResult?.preflight_warning ? (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
+                      {offlineLatestResult.preflight_warning}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+              <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+                Offline Benchmark History
+              </div>
+              {offlineRuns.length === 0 ? (
+                <div className="text-slate-400">No llama.cpp offline benchmark runs yet.</div>
+              ) : (
+                <div className="space-y-3">
+                  {offlineRuns.map((item) => (
+                    <div
+                      key={item.run_id}
+                      className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 text-[11px] uppercase tracking-wide text-fuchsia-200">
+                            llama.cpp
+                          </span>
+                          <div className="font-medium text-slate-100">{item.profile}</div>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {formatObservedTimestamp(item.result?.observed_at_ts || item.completed_at_ts)}
+                        </div>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
+                          <div className="text-[11px] uppercase tracking-wide text-slate-500">Status</div>
+                          <div className="mt-1 text-sm text-slate-100">{item.status}</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
+                          <div className="text-[11px] uppercase tracking-wide text-slate-500">Prompt TPS</div>
+                          <div className="mt-1 text-sm text-slate-100">
+                            {item.result?.prompt_tps_mean !== undefined && item.result?.prompt_tps_mean !== null
+                              ? `${item.result.prompt_tps_mean.toFixed(3)} tok/s`
+                              : "N/A"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
+                          <div className="text-[11px] uppercase tracking-wide text-slate-500">Generation TPS</div>
+                          <div className="mt-1 text-sm text-slate-100">
+                            {item.result?.generation_tps_mean !== undefined && item.result?.generation_tps_mean !== null
+                              ? `${item.result.generation_tps_mean.toFixed(3)} tok/s`
+                              : "N/A"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
+                          <div className="text-[11px] uppercase tracking-wide text-slate-500">GPU Contention</div>
+                          <div className="mt-1 text-sm text-slate-100">
+                            {item.result?.gpu_contended ? "Contended" : "Idle"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
+                          <div className="text-[11px] uppercase tracking-wide text-slate-500">Run ID</div>
+                          <div className="mt-1 font-mono text-xs text-slate-200">{item.run_id}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </div>
-        </SectionCard>
-      )}
+        </div>
+      </SectionCard>
 
       {primaryWorkload && (
         <SectionCard title="Recent Runtime History">
@@ -2225,10 +2633,13 @@ function LlmServingLabPage({
                       >
                         {item.event_type === "single_inference" ? "Inference" : "Benchmark"}
                       </span>
+                      <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-300">
+                        {runtimeBadge(item.runtime)}
+                      </span>
                       <div className="font-medium text-slate-100">
                         {item.event_type === "single_inference"
                           ? "Single Inference"
-                          : item.profile || "Serving Benchmark"}
+                          : item.profile || "Benchmark"}
                       </div>
                     </div>
                     <div className="text-xs text-slate-500">

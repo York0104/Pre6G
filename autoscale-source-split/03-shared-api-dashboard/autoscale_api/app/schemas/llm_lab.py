@@ -86,6 +86,8 @@ class LlmBenchmarkResponse(BaseModel):
 class LlmRunHistoryItem(BaseModel):
     ts: int
     event_type: str
+    runtime: Optional[str] = None
+    benchmark_mode: Optional[str] = None
     namespace: str
     workload: str
     status: str
@@ -115,6 +117,16 @@ class LlmRunHistoryItem(BaseModel):
     mean_prompt_tokens: Optional[float] = None
     mean_completion_tokens: Optional[float] = None
     mean_total_tokens: Optional[float] = None
+    prompt_tps_mean: Optional[float] = None
+    prompt_tps_stddev: Optional[float] = None
+    generation_tps_mean: Optional[float] = None
+    generation_tps_stddev: Optional[float] = None
+    prompt_generation_tps_mean: Optional[float] = None
+    prompt_generation_tps_stddev: Optional[float] = None
+    duration_seconds: Optional[float] = None
+    observed_at_ts: Optional[int] = None
+    gpu_contended: Optional[bool] = None
+    error_summary: Optional[str] = None
 
 
 class LlmRunHistoryResponse(BaseModel):
@@ -186,3 +198,140 @@ class LlmBenchmarkRunCancelResponse(BaseModel):
     ts: int
     run_id: str
     status: str
+
+
+class LlamacppOfflineBenchmarkRunRequest(BaseModel):
+    profile: str
+
+
+class LlamacppOfflineBenchmarkProfile(BaseModel):
+    profile_id: str
+    display_name: str
+    description: str
+    runtime: str
+    benchmark_mode: str
+    n_prompt: int
+    n_gen: int
+    pg_pair: Optional[str] = None
+    n_depth: int
+    batch_size: int
+    ubatch_size: int
+    repetitions: int
+    flash_attention: str
+    gpu_layers: int
+
+
+class LlamacppOfflineBenchmarkProfilesResponse(BaseModel):
+    schema: str
+    ts: int
+    runtime: str
+    benchmark_mode: str
+    profiles: list[LlamacppOfflineBenchmarkProfile]
+
+
+class LlamacppOfflineGpuProcess(BaseModel):
+    pid: Optional[int] = None
+    process_name: Optional[str] = None
+    used_memory: Optional[str] = None
+
+
+class LlamacppOfflineRuntimeOverview(BaseModel):
+    runtime: str
+    benchmark_mode: str
+    runtime_image: Optional[str] = None
+    runtime_image_tag: Optional[str] = None
+    llama_cpp_ref: Optional[str] = None
+    llama_cpp_commit: Optional[str] = None
+    cuda_version: Optional[str] = None
+    gpu_model: Optional[str] = None
+    gpu_arch: Optional[str] = None
+    gpu_resource_request: Optional[str] = None
+    namespace: str
+    target_pod: str
+    node_name: Optional[str] = None
+    model_name: Optional[str] = None
+    model_source: Optional[str] = None
+    gguf_filename: Optional[str] = None
+    gguf_path: Optional[str] = None
+    gguf_sha256: Optional[str] = None
+    quantization: Optional[str] = None
+    gpu_layers: Optional[str] = None
+
+
+class LlamacppOfflineBenchmarkResult(BaseModel):
+    schema: str
+    ts: int
+    run_id: str
+    runtime: str
+    benchmark_mode: str
+    profile: str
+    profile_id: str
+    status: str
+    namespace: str
+    target_pod: str
+    node_name: Optional[str] = None
+    runtime_overview: LlamacppOfflineRuntimeOverview
+    observed_at_ts: Optional[int] = None
+    started_at_ts: Optional[int] = None
+    completed_at_ts: Optional[int] = None
+    duration_seconds: Optional[float] = None
+    prompt_tps_mean: Optional[float] = None
+    prompt_tps_stddev: Optional[float] = None
+    generation_tps_mean: Optional[float] = None
+    generation_tps_stddev: Optional[float] = None
+    prompt_generation_tps_mean: Optional[float] = None
+    prompt_generation_tps_stddev: Optional[float] = None
+    waiting_requests: Optional[float] = None
+    kv_cache_usage_percent: Optional[float] = None
+    n_prompt: int
+    n_gen: int
+    n_depth: int
+    batch_size: int
+    ubatch_size: int
+    n_gpu_layers: int
+    repetitions: int
+    flash_attention: str
+    gpu_processes_before: list[LlamacppOfflineGpuProcess] = Field(default_factory=list)
+    gpu_process_count_before: int = 0
+    gpu_contended: bool = False
+    gpu_preflight_status: str
+    preflight_warning: Optional[str] = None
+    error_summary: Optional[str] = None
+
+
+class LlamacppOfflineBenchmarkRunStateResponse(BaseModel):
+    schema: str
+    ts: int
+    run_id: str
+    runtime: str
+    benchmark_mode: str
+    profile: str
+    profile_id: str
+    status: str
+    namespace: str
+    target_pod: str
+    node_name: Optional[str] = None
+    started_at_ts: Optional[int] = None
+    completed_at_ts: Optional[int] = None
+    result: Optional[LlamacppOfflineBenchmarkResult] = None
+    error: Optional[str] = None
+
+
+class LlamacppOfflineBenchmarkRunStartResponse(BaseModel):
+    schema: str
+    ts: int
+    run_id: str
+    runtime: str
+    benchmark_mode: str
+    profile: str
+    profile_id: str
+    status: str
+    namespace: str
+    target_pod: str
+
+
+class LlamacppOfflineBenchmarkRunsResponse(BaseModel):
+    schema: str
+    ts: int
+    count: int
+    items: list[LlamacppOfflineBenchmarkRunStateResponse]

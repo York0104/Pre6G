@@ -76,6 +76,8 @@ spec:
             - name: kubectl-bin
               mountPath: /usr/local/bin/kubectl
               readOnly: true
+            - name: autoscale-runtime
+              mountPath: /workspace/autoscale-source-split/03-shared-api-dashboard/autoscale_api/app/runtime
       volumes:
         - name: workspace
           hostPath:
@@ -87,6 +89,10 @@ spec:
           hostPath:
             path: /usr/local/bin/kubectl
             type: File
+        - name: autoscale-runtime
+          hostPath:
+            path: /home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/app/runtime
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service

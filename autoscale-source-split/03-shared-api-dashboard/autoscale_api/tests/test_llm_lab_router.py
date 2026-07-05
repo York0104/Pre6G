@@ -9,6 +9,7 @@ from app.schemas.llm_lab import (
     LlmInferenceRequest,
     LlmOfflineThroughputRequest,
     LlmSmokeBenchmarkRequest,
+    LlamacppOfflineBenchmarkRunRequest,
 )
 from app.services.llm_lab_service import LlmInferenceError
 
@@ -207,6 +208,106 @@ class LlmLabRouterTests(unittest.TestCase):
             response = llm_lab_router.get_benchmark_run(payload["run_id"])
         self.assertEqual(response.status, "running")
         self.assertEqual(response.progress.completed_requests, 3)
+
+    def test_get_llamacpp_offline_profiles_route_returns_payload(self) -> None:
+        payload = {
+            "schema": "pre6g.llamacpp_offline_benchmark_profiles.v1",
+            "ts": 1710000020,
+            "runtime": "llamacpp",
+            "benchmark_mode": "offline",
+            "profiles": [
+                {
+                    "profile_id": "pascal-throughput",
+                    "display_name": "pascal-throughput",
+                    "description": "Main offline PP/TG throughput baseline.",
+                    "runtime": "llamacpp",
+                    "benchmark_mode": "offline",
+                    "n_prompt": 512,
+                    "n_gen": 128,
+                    "pg_pair": "512,128",
+                    "n_depth": 0,
+                    "batch_size": 512,
+                    "ubatch_size": 128,
+                    "repetitions": 5,
+                    "flash_attention": "off",
+                    "gpu_layers": -1,
+                }
+            ],
+        }
+        with patch.object(llm_lab_router.llm_lab_service, "get_llamacpp_offline_profiles", return_value=payload):
+            response = llm_lab_router.get_llamacpp_offline_profiles()
+        self.assertEqual(response.runtime, "llamacpp")
+        self.assertEqual(response.profiles[0].profile_id, "pascal-throughput")
+
+    def test_start_llamacpp_offline_run_route_returns_payload(self) -> None:
+        payload = {
+            "schema": "pre6g.llamacpp_offline_benchmark_run_start.v1",
+            "ts": 1710000021,
+            "run_id": "llamacpp-pascal-throughput-run-20260704T010203Z",
+            "runtime": "llamacpp",
+            "benchmark_mode": "offline",
+            "profile": "pascal-throughput",
+            "profile_id": "pascal-throughput",
+            "status": "queued",
+            "namespace": "ai-serving",
+            "target_pod": "llamacpp-qwen25-15b-q4km-bench",
+        }
+        with patch.object(llm_lab_router.llm_lab_service, "start_llamacpp_offline_run", return_value=payload):
+            response = llm_lab_router.start_llamacpp_offline_run(
+                LlamacppOfflineBenchmarkRunRequest(profile="pascal-throughput")
+            )
+        self.assertEqual(response.run_id, payload["run_id"])
+
+    def test_get_llamacpp_offline_latest_run_route_returns_payload(self) -> None:
+        payload = {
+            "schema": "pre6g.llamacpp_offline_benchmark_run.v1",
+            "ts": 1710000022,
+            "run_id": "llamacpp-pascal-throughput-run-20260704T010203Z",
+            "runtime": "llamacpp",
+            "benchmark_mode": "offline",
+            "profile": "pascal-throughput",
+            "profile_id": "pascal-throughput",
+            "status": "succeeded",
+            "namespace": "ai-serving",
+            "target_pod": "llamacpp-qwen25-15b-q4km-bench",
+            "node_name": "icclz1",
+            "started_at_ts": 1710000010,
+            "completed_at_ts": 1710000022,
+            "result": None,
+            "error": None,
+        }
+        with patch.object(llm_lab_router.llm_lab_service, "get_llamacpp_offline_latest_run", return_value=payload):
+            response = llm_lab_router.get_llamacpp_offline_latest_run()
+        self.assertEqual(response.status, "succeeded")
+
+    def test_list_llamacpp_offline_runs_route_returns_payload(self) -> None:
+        payload = {
+            "schema": "pre6g.llamacpp_offline_benchmark_runs.v1",
+            "ts": 1710000023,
+            "count": 1,
+            "items": [
+                {
+                    "schema": "pre6g.llamacpp_offline_benchmark_run.v1",
+                    "ts": 1710000022,
+                    "run_id": "llamacpp-pascal-throughput-run-20260704T010203Z",
+                    "runtime": "llamacpp",
+                    "benchmark_mode": "offline",
+                    "profile": "pascal-throughput",
+                    "profile_id": "pascal-throughput",
+                    "status": "succeeded",
+                    "namespace": "ai-serving",
+                    "target_pod": "llamacpp-qwen25-15b-q4km-bench",
+                    "node_name": "icclz1",
+                    "started_at_ts": 1710000010,
+                    "completed_at_ts": 1710000022,
+                    "result": None,
+                    "error": None,
+                }
+            ],
+        }
+        with patch.object(llm_lab_router.llm_lab_service, "list_llamacpp_offline_runs", return_value=payload):
+            response = llm_lab_router.list_llamacpp_offline_runs(limit=10)
+        self.assertEqual(response.count, 1)
 
     def test_cancel_benchmark_run_route_returns_payload(self) -> None:
         payload = {

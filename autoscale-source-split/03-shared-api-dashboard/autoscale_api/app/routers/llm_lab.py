@@ -13,6 +13,11 @@ from app.schemas.llm_lab import (
     LlmRunHistoryResponse,
     LlmSmokeBenchmarkRequest,
     LlmSmokeBenchmarkResponse,
+    LlamacppOfflineBenchmarkProfilesResponse,
+    LlamacppOfflineBenchmarkRunRequest,
+    LlamacppOfflineBenchmarkRunStartResponse,
+    LlamacppOfflineBenchmarkRunStateResponse,
+    LlamacppOfflineBenchmarkRunsResponse,
 )
 from app.services.llm_lab_service import LlmInferenceError, LlmLabService
 
@@ -123,3 +128,63 @@ def run_offline_throughput(request: LlmOfflineThroughputRequest) -> LlmBenchmark
         raise HTTPException(status_code=404, detail=str(exc))
     except LlmInferenceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+@router.get(
+    "/llamacpp/offline-benchmark/profiles",
+    response_model=LlamacppOfflineBenchmarkProfilesResponse,
+)
+def get_llamacpp_offline_profiles() -> LlamacppOfflineBenchmarkProfilesResponse:
+    payload = llm_lab_service.get_llamacpp_offline_profiles()
+    return LlamacppOfflineBenchmarkProfilesResponse(**payload)
+
+
+@router.post(
+    "/llamacpp/offline-benchmark/runs",
+    response_model=LlamacppOfflineBenchmarkRunStartResponse,
+)
+def start_llamacpp_offline_run(
+    request: LlamacppOfflineBenchmarkRunRequest,
+) -> LlamacppOfflineBenchmarkRunStartResponse:
+    try:
+        payload = llm_lab_service.start_llamacpp_offline_run(profile=request.profile)
+        return LlamacppOfflineBenchmarkRunStartResponse(**payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except LlmInferenceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+@router.get(
+    "/llamacpp/offline-benchmark/runs/latest",
+    response_model=LlamacppOfflineBenchmarkRunStateResponse,
+)
+def get_llamacpp_offline_latest_run() -> LlamacppOfflineBenchmarkRunStateResponse:
+    try:
+        payload = llm_lab_service.get_llamacpp_offline_latest_run()
+        return LlamacppOfflineBenchmarkRunStateResponse(**payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no llama.cpp offline benchmark run found")
+
+
+@router.get(
+    "/llamacpp/offline-benchmark/runs/{run_id}",
+    response_model=LlamacppOfflineBenchmarkRunStateResponse,
+)
+def get_llamacpp_offline_run(run_id: str) -> LlamacppOfflineBenchmarkRunStateResponse:
+    try:
+        payload = llm_lab_service.get_llamacpp_offline_run(run_id=run_id)
+        return LlamacppOfflineBenchmarkRunStateResponse(**payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"unknown llama.cpp offline benchmark run: {run_id}")
+
+
+@router.get(
+    "/llamacpp/offline-benchmark/runs",
+    response_model=LlamacppOfflineBenchmarkRunsResponse,
+)
+def list_llamacpp_offline_runs(
+    limit: int = Query(default=10, ge=1, le=50),
+) -> LlamacppOfflineBenchmarkRunsResponse:
+    payload = llm_lab_service.list_llamacpp_offline_runs(limit=limit)
+    return LlamacppOfflineBenchmarkRunsResponse(**payload)

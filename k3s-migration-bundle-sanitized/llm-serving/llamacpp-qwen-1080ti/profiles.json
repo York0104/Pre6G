@@ -1,0 +1,38 @@
+{
+  "pascal-smoke": {
+    "description": "CUDA, GGUF, GPU offload, and parser verification",
+    "n_prompt": 128,
+    "n_gen": 64,
+    "pg_pair": "128,64",
+    "n_depth": 0,
+    "batch_size": 256,
+    "ubatch_size": 128,
+    "repetitions": 3,
+    "flash_attention": "off",
+    "gpu_layers": -1
+  },
+  "pascal-throughput": {
+    "description": "Main offline PP/TG throughput baseline",
+    "n_prompt": 512,
+    "n_gen": 128,
+    "pg_pair": "512,128",
+    "n_depth": 0,
+    "batch_size": 512,
+    "ubatch_size": 128,
+    "repetitions": 5,
+    "flash_attention": "off",
+    "gpu_layers": -1
+  },
+  "pascal-context": {
+    "description": "Throughput with prefilled context",
+    "n_prompt": 512,
+    "n_gen": 128,
+    "pg_pair": "512,128",
+    "n_depth": 1024,
+    "batch_size": 512,
+    "ubatch_size": 128,
+    "repetitions": 5,
+    "flash_attention": "off",
+    "gpu_layers": -1
+  }
+}

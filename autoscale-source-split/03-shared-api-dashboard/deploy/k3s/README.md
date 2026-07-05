@@ -17,8 +17,9 @@
 | `autoscale-api-configmap.example.yaml` | API 非敏感 env 範本。 |
 | `autoscale-api-secret.example.yaml` | API token secret 範本。 |
 | `autoscale-api-deployment.yaml` | API Deployment + NodePort Service。 |
-| `llm-offline-bench-icclz1.example.yaml` | `icclz1` 驗證紀錄用的 offline throughput target 範本；目前不屬於受支援部署。 |
+| `llm-offline-bench-icclz1.example.yaml` | 舊版 `vLLM` Pascal 驗證紀錄用 target 範本。 |
 | `llm-offline-bench-4090.example.yaml` | `RTX 4090` dedicated offline throughput target 範本。 |
+| `llamacpp-offline-bench-1080ti.example.yaml` | `GTX 1080 Ti / llama.cpp` offline hardware benchmark target 範本。 |
 | `cluster-dashboard-configmap.example.yaml` | dashboard runtime config 範本。 |
 | `cluster-dashboard-secret.example.yaml` | dashboard runtime token secret 範本。 |
 | `cluster-dashboard-deployment.yaml` | dashboard Deployment + NodePort Service。 |
@@ -89,6 +90,8 @@ cp cluster-dashboard-secret.example.yaml cluster-dashboard-secret.yaml
   - `PRE6G_WORKLOAD_QUERY_WINDOW_SECONDS`
   - `PRE6G_LLM_OFFLINE_BENCH_NAMESPACE`
   - `PRE6G_LLM_OFFLINE_BENCH_TARGET`
+  - `PRE6G_LLAMACPP_OFFLINE_NAMESPACE`
+  - `PRE6G_LLAMACPP_OFFLINE_TARGET`
 - `autoscale-api-secret.yaml`
   - `AUTOSCALE_API_TOKEN`
 - `cluster-dashboard-configmap.yaml`
@@ -113,6 +116,8 @@ kubectl apply -f autoscale-api-configmap.yaml
 kubectl apply -f autoscale-api-secret.yaml
 # 若你要啟用正式受支援的 offline throughput target，可改套用：
 # kubectl apply -f llm-offline-bench-4090.example.yaml
+# 若你要啟用 GTX 1080 Ti 的 llama.cpp offline hardware benchmark：
+# kubectl apply -f llamacpp-offline-bench-1080ti.example.yaml
 # 僅作為歷史驗證參考；`GTX 1080 Ti` 目前不在受支援 target 範圍內。
 # kubectl apply -f llm-offline-bench-icclz1.example.yaml
 kubectl apply -f autoscale-api-deployment.yaml
@@ -171,10 +176,10 @@ http://<k3s-control-plane-ip>:30081
 - `autoscale_api` 已改為優先嘗試 `in-cluster config`，因此在 Pod 內不需要額外掛 `~/.kube/config`。
 - 這版 frontend 不再把 API base / token 硬編進 build 產物；改 `ConfigMap/Secret` 後重建 Pod 即可生效。
 - 兩個 Deployment 都預設使用 `harbor-pull-secret`；若目標 namespace 尚未有這個 secret，請先建立或從既有 namespace 複製。
-- `autoscale-api-rbac.yaml` 已於 `2026-07-02` 補上 `pods/exec` 權限，供 `LLM Serving Lab` 觸發 `vllm bench serve` 與 dedicated offline throughput target。
+- `autoscale-api-rbac.yaml` 已於 `2026-07-02` 補上 `pods/exec` 權限，供 `LLM Serving Lab` 觸發 `vllm bench serve` 與 dedicated benchmark target。
 - `Fan-Cycle Experiment` 與 `YOLO demo` API 已完成 host-side rebuild，但若要在一般化 `k3s` Pod 內完整可用，仍需同時處理 `ssh` client、SSH key / config、worker credential 與對 `gpu-tempctl-lab` 的可達性。
-- `llm-offline-bench-icclz1.example.yaml` 保留作為驗證紀錄。`GTX 1080 Ti (CC 6.1)` 已被排除為目前平台下的受支援 offline throughput target。
-- 截至 `2026-07-02`，這條 live path 已完成部署與 control-path 驗證，但 `vllm/vllm-openai:v0.23.0` 在 `GTX 1080 Ti` 上仍有 CUDA forward-compatibility 問題，因此不應再作為正式部署入口。
+- `llm-offline-bench-icclz1.example.yaml` 保留作為先前 `vLLM` Pascal 驗證紀錄。
+- `GTX 1080 Ti (CC 6.1)` 目前正式支援的是 `llama.cpp + llama-bench` offline hardware benchmark，而不是 `vLLM bench throughput`。
 - 若要保留 `k3s` / `kubectl exec` 這條平台路徑，建議改採 `RTX 4090` dedicated target。主要代價是它會吃掉整張 `4090`，因此在單卡環境下 live serving 與 offline throughput 只能分時切換。
 
 ## Current Validated Path On icclz2

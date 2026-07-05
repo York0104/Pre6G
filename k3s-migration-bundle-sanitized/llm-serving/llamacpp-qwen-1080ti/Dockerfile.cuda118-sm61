@@ -1,0 +1,57 @@
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 AS builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG LLAMA_CPP_REPO=https://github.com/ggml-org/llama.cpp.git
+ARG LLAMA_CPP_REF=b9870
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    cmake \
+    git \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+RUN git init llama.cpp \
+    && cd llama.cpp \
+    && git remote add origin ${LLAMA_CPP_REPO} \
+    && git fetch --depth 1 origin ${LLAMA_CPP_REF} \
+    && git checkout FETCH_HEAD
+
+WORKDIR /src/llama.cpp
+
+RUN ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
+
+ENV LIBRARY_PATH=/usr/local/cuda/lib64/stubs
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs
+
+RUN cmake -S . -B build \
+    -DGGML_CUDA=ON \
+    -DGGML_NATIVE=OFF \
+    -DCMAKE_CUDA_ARCHITECTURES=61 \
+    -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build --target llama-bench -j"$(nproc)"
+
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG LLAMA_CPP_REF=b9870
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    libgomp1 \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /src/llama.cpp/build/bin/llama-bench /usr/local/bin/llama-bench
+COPY --from=builder /src/llama.cpp/build/bin/libggml*.so* /usr/local/lib/
+COPY --from=builder /src/llama.cpp/build/bin/libllama*.so* /usr/local/lib/
+
+ENV PRE6G_LLAMACPP_REF=${LLAMA_CPP_REF}
+ENV LD_LIBRARY_PATH=/usr/local/lib
+WORKDIR /workspace
+
+CMD ["/bin/bash", "-lc", "echo \"[pre6g] llama.cpp benchmark target ready (${PRE6G_LLAMACPP_REF})\" && sleep infinity"]

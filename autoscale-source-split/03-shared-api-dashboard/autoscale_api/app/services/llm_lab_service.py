@@ -102,6 +102,47 @@ class LlmLabService:
             "description": "Offline throughput benchmark for hardware-oriented batch capacity checks.",
         },
     }
+    LLAMACPP_OFFLINE_PROFILES: dict[str, dict[str, Any]] = {
+        "pascal-smoke": {
+            "display_name": "pascal-smoke",
+            "description": "CUDA, GGUF, GPU offload, and parser verification.",
+            "n_prompt": 128,
+            "n_gen": 64,
+            "pg_pair": "128,64",
+            "n_depth": 0,
+            "batch_size": 256,
+            "ubatch_size": 128,
+            "repetitions": 3,
+            "flash_attention": "off",
+            "gpu_layers": -1,
+        },
+        "pascal-throughput": {
+            "display_name": "pascal-throughput",
+            "description": "Main offline PP/TG throughput baseline.",
+            "n_prompt": 512,
+            "n_gen": 128,
+            "pg_pair": "512,128",
+            "n_depth": 0,
+            "batch_size": 512,
+            "ubatch_size": 128,
+            "repetitions": 5,
+            "flash_attention": "off",
+            "gpu_layers": -1,
+        },
+        "pascal-context": {
+            "display_name": "pascal-context",
+            "description": "Throughput with prefilled context.",
+            "n_prompt": 512,
+            "n_gen": 128,
+            "pg_pair": "512,128",
+            "n_depth": 1024,
+            "batch_size": 512,
+            "ubatch_size": 128,
+            "repetitions": 5,
+            "flash_attention": "off",
+            "gpu_layers": -1,
+        },
+    }
 
     def __init__(
         self,
@@ -126,6 +167,75 @@ class LlmLabService:
         )
         self.offline_bench_namespace = os.getenv("PRE6G_LLM_OFFLINE_BENCH_NAMESPACE", "").strip()
         self.offline_bench_target = os.getenv("PRE6G_LLM_OFFLINE_BENCH_TARGET", "").strip()
+        self.llamacpp_offline_namespace = (
+            os.getenv("PRE6G_LLAMACPP_OFFLINE_NAMESPACE", "ai-serving").strip() or "ai-serving"
+        )
+        self.llamacpp_offline_target = (
+            os.getenv("PRE6G_LLAMACPP_OFFLINE_TARGET", "deploy/llamacpp-qwen25-15b-q4km-bench").strip()
+            or "deploy/llamacpp-qwen25-15b-q4km-bench"
+        )
+        self.llamacpp_offline_target_pod = self.llamacpp_offline_target.split("/", 1)[-1]
+        self.llamacpp_offline_node_name = (
+            os.getenv("PRE6G_LLAMACPP_OFFLINE_NODE_NAME", "icclz1").strip() or "icclz1"
+        )
+        self.llamacpp_runtime_image = (
+            os.getenv(
+                "PRE6G_LLAMACPP_RUNTIME_IMAGE",
+                "pre6g/llamacpp-cuda118-sm61:qwen25-15b-q4km",
+            ).strip()
+            or "pre6g/llamacpp-cuda118-sm61:qwen25-15b-q4km"
+        )
+        self.llamacpp_runtime_image_tag = (
+            os.getenv("PRE6G_LLAMACPP_RUNTIME_IMAGE_TAG", "qwen25-15b-q4km").strip()
+            or "qwen25-15b-q4km"
+        )
+        self.llamacpp_runtime = "llamacpp"
+        self.llamacpp_benchmark_mode = "offline"
+        self.llamacpp_cuda_version = os.getenv("PRE6G_LLAMACPP_CUDA_VERSION", "11.8").strip() or "11.8"
+        self.llamacpp_gpu_model = (
+            os.getenv("PRE6G_LLAMACPP_GPU_MODEL", "NVIDIA GeForce GTX 1080 Ti").strip()
+            or "NVIDIA GeForce GTX 1080 Ti"
+        )
+        self.llamacpp_gpu_arch = os.getenv("PRE6G_LLAMACPP_GPU_ARCH", "sm61").strip() or "sm61"
+        self.llamacpp_gpu_resource_request = (
+            os.getenv("PRE6G_LLAMACPP_GPU_RESOURCE_REQUEST", "nvidia.com/gpu.shared: 1").strip()
+            or "nvidia.com/gpu.shared: 1"
+        )
+        self.llamacpp_model_name = (
+            os.getenv("PRE6G_LLAMACPP_MODEL_NAME", "Qwen2.5-1.5B-Instruct").strip()
+            or "Qwen2.5-1.5B-Instruct"
+        )
+        self.llamacpp_model_source = (
+            os.getenv(
+                "PRE6G_LLAMACPP_MODEL_SOURCE",
+                "bartowski/Qwen2.5-1.5B-Instruct-GGUF",
+            ).strip()
+            or "bartowski/Qwen2.5-1.5B-Instruct-GGUF"
+        )
+        self.llamacpp_quantization = os.getenv("PRE6G_LLAMACPP_QUANTIZATION", "Q4_K_M").strip() or "Q4_K_M"
+        self.llamacpp_gguf_filename = (
+            os.getenv(
+                "PRE6G_LLAMACPP_GGUF_FILENAME",
+                "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+            ).strip()
+            or "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+        )
+        self.llamacpp_gguf_path = (
+            os.getenv(
+                "PRE6G_LLAMACPP_GGUF_PATH",
+                "/models/qwen/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+            ).strip()
+            or "/models/qwen/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+        )
+        self.llamacpp_gguf_sha256 = (
+            os.getenv(
+                "PRE6G_LLAMACPP_GGUF_SHA256",
+                "2157775c19b6a2ecfec3233e923c7979a43855d4bde88722576c308fccca20a5",
+            ).strip()
+            or "2157775c19b6a2ecfec3233e923c7979a43855d4bde88722576c308fccca20a5"
+        )
+        self.llamacpp_ref = os.getenv("PRE6G_LLAMACPP_REF", "b9870").strip() or "b9870"
+        self.llamacpp_commit = os.getenv("PRE6G_LLAMACPP_COMMIT", "2d97363").strip() or "2d97363"
 
     @staticmethod
     def _selector_match(labels: dict[str, Any], selector: dict[str, Any]) -> bool:
@@ -307,6 +417,242 @@ class LlmLabService:
 
     def _benchmark_result_paths(self, run_id: str) -> tuple[str, str]:
         return f"/tmp/{run_id}.json", f"/tmp/{run_id}.log"
+
+    def _llamacpp_runtime_overview(self) -> dict[str, Any]:
+        return {
+            "runtime": self.llamacpp_runtime,
+            "benchmark_mode": self.llamacpp_benchmark_mode,
+            "runtime_image": self.llamacpp_runtime_image,
+            "runtime_image_tag": self.llamacpp_runtime_image_tag,
+            "llama_cpp_ref": self.llamacpp_ref,
+            "llama_cpp_commit": self.llamacpp_commit,
+            "cuda_version": self.llamacpp_cuda_version,
+            "gpu_model": self.llamacpp_gpu_model,
+            "gpu_arch": self.llamacpp_gpu_arch,
+            "gpu_resource_request": self.llamacpp_gpu_resource_request,
+            "namespace": self.llamacpp_offline_namespace,
+            "target_pod": self.llamacpp_offline_target_pod,
+            "node_name": self.llamacpp_offline_node_name,
+            "model_name": self.llamacpp_model_name,
+            "model_source": self.llamacpp_model_source,
+            "gguf_filename": self.llamacpp_gguf_filename,
+            "gguf_path": self.llamacpp_gguf_path,
+            "gguf_sha256": self.llamacpp_gguf_sha256,
+            "quantization": self.llamacpp_quantization,
+            "gpu_layers": "all",
+        }
+
+    @staticmethod
+    def _llamacpp_record_float(record: dict[str, Any], *keys: str) -> Optional[float]:
+        for key in keys:
+            if key not in record:
+                continue
+            value = record.get(key)
+            if value is None:
+                continue
+            try:
+                return round(float(value), 3)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    @staticmethod
+    def _llamacpp_record_int(record: dict[str, Any], *keys: str) -> Optional[int]:
+        for key in keys:
+            if key not in record:
+                continue
+            value = record.get(key)
+            if value is None:
+                continue
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _resolve_llamacpp_profile(self, profile: str) -> dict[str, Any]:
+        profile_config = self.LLAMACPP_OFFLINE_PROFILES.get(profile)
+        if not profile_config:
+            raise LlmInferenceError(404, f"unknown llama.cpp offline benchmark profile: {profile}")
+        return profile_config
+
+    def _build_llamacpp_run_state(
+        self,
+        *,
+        run_id: str,
+        profile_id: str,
+        profile_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "schema": "pre6g.llamacpp_offline_benchmark_run.v1",
+            "ts": int(time.time()),
+            "run_id": run_id,
+            "runtime": self.llamacpp_runtime,
+            "benchmark_mode": self.llamacpp_benchmark_mode,
+            "profile": str(profile_config["display_name"]),
+            "profile_id": profile_id,
+            "status": "queued",
+            "namespace": self.llamacpp_offline_namespace,
+            "target_pod": self.llamacpp_offline_target_pod,
+            "node_name": self.llamacpp_offline_node_name,
+            "started_at_ts": None,
+            "completed_at_ts": None,
+            "result": None,
+            "error": None,
+        }
+
+    def _build_llamacpp_preflight_exec_command(self) -> list[str]:
+        return [
+            self.kubectl_bin,
+            "-n",
+            self.llamacpp_offline_namespace,
+            "exec",
+            self.llamacpp_offline_target,
+            "--",
+            "/bin/bash",
+            "-lc",
+            "nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader || true",
+        ]
+
+    def _build_llamacpp_exec_command(self, *, profile_config: dict[str, Any], run_id: str) -> list[str]:
+        result_path, log_path = self._benchmark_result_paths(run_id)
+        shell_cmd = (
+            f"rm -f {result_path} {log_path}; "
+            "llama-bench "
+            f"--model {self.llamacpp_gguf_path} "
+            f"--n-prompt {int(profile_config['n_prompt'])} "
+            f"--n-gen {int(profile_config['n_gen'])} "
+            f"-pg {profile_config['pg_pair']} "
+            f"--n-depth {int(profile_config['n_depth'])} "
+            f"--batch-size {int(profile_config['batch_size'])} "
+            f"--ubatch-size {int(profile_config['ubatch_size'])} "
+            f"--n-gpu-layers {int(profile_config['gpu_layers'])} "
+            f"--flash-attn {profile_config['flash_attention']} "
+            f"--repetitions {int(profile_config['repetitions'])} "
+            "--output json "
+            f">{result_path} 2>{log_path}; "
+            f"cat {result_path}"
+        )
+        return [
+            self.kubectl_bin,
+            "-n",
+            self.llamacpp_offline_namespace,
+            "exec",
+            self.llamacpp_offline_target,
+            "--",
+            "/bin/bash",
+            "-lc",
+            shell_cmd,
+        ]
+
+    @staticmethod
+    def _parse_gpu_preflight_output(output: str) -> list[dict[str, Any]]:
+        processes: list[dict[str, Any]] = []
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = [part.strip() for part in line.split(",")]
+            if len(parts) < 3:
+                continue
+            pid_text, process_name, used_memory = parts[0], parts[1], ",".join(parts[2:]).strip()
+            try:
+                pid = int(pid_text)
+            except ValueError:
+                pid = None
+            processes.append(
+                {
+                    "pid": pid,
+                    "process_name": process_name or None,
+                    "used_memory": used_memory or None,
+                }
+            )
+        return processes
+
+    def _run_llamacpp_gpu_preflight(self) -> list[dict[str, Any]]:
+        completed = subprocess.run(
+            self._build_llamacpp_preflight_exec_command(),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if completed.returncode != 0:
+            raise LlmInferenceError(
+                502,
+                f"failed llama.cpp GPU preflight: {completed.stderr.strip() or completed.stdout.strip() or 'unknown error'}",
+            )
+        return self._parse_gpu_preflight_output(completed.stdout)
+
+    def _parse_llamacpp_benchmark_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        payload_meta = payload if isinstance(payload, dict) else {}
+        raw_results = payload_meta.get("results", payload if isinstance(payload, list) else [])
+        if isinstance(raw_results, dict):
+            raw_results = [raw_results]
+        if not isinstance(raw_results, list):
+            raise LlmInferenceError(502, "llama.cpp benchmark result did not contain a result list")
+
+        tests: dict[str, dict[str, Any]] = {}
+        for record in raw_results:
+            if not isinstance(record, dict):
+                continue
+            test_name = str(record.get("test") or record.get("benchmark") or record.get("kind") or "").strip().lower()
+            if not test_name:
+                prompt_tokens = self._llamacpp_record_int(record, "n_prompt", "prompt_tokens") or 0
+                gen_tokens = self._llamacpp_record_int(record, "n_gen", "gen_tokens") or 0
+                if prompt_tokens > 0 and gen_tokens == 0:
+                    test_name = "pp"
+                elif prompt_tokens == 0 and gen_tokens > 0:
+                    test_name = "tg"
+                elif prompt_tokens > 0 and gen_tokens > 0:
+                    test_name = "pg"
+            if not test_name:
+                continue
+            tests[test_name] = record
+
+        if "pp" not in tests and "tg" not in tests:
+            raise LlmInferenceError(502, "llama.cpp benchmark result did not contain pp/tg benchmark records")
+
+        any_record = next(iter(tests.values()))
+        pp_record = tests.get("pp", {})
+        tg_record = tests.get("tg", {})
+        pg_record = tests.get("pg", {})
+
+        return {
+            "prompt_tps_mean": self._llamacpp_record_float(
+                pp_record, "avg_ts", "avg_tps", "tokens_per_second_avg", "tps_avg", "mean_tps"
+            ),
+            "prompt_tps_stddev": self._llamacpp_record_float(
+                pp_record, "stdev_ts", "stddev_tps", "tokens_per_second_stddev", "tps_stddev"
+            ),
+            "generation_tps_mean": self._llamacpp_record_float(
+                tg_record, "avg_ts", "avg_tps", "tokens_per_second_avg", "tps_avg", "mean_tps"
+            ),
+            "generation_tps_stddev": self._llamacpp_record_float(
+                tg_record, "stdev_ts", "stddev_tps", "tokens_per_second_stddev", "tps_stddev"
+            ),
+            "prompt_generation_tps_mean": self._llamacpp_record_float(
+                pg_record, "avg_ts", "avg_tps", "tokens_per_second_avg", "tps_avg", "mean_tps"
+            ),
+            "prompt_generation_tps_stddev": self._llamacpp_record_float(
+                pg_record, "stdev_ts", "stddev_tps", "tokens_per_second_stddev", "tps_stddev"
+            ),
+            "n_prompt": self._llamacpp_record_int(any_record, "n_prompt", "prompt_tokens"),
+            "n_gen": self._llamacpp_record_int(any_record, "n_gen", "gen_tokens"),
+            "n_depth": self._llamacpp_record_int(any_record, "n_depth", "ctx"),
+            "batch_size": self._llamacpp_record_int(any_record, "n_batch", "batch_size"),
+            "ubatch_size": self._llamacpp_record_int(any_record, "n_ubatch", "ubatch_size"),
+            "n_gpu_layers": self._llamacpp_record_int(any_record, "n_gpu_layers", "gpu_layers"),
+            "repetitions": self._llamacpp_record_int(
+                payload_meta, "repetitions", "n_reps"
+            ),
+            "flash_attention": str(
+                any_record.get("flash_attn")
+                or any_record.get("flash_attention")
+                or payload_meta.get("flash_attention")
+                or "off"
+            ),
+        }
 
     def _resolve_offline_bench_target(self) -> tuple[str, str]:
         namespace = self.offline_bench_namespace
@@ -847,6 +1193,8 @@ class LlmLabService:
                 {
                     "ts": result["ts"],
                     "event_type": "single_inference",
+                    "runtime": "vllm",
+                    "benchmark_mode": "serving",
                     "namespace": namespace,
                     "workload": workload,
                     "status": "succeeded",
@@ -919,6 +1267,8 @@ class LlmLabService:
             {
                 "ts": result["ts"],
                 "event_type": "serving_benchmark",
+                "runtime": "vllm",
+                "benchmark_mode": "serving",
                 "namespace": namespace,
                 "workload": workload,
                 "status": result["status"],
@@ -967,7 +1317,7 @@ class LlmLabService:
         self._write_run_state(run_id, state)
         cancel_event = Event()
         with self._run_state_lock:
-            self._active_run_controls[run_id] = {"cancel_event": cancel_event, "process": None}
+            self._active_run_controls[run_id] = {"kind": "vllm_serving", "cancel_event": cancel_event, "process": None}
 
         thread = Thread(
             target=self._run_benchmark_background,
@@ -1171,6 +1521,8 @@ class LlmLabService:
             {
                 "ts": result["ts"],
                 "event_type": "serving_benchmark",
+                "runtime": "vllm",
+                "benchmark_mode": "serving",
                 "namespace": namespace,
                 "workload": workload,
                 "status": result["status"],
@@ -1273,6 +1625,8 @@ class LlmLabService:
             {
                 "ts": result["ts"],
                 "event_type": "offline_throughput_benchmark",
+                "runtime": "vllm",
+                "benchmark_mode": "offline",
                 "namespace": namespace,
                 "workload": workload,
                 "status": result["status"],
@@ -1293,6 +1647,310 @@ class LlmLabService:
             }
         )
         return result
+
+    def get_llamacpp_offline_profiles(self) -> dict[str, Any]:
+        profiles = []
+        for profile_id, profile_config in self.LLAMACPP_OFFLINE_PROFILES.items():
+            profiles.append(
+                {
+                    "profile_id": profile_id,
+                    "display_name": str(profile_config["display_name"]),
+                    "description": str(profile_config["description"]),
+                    "runtime": self.llamacpp_runtime,
+                    "benchmark_mode": self.llamacpp_benchmark_mode,
+                    "n_prompt": int(profile_config["n_prompt"]),
+                    "n_gen": int(profile_config["n_gen"]),
+                    "pg_pair": str(profile_config["pg_pair"]),
+                    "n_depth": int(profile_config["n_depth"]),
+                    "batch_size": int(profile_config["batch_size"]),
+                    "ubatch_size": int(profile_config["ubatch_size"]),
+                    "repetitions": int(profile_config["repetitions"]),
+                    "flash_attention": str(profile_config["flash_attention"]),
+                    "gpu_layers": int(profile_config["gpu_layers"]),
+                }
+            )
+        return {
+            "schema": "pre6g.llamacpp_offline_benchmark_profiles.v1",
+            "ts": int(time.time()),
+            "runtime": self.llamacpp_runtime,
+            "benchmark_mode": self.llamacpp_benchmark_mode,
+            "profiles": profiles,
+        }
+
+    def _build_llamacpp_result(
+        self,
+        *,
+        run_id: str,
+        profile_id: str,
+        profile_config: dict[str, Any],
+        parsed_result: dict[str, Any],
+        gpu_processes_before: list[dict[str, Any]],
+        started_at_ts: int,
+        completed_at_ts: int,
+        duration_seconds: float,
+        status: str,
+        error_summary: str | None = None,
+    ) -> dict[str, Any]:
+        gpu_contended = len(gpu_processes_before) > 0
+        return {
+            "schema": "pre6g.llamacpp_offline_benchmark.v1",
+            "ts": completed_at_ts,
+            "run_id": run_id,
+            "runtime": self.llamacpp_runtime,
+            "benchmark_mode": self.llamacpp_benchmark_mode,
+            "profile": str(profile_config["display_name"]),
+            "profile_id": profile_id,
+            "status": status,
+            "namespace": self.llamacpp_offline_namespace,
+            "target_pod": self.llamacpp_offline_target_pod,
+            "node_name": self.llamacpp_offline_node_name,
+            "runtime_overview": self._llamacpp_runtime_overview(),
+            "observed_at_ts": completed_at_ts,
+            "started_at_ts": started_at_ts,
+            "completed_at_ts": completed_at_ts,
+            "duration_seconds": round(duration_seconds, 3),
+            "prompt_tps_mean": parsed_result.get("prompt_tps_mean"),
+            "prompt_tps_stddev": parsed_result.get("prompt_tps_stddev"),
+            "generation_tps_mean": parsed_result.get("generation_tps_mean"),
+            "generation_tps_stddev": parsed_result.get("generation_tps_stddev"),
+            "prompt_generation_tps_mean": parsed_result.get("prompt_generation_tps_mean"),
+            "prompt_generation_tps_stddev": parsed_result.get("prompt_generation_tps_stddev"),
+            "waiting_requests": None,
+            "kv_cache_usage_percent": None,
+            "n_prompt": int(parsed_result.get("n_prompt") or profile_config["n_prompt"]),
+            "n_gen": int(parsed_result.get("n_gen") or profile_config["n_gen"]),
+            "n_depth": int(parsed_result.get("n_depth") or profile_config["n_depth"]),
+            "batch_size": int(parsed_result.get("batch_size") or profile_config["batch_size"]),
+            "ubatch_size": int(parsed_result.get("ubatch_size") or profile_config["ubatch_size"]),
+            "n_gpu_layers": int(parsed_result.get("n_gpu_layers") or profile_config["gpu_layers"]),
+            "repetitions": int(parsed_result.get("repetitions") or profile_config["repetitions"]),
+            "flash_attention": str(parsed_result.get("flash_attention") or profile_config["flash_attention"]),
+            "gpu_processes_before": gpu_processes_before,
+            "gpu_process_count_before": len(gpu_processes_before),
+            "gpu_contended": gpu_contended,
+            "gpu_preflight_status": "Contended" if gpu_contended else "Idle",
+            "preflight_warning": (
+                "Contended GPU — throughput may not represent an isolated baseline."
+                if gpu_contended
+                else None
+            ),
+            "error_summary": error_summary,
+        }
+
+    def _mark_llamacpp_run_failed(
+        self,
+        *,
+        run_id: str,
+        profile_id: str,
+        profile_config: dict[str, Any],
+        started_at_ts: int | None,
+        error_summary: str,
+        gpu_processes_before: list[dict[str, Any]] | None = None,
+    ) -> None:
+        state = self._read_run_state(run_id)
+        completed_at_ts = int(time.time())
+        duration_seconds = 0.0
+        if started_at_ts:
+            duration_seconds = max(completed_at_ts - started_at_ts, 0.0)
+        result = self._build_llamacpp_result(
+            run_id=run_id,
+            profile_id=profile_id,
+            profile_config=profile_config,
+            parsed_result={},
+            gpu_processes_before=gpu_processes_before or [],
+            started_at_ts=started_at_ts or completed_at_ts,
+            completed_at_ts=completed_at_ts,
+            duration_seconds=duration_seconds,
+            status="failed",
+            error_summary=error_summary,
+        )
+        state["ts"] = completed_at_ts
+        state["status"] = "failed"
+        state["completed_at_ts"] = completed_at_ts
+        state["result"] = result
+        state["error"] = error_summary
+        self._write_run_state(run_id, state)
+        self._append_history(
+            {
+                "ts": completed_at_ts,
+                "event_type": "llamacpp_offline_benchmark",
+                "runtime": self.llamacpp_runtime,
+                "benchmark_mode": self.llamacpp_benchmark_mode,
+                "namespace": self.llamacpp_offline_namespace,
+                "workload": self.llamacpp_offline_target_pod,
+                "status": "failed",
+                "run_id": run_id,
+                "profile": str(profile_config["display_name"]),
+                "profile_id": profile_id,
+                "gpu_contended": bool(gpu_processes_before),
+                "error_summary": error_summary,
+            }
+        )
+        with self._run_state_lock:
+            self._active_run_controls.pop(run_id, None)
+
+    def _run_llamacpp_offline_background(self, *, run_id: str, profile_id: str) -> None:
+        profile_config = self._resolve_llamacpp_profile(profile_id)
+        started_at_ts = int(time.time())
+        gpu_processes_before: list[dict[str, Any]] = []
+        state = self._read_run_state(run_id)
+        state["status"] = "running"
+        state["started_at_ts"] = started_at_ts
+        state["ts"] = started_at_ts
+        self._write_run_state(run_id, state)
+
+        try:
+            gpu_processes_before = self._run_llamacpp_gpu_preflight()
+            command = self._build_llamacpp_exec_command(profile_config=profile_config, run_id=run_id)
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self.benchmark_timeout_seconds,
+            )
+            if completed.returncode != 0:
+                raise LlmInferenceError(
+                    502,
+                    f"llama-bench failed: {completed.stderr.strip() or completed.stdout.strip() or f'exit code {completed.returncode}'}",
+                )
+            try:
+                payload = json.loads(completed.stdout)
+            except json.JSONDecodeError as exc:
+                raise LlmInferenceError(502, "llama-bench output was not valid JSON") from exc
+
+            parsed_result = self._parse_llamacpp_benchmark_payload(payload)
+            completed_at_ts = int(time.time())
+            duration_seconds = max(completed_at_ts - started_at_ts, 0.001)
+            result = self._build_llamacpp_result(
+                run_id=run_id,
+                profile_id=profile_id,
+                profile_config=profile_config,
+                parsed_result=parsed_result,
+                gpu_processes_before=gpu_processes_before,
+                started_at_ts=started_at_ts,
+                completed_at_ts=completed_at_ts,
+                duration_seconds=duration_seconds,
+                status="succeeded",
+            )
+            state = self._read_run_state(run_id)
+            state["ts"] = completed_at_ts
+            state["status"] = "succeeded"
+            state["completed_at_ts"] = completed_at_ts
+            state["result"] = result
+            state["error"] = None
+            self._write_run_state(run_id, state)
+            self._append_history(
+                {
+                    "ts": completed_at_ts,
+                    "event_type": "llamacpp_offline_benchmark",
+                    "runtime": self.llamacpp_runtime,
+                    "benchmark_mode": self.llamacpp_benchmark_mode,
+                    "namespace": self.llamacpp_offline_namespace,
+                    "workload": self.llamacpp_offline_target_pod,
+                    "status": "succeeded",
+                    "run_id": run_id,
+                    "profile": str(profile_config["display_name"]),
+                    "profile_id": profile_id,
+                    "gpu_contended": result["gpu_contended"],
+                    "prompt_tps_mean": result["prompt_tps_mean"],
+                    "generation_tps_mean": result["generation_tps_mean"],
+                    "prompt_generation_tps_mean": result["prompt_generation_tps_mean"],
+                    "prompt_tps_stddev": result["prompt_tps_stddev"],
+                    "generation_tps_stddev": result["generation_tps_stddev"],
+                    "prompt_generation_tps_stddev": result["prompt_generation_tps_stddev"],
+                    "duration_seconds": result["duration_seconds"],
+                    "observed_at_ts": completed_at_ts,
+                }
+            )
+            with self._run_state_lock:
+                self._active_run_controls.pop(run_id, None)
+        except Exception as exc:
+            self._mark_llamacpp_run_failed(
+                run_id=run_id,
+                profile_id=profile_id,
+                profile_config=profile_config,
+                started_at_ts=started_at_ts,
+                error_summary=str(exc),
+                gpu_processes_before=gpu_processes_before,
+            )
+
+    def start_llamacpp_offline_run(self, *, profile: str) -> dict[str, Any]:
+        profile_config = self._resolve_llamacpp_profile(profile)
+        with self._run_state_lock:
+            for active_run_id, control in self._active_run_controls.items():
+                if control.get("kind") == "llamacpp_offline":
+                    raise LlmInferenceError(
+                        409,
+                        f"llama.cpp offline benchmark already running: {active_run_id}",
+                    )
+        run_id = f"llamacpp-{profile}-run-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        state = self._build_llamacpp_run_state(
+            run_id=run_id,
+            profile_id=profile,
+            profile_config=profile_config,
+        )
+        self._write_run_state(run_id, state)
+        with self._run_state_lock:
+            self._active_run_controls[run_id] = {"kind": "llamacpp_offline"}
+        thread = Thread(
+            target=self._run_llamacpp_offline_background,
+            kwargs={"run_id": run_id, "profile_id": profile},
+            daemon=True,
+        )
+        thread.start()
+        return {
+            "schema": "pre6g.llamacpp_offline_benchmark_run_start.v1",
+            "ts": int(time.time()),
+            "run_id": run_id,
+            "runtime": self.llamacpp_runtime,
+            "benchmark_mode": self.llamacpp_benchmark_mode,
+            "profile": str(profile_config["display_name"]),
+            "profile_id": profile,
+            "status": "queued",
+            "namespace": self.llamacpp_offline_namespace,
+            "target_pod": self.llamacpp_offline_target_pod,
+        }
+
+    def get_llamacpp_offline_run(self, *, run_id: str) -> dict[str, Any]:
+        state = self._read_run_state(run_id)
+        if state.get("runtime") != self.llamacpp_runtime:
+            raise KeyError(run_id)
+        state["ts"] = int(time.time())
+        return state
+
+    def get_llamacpp_offline_latest_run(self) -> dict[str, Any]:
+        runs = self.list_llamacpp_offline_runs(limit=1).get("items") or []
+        if not runs:
+            raise KeyError("latest")
+        return runs[0]
+
+    def list_llamacpp_offline_runs(self, *, limit: int = 10) -> dict[str, Any]:
+        items: list[dict[str, Any]] = []
+        for run_path in self.runs_root.glob("*.json"):
+            try:
+                state = json.loads(run_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if state.get("runtime") != self.llamacpp_runtime:
+                continue
+            items.append(state)
+        items.sort(
+            key=lambda item: int(
+                item.get("completed_at_ts")
+                or item.get("started_at_ts")
+                or item.get("ts")
+                or 0
+            ),
+            reverse=True,
+        )
+        trimmed = items[: max(1, min(limit, 50))]
+        return {
+            "schema": "pre6g.llamacpp_offline_benchmark_runs.v1",
+            "ts": int(time.time()),
+            "count": len(trimmed),
+            "items": trimmed,
+        }
 
     def _append_history(self, item: dict[str, Any]) -> None:
         with self.history_path.open("a", encoding="utf-8") as fh:

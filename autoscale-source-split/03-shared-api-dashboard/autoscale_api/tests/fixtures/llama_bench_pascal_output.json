@@ -1,0 +1,44 @@
+{
+  "llama_cpp_ref": "b9870",
+  "llama_cpp_commit": "2d97363",
+  "cuda_version": "11.8",
+  "repetitions": 5,
+  "results": [
+    {
+      "test": "pp",
+      "avg_ts": 1188.432,
+      "stdev_ts": 21.774,
+      "n_prompt": 512,
+      "n_gen": 128,
+      "n_depth": 0,
+      "n_batch": 512,
+      "n_ubatch": 128,
+      "n_gpu_layers": -1,
+      "flash_attn": "off"
+    },
+    {
+      "test": "tg",
+      "avg_ts": 302.615,
+      "stdev_ts": 8.921,
+      "n_prompt": 512,
+      "n_gen": 128,
+      "n_depth": 0,
+      "n_batch": 512,
+      "n_ubatch": 128,
+      "n_gpu_layers": -1,
+      "flash_attn": "off"
+    },
+    {
+      "test": "pg",
+      "avg_ts": 254.881,
+      "stdev_ts": 5.314,
+      "n_prompt": 512,
+      "n_gen": 128,
+      "n_depth": 0,
+      "n_batch": 512,
+      "n_ubatch": 128,
+      "n_gpu_layers": -1,
+      "flash_attn": "off"
+    }
+  ]
+}
