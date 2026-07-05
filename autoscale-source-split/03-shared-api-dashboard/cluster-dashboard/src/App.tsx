@@ -565,13 +565,6 @@ type LlamacppOfflineBenchmarkRunStartResponse = {
   target_pod: string;
 };
 
-type LlamacppOfflineBenchmarkRunsResponse = {
-  schema: string;
-  ts: number;
-  count: number;
-  items: LlamacppOfflineBenchmarkRunStateResponse[];
-};
-
 type Health = "healthy" | "degraded" | "offline";
 type ActiveTab = "monitor" | "fan-experiment" | "llm-serving";
 type FanMode =
@@ -966,17 +959,6 @@ function displayFanModeLabel(mode: FanMode): string {
   return modeLabel(mode);
 }
 
-function formatWorkloadMetric(
-  value?: number | null,
-  digits = 1,
-  suffix = "",
-): string {
-  if (value === undefined || value === null || Number.isNaN(value)) {
-    return "N/A";
-  }
-  return `${value.toFixed(digits)}${suffix}`;
-}
-
 function formatObservedTimestamp(ts?: number | null): string {
   if (!ts) return "N/A";
   return new Date(ts * 1000).toLocaleString();
@@ -1346,7 +1328,6 @@ function LlmServingLabPage({
   const [offlineError, setOfflineError] = useState("");
   const [offlineProfiles, setOfflineProfiles] = useState<LlamacppOfflineBenchmarkProfile[]>([]);
   const [offlineLatestRun, setOfflineLatestRun] = useState<LlamacppOfflineBenchmarkRunStateResponse | null>(null);
-  const [offlineRuns, setOfflineRuns] = useState<LlamacppOfflineBenchmarkRunStateResponse[]>([]);
   const [offlineActiveRunId, setOfflineActiveRunId] = useState("");
   const [activeBenchmarkRun, setActiveBenchmarkRun] = useState<LlmBenchmarkRunStatusResponse | null>(null);
   const [activeBenchmarkRunId, setActiveBenchmarkRunId] = useState("");
@@ -1355,7 +1336,7 @@ function LlmServingLabPage({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [runHistory, setRunHistory] = useState<LlmRunHistoryItem[]>([]);
-  const [historyFilter, setHistoryFilter] = useState<"all" | "single_inference" | "benchmark">("all");
+  const [historyFilter, setHistoryFilter] = useState<"all" | "inference" | "serving" | "offline">("all");
   const sortedWorkloads = [...workloads].sort((a, b) => {
     const left = `${a.namespace}/${a.workload}`;
     const right = `${b.namespace}/${b.workload}`;
@@ -1367,9 +1348,6 @@ function LlmServingLabPage({
     ? `${primaryWorkload.namespace}/${primaryWorkload.workload}`
     : "";
   const primaryDetail = primaryKey ? workloadDetails[primaryKey] || null : null;
-  const replicas = primaryDetail?.replicas || [];
-  const metricsSamplePresent =
-    !!primaryDetail && replicas.some((replica) => replica.metrics_observed_ts);
   const selectedBenchmarkProfile =
     BENCHMARK_PROFILES.find((profile) => profile.id === benchmarkProfileId) || BENCHMARK_PROFILES[0];
   const selectedOfflineProfile =
@@ -1380,16 +1358,20 @@ function LlmServingLabPage({
   const shouldHideContinuousPercentiles = smokeResult?.profile_id === "continuous";
   const filteredRunHistory = runHistory.filter((item) => {
     if (historyFilter === "all") return true;
-    if (historyFilter === "single_inference") return item.event_type === "single_inference";
+    if (historyFilter === "inference") {
+      return item.event_type === "single_inference";
+    }
+    if (historyFilter === "serving") {
+      return item.event_type === "serving_benchmark" || item.event_type === "controlled_batch";
+    }
     return (
-      item.event_type === "serving_benchmark" ||
-      item.event_type === "controlled_batch" ||
       item.event_type === "offline_throughput_benchmark" ||
       item.event_type === "llamacpp_offline_benchmark"
     );
   });
+  const visibleRunHistory = filteredRunHistory.slice(0, 5);
   const historySummary = {
-    total: filteredRunHistory.length,
+    total: visibleRunHistory.length,
     inferenceCount: filteredRunHistory.filter((item) => item.event_type === "single_inference").length,
     benchmarkCount: filteredRunHistory.filter((item) => item.event_type !== "single_inference").length,
   };
@@ -1514,26 +1496,12 @@ function LlmServingLabPage({
       setOfflineLatestRun(response);
       if (response.status !== "queued" && response.status !== "running") {
         setOfflineActiveRunId("");
-        await loadOfflineRunHistory();
         await loadRunHistory(primaryWorkload?.namespace);
       }
       return response;
     } catch (error) {
       setOfflineError(error instanceof Error ? error.message : String(error));
       return null;
-    }
-  }
-
-  async function loadOfflineRunHistory() {
-    try {
-      const response = await fetchJson<LlamacppOfflineBenchmarkRunsResponse>(
-        "/api/v1/llm-lab/llamacpp/offline-benchmark/runs?limit=6",
-      );
-      setOfflineRuns(response.items || []);
-    } catch (error) {
-      if (!isNotFoundError(error)) {
-        setOfflineError(error instanceof Error ? error.message : String(error));
-      }
     }
   }
 
@@ -1564,7 +1532,7 @@ function LlmServingLabPage({
       const params = new URLSearchParams();
       if (namespace) params.set("namespace", namespace);
       if (workload) params.set("workload", workload);
-      params.set("limit", "16");
+      params.set("limit", "5");
       const response = await fetchJson<LlmRunHistoryResponse>(
         `/api/v1/llm-lab/history?${params.toString()}`,
       );
@@ -1579,7 +1547,6 @@ function LlmServingLabPage({
   useEffect(() => {
     loadOfflineProfiles().catch(() => undefined);
     loadOfflineLatestRun().catch(() => undefined);
-    loadOfflineRunHistory().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -1632,135 +1599,13 @@ function LlmServingLabPage({
             Observation
           </h3>
           <p className="mt-1 text-sm text-slate-400">
-            Service identity, live serving metrics, and per-pod Kubernetes observation.
+            Runtime and Kubernetes observation for the active 4090 vLLM service and 1080 Ti llama.cpp benchmark target.
           </p>
         </div>
       </div>
 
-      <SectionCard title="Service Overview">
-        {!primaryWorkload ? (
-          <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
-            No discovered vLLM workload.
-          </div>
-        ) : (
-          <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-              <div className="space-y-2">
-                {observationLine("Workload", primaryWorkload.workload)}
-                {observationLine("Namespace", primaryWorkload.namespace)}
-                {observationLine("Runtime", primaryWorkload.runtime || "vLLM")}
-                {observationLine(
-                  "Runtime Image",
-                  primaryDetail?.identity.runtime_image ||
-                    primaryWorkload.runtime_image ||
-                    "N/A",
-                )}
-                {observationLine(
-                  "Model",
-                  primaryDetail?.identity.model_name ||
-                    primaryWorkload.model_name ||
-                    "N/A",
-                )}
-                {observationLine(
-                  "Desired Replicas",
-                  String(primaryDetail?.replica_summary.desired ?? primaryWorkload.desired_replicas),
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-              <div className="space-y-2">
-                {observationLine(
-                  "Ready Replicas",
-                  String(primaryDetail?.replica_summary.ready ?? primaryWorkload.ready_replicas),
-                )}
-                {observationLine(
-                  "Metrics Sample",
-                  metricsSamplePresent ? "Present" : "No recent sample",
-                )}
-                {observationLine(
-                  "Metrics Freshness",
-                  formatFreshness(primaryDetail?.freshness_seconds ?? null),
-                )}
-                {observationLine(
-                  "Data Pipeline",
-                  primaryDetail?.scrape_source || "vmagent -> VictoriaMetrics",
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </SectionCard>
-
       {primaryWorkload && (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <SectionCard title="Live Serving Observation">
-            {!primaryDetail ? (
-              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
-                No recent workload detail sample.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <SummaryCard
-                    label="Generation TPS"
-                    value={formatWorkloadMetric(
-                      primaryDetail.aggregate.generation_tokens_per_second,
-                      1,
-                      " tok/s",
-                    )}
-                    tone="blue"
-                  />
-                  <SummaryCard
-                    label="Prompt TPS"
-                    value={formatWorkloadMetric(
-                      primaryDetail.aggregate.prompt_tokens_per_second,
-                      1,
-                      " tok/s",
-                    )}
-                    tone="blue"
-                  />
-                  <SummaryCard
-                    label="Waiting Requests"
-                    value={formatWorkloadMetric(
-                      primaryDetail.aggregate.waiting_requests,
-                      0,
-                    )}
-                    tone="gray"
-                  />
-                  <div className="rounded-2xl border border-sky-500/30 bg-slate-950/70 p-4 shadow-lg">
-                    <div className="text-xs uppercase tracking-wide text-slate-500">
-                      KV Cache Usage
-                    </div>
-                    <div className="mt-3">
-                      <MetricBar
-                        label="KV Cache Usage"
-                        value={primaryDetail.aggregate.kv_cache_usage_percent_max}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-                  <div className="space-y-2">
-                    {observationLine("Rate Window", `${primaryDetail.query_window_seconds} sec`)}
-                    {observationLine(
-                      "Observed At",
-                      formatObservedTimestamp(primaryDetail.metrics_observed_ts),
-                    )}
-                    {observationLine(
-                      "Freshness",
-                      formatFreshness(primaryDetail.freshness_seconds),
-                    )}
-                  </div>
-                  <div className="mt-3 text-xs text-slate-500">
-                    Service-wide metrics · 1s scrape · {primaryDetail.query_window_seconds}s rate window · 3s VM offset
-                  </div>
-                </div>
-              </div>
-            )}
-          </SectionCard>
-
+        <div className="space-y-4">
           <SectionCard title="Replica / Kubernetes Observation">
             {!primaryDetail ? (
               <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
@@ -1775,11 +1620,6 @@ function LlmServingLabPage({
                       <th className="px-3 py-3 text-left font-medium">Node</th>
                       <th className="px-3 py-3 text-left font-medium">Phase</th>
                       <th className="px-3 py-3 text-left font-medium">Ready</th>
-                      <th className="px-3 py-3 text-left font-medium">Freshness</th>
-                      <th className="px-3 py-3 text-left font-medium">Gen TPS</th>
-                      <th className="px-3 py-3 text-left font-medium">Prompt TPS</th>
-                      <th className="px-3 py-3 text-left font-medium">Waiting</th>
-                      <th className="px-3 py-3 text-left font-medium">KV Cache</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1788,25 +1628,22 @@ function LlmServingLabPage({
                         key={`${primaryDetail.identity.namespace}/${primaryDetail.identity.workload}/${replica.pod}`}
                         className="border-t border-slate-800 text-slate-200"
                       >
-                        <td className="px-3 py-3 font-mono text-xs">{replica.pod}</td>
-                        <td className="px-3 py-3">{replica.node_name || "N/A"}</td>
-                        <td className="px-3 py-3">{replica.pod_phase || "Unknown"}</td>
-                        <td className="px-3 py-3">{formatReadyCondition(replica.ready_condition)}</td>
-                        <td className="px-3 py-3">{formatFreshness(replica.metrics_freshness_seconds)}</td>
-                        <td className="px-3 py-3">
-                          {formatWorkloadMetric(replica.generation_tokens_per_second, 1, " tok/s")}
-                        </td>
-                        <td className="px-3 py-3">
-                          {formatWorkloadMetric(replica.prompt_tokens_per_second, 1, " tok/s")}
-                        </td>
-                        <td className="px-3 py-3">
-                          {formatWorkloadMetric(replica.waiting_requests, 0)}
-                        </td>
-                        <td className="px-3 py-3">
-                          {formatWorkloadMetric(replica.kv_cache_usage_percent, 1, "%")}
-                        </td>
-                      </tr>
-                    ))}
+                            <td className="px-3 py-3 font-mono text-xs">{replica.pod}</td>
+                            <td className="px-3 py-3">{replica.node_name || "N/A"}</td>
+                            <td className="px-3 py-3">{replica.pod_phase || "Unknown"}</td>
+                            <td className="px-3 py-3">{formatReadyCondition(replica.ready_condition)}</td>
+                          </tr>
+                        ))}
+                    <tr className="border-t border-slate-800 text-slate-200">
+                      <td className="px-3 py-3 font-mono text-xs">
+                        {offlineLatestRun?.target_pod || "llamacpp-qwen25-15b-q4km-bench"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {offlineLatestResult?.runtime_overview.node_name || "icclz1"}
+                      </td>
+                      <td className="px-3 py-3">Running</td>
+                      <td className="px-3 py-3">True</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -2511,73 +2348,15 @@ function LlmServingLabPage({
               )}
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-              <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
-                Offline Benchmark History
-              </div>
-              {offlineRuns.length === 0 ? (
-                <div className="text-slate-400">No llama.cpp offline benchmark runs yet.</div>
-              ) : (
-                <div className="space-y-3">
-                  {offlineRuns.map((item) => (
-                    <div
-                      key={item.run_id}
-                      className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"
-                    >
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <span className="rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 text-[11px] uppercase tracking-wide text-fuchsia-200">
-                            llama.cpp
-                          </span>
-                          <div className="font-medium text-slate-100">{item.profile}</div>
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {formatObservedTimestamp(item.result?.observed_at_ts || item.completed_at_ts)}
-                        </div>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-500">Status</div>
-                          <div className="mt-1 text-sm text-slate-100">{item.status}</div>
-                        </div>
-                        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-500">Prompt TPS</div>
-                          <div className="mt-1 text-sm text-slate-100">
-                            {item.result?.prompt_tps_mean !== undefined && item.result?.prompt_tps_mean !== null
-                              ? `${item.result.prompt_tps_mean.toFixed(3)} tok/s`
-                              : "N/A"}
-                          </div>
-                        </div>
-                        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-500">Generation TPS</div>
-                          <div className="mt-1 text-sm text-slate-100">
-                            {item.result?.generation_tps_mean !== undefined && item.result?.generation_tps_mean !== null
-                              ? `${item.result.generation_tps_mean.toFixed(3)} tok/s`
-                              : "N/A"}
-                          </div>
-                        </div>
-                        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-500">GPU Contention</div>
-                          <div className="mt-1 text-sm text-slate-100">
-                            {item.result?.gpu_contended ? "Contended" : "Idle"}
-                          </div>
-                        </div>
-                        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-500">Run ID</div>
-                          <div className="mt-1 font-mono text-xs text-slate-200">{item.run_id}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </SectionCard>
 
       {primaryWorkload && (
         <SectionCard title="Recent Runtime History">
+          <div className="mb-4 text-sm text-slate-400">
+            Unified recent records for single inference, vLLM serving benchmarks, and llama.cpp offline benchmarks.
+          </div>
           <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
             <div className="grid gap-3 sm:grid-cols-3">
               <SummaryCard label="Visible Entries" value={historySummary.total.toString()} tone="blue" />
@@ -2587,12 +2366,13 @@ function LlmServingLabPage({
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/45 p-3">
               {[
                 { id: "all", label: "All Events" },
-                { id: "single_inference", label: "Inference Only" },
-                { id: "benchmark", label: "Benchmarks Only" },
+                { id: "inference", label: "Inference" },
+                { id: "serving", label: "Serving" },
+                { id: "offline", label: "Offline" },
               ].map((option) => (
                 <button
                   key={option.id}
-                  onClick={() => setHistoryFilter(option.id as "all" | "single_inference" | "benchmark")}
+                  onClick={() => setHistoryFilter(option.id as "all" | "inference" | "serving" | "offline")}
                   className={`rounded-full border px-3 py-1.5 text-xs transition ${
                     historyFilter === option.id
                       ? "border-sky-500/40 bg-sky-500/20 text-sky-200"
@@ -2611,13 +2391,13 @@ function LlmServingLabPage({
             <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-3 text-red-200">
               {historyError}
             </div>
-          ) : filteredRunHistory.length === 0 ? (
+          ) : visibleRunHistory.length === 0 ? (
             <div className="text-sm text-slate-400">
               No history entries match the current filter.
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredRunHistory.map((item) => (
+              {visibleRunHistory.map((item) => (
                 <div
                   key={`${item.ts}-${item.event_type}-${item.run_id || item.prompt_sha256 || "entry"}`}
                   className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm"
