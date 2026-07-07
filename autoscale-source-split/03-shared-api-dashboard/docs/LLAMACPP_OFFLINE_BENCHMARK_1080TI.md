@@ -26,8 +26,7 @@
 ## Fixed Profiles
 
 - `pascal-smoke`
-- `pascal-throughput`
-- `pascal-context`
+- `pascal-continuous`
 
 這些 profile 是固定 allowlist，不接受任意 CLI 參數。
 
@@ -43,9 +42,9 @@
 
 本輪已完成實機驗證：
 
-- image build: `pre6g/llamacpp-cuda118-sm61:qwen25-15b-q4km`
+- image build: `pre6g/llamacpp-cuda118-sm61:gemma4-e2b-q4km`
 - image import target: `icclz1`
-- target pod: `deploy/llamacpp-qwen25-15b-q4km-bench`
+- target pod: `deploy/llamacpp-gemma4-e2b-q4km-bench`
 - API control path:
   `autoscale_api -> kubectl exec -> llama-bench -> JSON parser -> history/dashboard`
 
@@ -58,9 +57,9 @@
 - Generation TPS (`tg`): `161.313 tok/s`
 - Prompt + Generation TPS (`pg`): `443.227 tok/s`
 
-### `pascal-throughput`
+### `pascal-continuous`
 
-- run id: `llamacpp-pascal-throughput-run-20260705T015400Z`
+- run id: `llamacpp-pascal-continuous-run-20260705T015400Z`
 - status: `succeeded`
 - duration: `11.0 sec`
 - Prompt TPS (`pp`): `3600.395 tok/s`
@@ -74,11 +73,11 @@
 - node: `icclz1`
 - GPU resource: `nvidia.com/gpu.shared: 1`
 - API preflight: `gpu_contended = true`
-- sampled background GPU processes before `pascal-throughput`: `2`
+- sampled background GPU processes before `pascal-continuous`: `2`
 
 因此目前最嚴謹的解讀是：
 
-- `pascal-smoke` 與 `pascal-throughput` 已證明這條 `llama.cpp` offline benchmark path 可在 live cluster 正常執行
+- `pascal-smoke` 與 `pascal-continuous` 已證明這條 `llama.cpp` offline benchmark path 可在 live cluster 正常執行
 - 這些數值可作為 `shared GPU` 條件下的可用 baseline
 - 這些數值不應直接宣稱為 `GTX 1080 Ti` 的 isolated peak hardware baseline
 
@@ -106,9 +105,9 @@
 - Generation TPS (`tg`): `156.710 tok/s`
 - Prompt + Generation TPS (`pg`): `432.436 tok/s`
 
-### Isolated `pascal-throughput`
+### Isolated `pascal-continuous`
 
-- run id: `llamacpp-pascal-throughput-run-20260705T020802Z`
+- run id: `llamacpp-pascal-continuous-run-20260705T020802Z`
 - status: `succeeded`
 - duration: `11.0 sec`
 - Prompt TPS (`pp`): `3610.145 tok/s`
@@ -117,7 +116,7 @@
 
 ### Recommended Baseline Interpretation
 
-目前最適合作為正式 `GTX 1080 Ti / llama.cpp / Qwen2.5-1.5B Q4_K_M` baseline 的，是這組 isolated rerun，而不是前一組 shared-GPU 結果。
+目前最適合作為正式 `GTX 1080 Ti / llama.cpp / Gemma 4 E2B Q4_K_M` baseline 的，是這組 isolated rerun，而不是前一組 shared-GPU 結果。
 
 建議後續引用時優先使用：
 
@@ -125,7 +124,7 @@
   - `pp = 3653.644 tok/s`
   - `tg = 156.710 tok/s`
   - `pg = 432.436 tok/s`
-- `pascal-throughput`
+- `pascal-continuous`
   - `pp = 3610.145 tok/s`
   - `tg = 156.691 tok/s`
   - `pg = 619.870 tok/s`
@@ -155,7 +154,7 @@ nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,nohead
 
 目前 `icclz2` 已可成功 build 本地 image：
 
-- `pre6g/llamacpp-cuda118-sm61:qwen25-15b-q4km`
+- `pre6g/llamacpp-cuda118-sm61:gemma4-e2b-q4km`
 
 但 live deployment 仍取決於 image 如何送達 `icclz1`：
 

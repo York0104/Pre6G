@@ -157,7 +157,7 @@ curl -H "Authorization: Bearer <AUTOSCALE_API_TOKEN>" http://127.0.0.1:8000/api/
 
 ### Dashboard access
 
-若沿用 `NodePort`：
+若沿用 legacy `NodePort`：
 
 ```text
 http://<k3s-control-plane-ip>:30080
@@ -165,7 +165,7 @@ http://<k3s-control-plane-ip>:30080
 
 ### API access
 
-API 也會以 `NodePort` 暴露，供 dashboard 瀏覽器端呼叫：
+API 也會以 legacy `NodePort` 暴露，供 `k3s` dashboard 瀏覽器端呼叫：
 
 ```text
 http://<k3s-control-plane-ip>:30081
@@ -174,6 +174,7 @@ http://<k3s-control-plane-ip>:30081
 ## Notes
 
 - `autoscale_api` 已改為優先嘗試 `in-cluster config`，因此在 Pod 內不需要額外掛 `~/.kube/config`。
+- 目前正式使用入口仍建議收斂為 `4174 -> 8000` 的 host-side path；本文件描述的是一般化 `k3s` deployment 與 `30080/30081` fallback。
 - 這版 frontend 不再把 API base / token 硬編進 build 產物；改 `ConfigMap/Secret` 後重建 Pod 即可生效。
 - 兩個 Deployment 都預設使用 `harbor-pull-secret`；若目標 namespace 尚未有這個 secret，請先建立或從既有 namespace 複製。
 - `autoscale-api-rbac.yaml` 已於 `2026-07-02` 補上 `pods/exec` 權限，供 `LLM Serving Lab` 觸發 `vllm bench serve` 與 dedicated benchmark target。

@@ -11,27 +11,15 @@
     "flash_attention": "off",
     "gpu_layers": -1
   },
-  "pascal-throughput": {
-    "description": "Main offline PP/TG throughput baseline",
+  "pascal-continuous": {
+    "description": "Repeated offline throughput benchmark for live progress observation and longer hardware capacity tracking",
     "n_prompt": 512,
     "n_gen": 128,
     "pg_pair": "512,128",
     "n_depth": 0,
     "batch_size": 512,
     "ubatch_size": 128,
-    "repetitions": 5,
-    "flash_attention": "off",
-    "gpu_layers": -1
-  },
-  "pascal-context": {
-    "description": "Throughput with prefilled context",
-    "n_prompt": 512,
-    "n_gen": 128,
-    "pg_pair": "512,128",
-    "n_depth": 1024,
-    "batch_size": 512,
-    "ubatch_size": 128,
-    "repetitions": 5,
+    "repetitions": 24,
     "flash_attention": "off",
     "gpu_layers": -1
   }

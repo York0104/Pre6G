@@ -43,6 +43,11 @@ spec:
             - /bin/sh
             - -lc
             - >
+              if ! command -v ssh >/dev/null 2>&1; then
+              apt-get update &&
+              apt-get install -y --no-install-recommends openssh-client &&
+              rm -rf /var/lib/apt/lists/*;
+              fi &&
               python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
           ports:
             - name: http
@@ -78,6 +83,13 @@ spec:
               readOnly: true
             - name: autoscale-runtime
               mountPath: /workspace/autoscale-source-split/03-shared-api-dashboard/autoscale_api/app/runtime
+            - name: autoscale-runtime-root
+              mountPath: /workspace/autoscale-source-split/03-shared-api-dashboard/autoscale_api/runtime
+            - name: yolo-demo-runtime
+              mountPath: /workspace/autoscale-source-split/02-experiment-layer/experiments_yolo/yolo_demo/runtime
+            - name: ssh-config
+              mountPath: /root/.ssh
+              readOnly: true
       volumes:
         - name: workspace
           hostPath:
@@ -93,6 +105,18 @@ spec:
           hostPath:
             path: /home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/app/runtime
             type: DirectoryOrCreate
+        - name: autoscale-runtime-root
+          hostPath:
+            path: /home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/autoscale_api/runtime
+            type: DirectoryOrCreate
+        - name: yolo-demo-runtime
+          hostPath:
+            path: /home/icclz2/Pre6G/autoscale-source-split/02-experiment-layer/experiments_yolo/yolo_demo/runtime
+            type: DirectoryOrCreate
+        - name: ssh-config
+          hostPath:
+            path: /home/icclz2/.ssh
+            type: Directory
 ---
 apiVersion: v1
 kind: Service

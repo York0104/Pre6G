@@ -20,14 +20,23 @@ Host: `/home/icclz2/Pre6G`
   - `rfsoc4x2-pynq`
   - `openwrt_ap`
 - `k3s` live dashboard / API 已實際部署於 `pre6g-dashboard` namespace：
-  - dashboard: `http://140.113.179.9:30080`
-  - API: `http://140.113.179.9:30081`
+  - dashboard legacy NodePort: `http://140.113.179.9:30080`
+  - API legacy NodePort: `http://140.113.179.9:30081`
 - `Fan-Cycle Experiment` host-side rebuild 已完成：
   - `autoscale_api` 已新增 `fan-cycle` run `status/start/stop`
   - dashboard 頁面已可顯示 runtime state、YOLO demo control、fan-cycle control
   - `autoscale-api.env.example` 已補齊 `PRE6G_EXPERIMENT_*` runtime contract
 
 ## Current Local Runtime
+
+### Formal Entry Points
+
+截至 `2026-07-05`，目前正式使用入口已收斂為：
+
+- dashboard 正式入口：`http://140.113.179.9:4174`
+- host-side `autoscale_api`：`http://140.113.179.9:8000`
+
+`30080` / `30081` 保留為 `k3s` live-hostpath / NodePort 驗證與 fallback，不再視為正式入口。
 
 ### API
 
@@ -142,7 +151,7 @@ kubectl -n pre6g-dashboard logs deploy/cluster-dashboard
   - `openwrt_ap`
 - `GET /api/v1/nodes/status` 已可回傳一般 `k3s` nodes 即時 metrics
 - `GET /api/v1/nodes/status` 已可回傳 `rfsoc4x2-pynq` status
-- `Cluster Monitor` 前端頁面已可透過 `NodePort 30080` 直接使用
+- `Cluster Monitor` 前端頁面已可透過 legacy `NodePort 30080` 直接使用
 - 一般 `k3s` nodes 已不再因缺 `kubectl` 而全部 fallback 成 `metrics_error`
 - external nodes 沒 telemetry 時目前顯示 `OFFLINE`
 
@@ -202,7 +211,7 @@ kubectl -n pre6g-dashboard logs deploy/cluster-dashboard
 4. 套用：
    - `deploy/k3s/live-hostpath/autoscale-api-live.yaml`
    - `deploy/k3s/live-hostpath/cluster-dashboard-live.yaml`
-5. 驗證：
+5. 驗證 legacy NodePort：
    - `http://140.113.179.9:30081/`
    - `http://140.113.179.9:30080`
 
@@ -214,5 +223,5 @@ kubectl -n pre6g-dashboard logs deploy/cluster-dashboard
 - 本輪另補了 user-level systemd service，避免一定要修改 `/etc/systemd/system`。
 - external nodes 若只有 inventory、沒有 telemetry，前端目前會顯示 `OFFLINE`，這是刻意設計，不代表 dashboard 壞掉。
 - `run_local_api.sh` 與 dashboard dev server 是目前最短的重建驗證路徑。
-- 目前已驗證的 `k3s` 正式入口請優先看：
-  - [deploy/k3s/live-hostpath/README.md](deploy/k3s/live-hostpath/README.md)
+- 目前正式使用入口是 `4174 -> 8000` 的 host-side path。
+- [deploy/k3s/live-hostpath/README.md](deploy/k3s/live-hostpath/README.md) 保留作為 `k3s` live-hostpath / NodePort fallback 參考。

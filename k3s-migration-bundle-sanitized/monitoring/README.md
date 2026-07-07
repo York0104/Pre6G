@@ -39,6 +39,9 @@
 - `vllm:kv_cache_usage_perc`
 - `pre6g_llamacpp_offline_benchmark_prompt_tps_mean`
 - `pre6g_llamacpp_offline_benchmark_generation_tps_mean`
+- `pre6g_llamacpp_offline_benchmark_live_prompt_tps`
+- `pre6g_llamacpp_offline_benchmark_live_generation_tps`
+- `pre6g_llamacpp_offline_benchmark_live_pg_tps`
 
 ## llama.cpp Offline Benchmark PromQL
 
@@ -56,16 +59,34 @@ pre6g_llamacpp_offline_benchmark_run_active{runtime="llamacpp", namespace="ai-se
 pre6g_llamacpp_offline_benchmark_prompt_tps_mean{runtime="llamacpp", namespace="ai-serving"}
 ```
 
+### 2b. Live rolling prompt throughput
+
+```promql
+pre6g_llamacpp_offline_benchmark_live_prompt_tps{runtime="llamacpp", namespace="ai-serving"}
+```
+
 ### 3. Latest generation throughput
 
 ```promql
 pre6g_llamacpp_offline_benchmark_generation_tps_mean{runtime="llamacpp", namespace="ai-serving"}
 ```
 
+### 3b. Live rolling generation throughput
+
+```promql
+pre6g_llamacpp_offline_benchmark_live_generation_tps{runtime="llamacpp", namespace="ai-serving"}
+```
+
 ### 4. Latest prompt+generation throughput
 
 ```promql
 pre6g_llamacpp_offline_benchmark_prompt_generation_tps_mean{runtime="llamacpp", namespace="ai-serving"}
+```
+
+### 4b. Live rolling prompt+generation throughput
+
+```promql
+pre6g_llamacpp_offline_benchmark_live_pg_tps{runtime="llamacpp", namespace="ai-serving"}
 ```
 
 ### 5. GPU contention preflight

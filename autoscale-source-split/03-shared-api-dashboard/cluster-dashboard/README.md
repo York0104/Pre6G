@@ -9,6 +9,19 @@
 
 `Fan-Cycle Experiment` 已於 `2026-06-24` 重建為目前實驗室環境可操作的頁面，但仍依賴 `02-experiment-layer` 與 worker-side `gpu-tempctl-lab`，因此目前屬於 host-side verified path，而非通用 `k3s` productized path。
 
+## Formal Entry
+
+目前正式使用方式已收斂為：
+
+- dashboard 正式入口：`http://140.113.179.9:4174`
+- dashboard 實際 API：`http://140.113.179.9:8000`
+
+補充說明：
+
+- `4174` 是正式對外入口
+- `8000` 是目前實際可完整驅動 `Cluster Monitor`、`LLM Serving Lab`、`Fan-Cycle Experiment` 的 host-side `autoscale_api`
+- `30080` / `30081` 僅保留給 `k3s` NodePort / live-hostpath deployment 驗證，不再是正式入口
+
 ## API Dependency
 
 前端依賴 `autoscale_api`：
@@ -42,7 +55,7 @@
   - `Serving Benchmark`
 - `Offline Hardware Benchmark`
 - fixed serving benchmark profiles (`Smoke` / `Continuous`)
-- fixed offline hardware benchmark profiles (`pascal-smoke` / `pascal-throughput` / `pascal-context`)
+- fixed offline hardware benchmark profiles (`Smoke` / `Continuous`)
 - `Recent Runtime History` with filterable recent events
 
 目前這一頁的語意邊界是：
@@ -153,10 +166,16 @@ npm run dev -- --host 0.0.0.0 --port 5174
 http://<CONTROL_PLANE_IP>:5174
 ```
 
-若使用 preview：
+正式預覽 / 常駐入口：
 
 ```text
 http://<CONTROL_PLANE_IP>:4174
+```
+
+本機正式值：
+
+```text
+http://140.113.179.9:4174
 ```
 
 若 host 內建 `node` 太舊，可直接用 repo 目前已驗證可用的 `node22` preview 腳本：
@@ -321,7 +340,7 @@ docker build \
 3. 在 `cluster-dashboard-secret.yaml` 設定 `PRE6G_DASHBOARD_API_TOKEN`。
 4. 套用 [../deploy/k3s/cluster-dashboard-deployment.yaml](../deploy/k3s/cluster-dashboard-deployment.yaml)。
 
-預設 manifest 會以 `NodePort 30080` 暴露 dashboard，並預期 API 可由瀏覽器透過 `NodePort 30081` 連到。
+預設 `k3s` manifest 仍會以 `NodePort 30080` 暴露 dashboard，並預期 API 可由瀏覽器透過 `NodePort 30081` 連到；但這條路徑目前僅作為 `k3s` deployment / fallback 說明，不是正式使用入口。
 
 ## Not In Scope For This Rebuild
 

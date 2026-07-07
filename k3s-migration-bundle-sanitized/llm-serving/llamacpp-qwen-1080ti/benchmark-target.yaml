@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: llamacpp-qwen25-15b-q4km-bench
+  name: llamacpp-gemma4-e2b-q4km-bench
   namespace: ai-serving
   labels:
-    app: llamacpp-qwen25-15b-q4km-bench
+    app: llamacpp-gemma4-e2b-q4km-bench
     pre6g.io/runtime: llamacpp
     pre6g.io/benchmark-mode: offline
 spec:
@@ -13,11 +13,11 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: llamacpp-qwen25-15b-q4km-bench
+      app: llamacpp-gemma4-e2b-q4km-bench
   template:
     metadata:
       labels:
-        app: llamacpp-qwen25-15b-q4km-bench
+        app: llamacpp-gemma4-e2b-q4km-bench
         pre6g.io/runtime: llamacpp
         pre6g.io/benchmark-mode: offline
     spec:
@@ -27,8 +27,8 @@ spec:
       terminationGracePeriodSeconds: 5
       containers:
         - name: llamacpp-bench
-          image: pre6g/llamacpp-cuda118-sm61:qwen25-15b-q4km
-          imagePullPolicy: IfNotPresent
+          image: pre6g/llamacpp-cuda118-sm61:gemma4-e2b-q4km
+          imagePullPolicy: Never
           command: ["/bin/bash", "-lc"]
           args:
             - |
@@ -48,11 +48,11 @@ spec:
               memory: "12Gi"
               nvidia.com/gpu.shared: "1"
           volumeMounts:
-            - name: qwen-gguf
-              mountPath: /models/qwen
+            - name: gemma-gguf
+              mountPath: /models/gemma
               readOnly: true
       volumes:
-        - name: qwen-gguf
+        - name: gemma-gguf
           hostPath:
-            path: /var/lib/pre6g/models/qwen25-15b-gguf
+            path: /var/lib/pre6g/models/gemma-4-e2b-it-gguf
             type: Directory

@@ -308,6 +308,15 @@ class LlamacppOfflineBenchmarkProgressBucket(BaseModel):
     prompt_generation_tps: Optional[float] = None
 
 
+class LlamacppOfflineBenchmarkLiveBucket(BaseModel):
+    sample: int
+    elapsed_seconds: float
+    phase: Optional[str] = None
+    prompt_tps: Optional[float] = None
+    generation_tps: Optional[float] = None
+    prompt_generation_tps: Optional[float] = None
+
+
 class LlamacppOfflineBenchmarkProgressSnapshot(BaseModel):
     elapsed_seconds: float
     completed_steps: int
@@ -315,9 +324,16 @@ class LlamacppOfflineBenchmarkProgressSnapshot(BaseModel):
     current_prompt_tps: Optional[float] = None
     current_generation_tps: Optional[float] = None
     current_prompt_generation_tps: Optional[float] = None
+    latest_completed_step_prompt_tps: Optional[float] = None
+    latest_completed_step_generation_tps: Optional[float] = None
+    latest_completed_step_prompt_generation_tps: Optional[float] = None
     mean_prompt_tps: Optional[float] = None
     mean_generation_tps: Optional[float] = None
     mean_prompt_generation_tps: Optional[float] = None
+    current_phase: Optional[str] = None
+    current_phase_detail: Optional[str] = None
+    live_sample_count: int = 0
+    live_buckets: list[LlamacppOfflineBenchmarkLiveBucket] = Field(default_factory=list)
     buckets: list[LlamacppOfflineBenchmarkProgressBucket] = Field(default_factory=list)
 
 

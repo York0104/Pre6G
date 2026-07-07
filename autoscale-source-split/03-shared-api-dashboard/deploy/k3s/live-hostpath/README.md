@@ -2,6 +2,11 @@
 
 這條路徑是目前 `icclz2` 上可直接落地並驗證的 `k3s` 版本，不依賴 Harbor push。
 
+注意：本文件描述的是 `k3s` live-hostpath / NodePort fallback 路徑，不是目前正式使用入口。正式入口請優先使用：
+
+- dashboard：`http://140.113.179.9:4174`
+- host-side `autoscale_api`：`http://140.113.179.9:8000`
+
 適用情境：
 
 - 需要先把服務正式跑起來
@@ -67,6 +72,20 @@ kubectl apply -f live-hostpath/autoscale-api-live.yaml
 kubectl apply -f live-hostpath/cluster-dashboard-live.yaml
 ```
 
+若要把 `Fan-Cycle Experiment` / `Thermal Demo` 所需的 `PRE6G_EXPERIMENT_*` runtime 與
+`PRE6G_EXPERIMENT_CC_PASSWORD` 一起同步到 live `autoscale-api`，可直接使用：
+
+```bash
+python3 /home/icclz2/Pre6G/autoscale-source-split/03-shared-api-dashboard/deploy/k3s/live-hostpath/sync_live_autoscale_api_env.py
+```
+
+這個腳本會：
+
+- 先讀 `autoscale-source-split/01-monitoring-layer/systemd/autoscale-api.env.example`
+- 再用本機 `autoscale-api.env` 覆蓋真實值
+- 更新 live `autoscale-api-config` / `autoscale-api-secret`
+- 自動重啟 `pre6g-dashboard/autoscale-api`
+
 ## Verify
 
 ```bash
@@ -75,13 +94,13 @@ kubectl -n pre6g-dashboard logs deploy/autoscale-api
 kubectl -n pre6g-dashboard logs deploy/cluster-dashboard
 ```
 
-Open:
+Legacy NodePort dashboard:
 
 ```text
 http://140.113.179.9:30080
 ```
 
-API:
+Legacy NodePort API:
 
 ```text
 http://140.113.179.9:30081
@@ -109,7 +128,7 @@ kubectl -n pre6g-dashboard rollout restart deploy/autoscale-api
 
 ## Current Verified Result
 
-截至 `2026-06-06`，這條路徑已實際驗證：
+截至 `2026-07-05`，這條路徑仍可作為 legacy `k3s` / NodePort fallback，且曾實際驗證：
 
 - `http://140.113.179.9:30080` 可開啟 dashboard
 - `http://140.113.179.9:30081/` 可回 `Pre6G AutoScale API is running`
@@ -121,3 +140,4 @@ kubectl -n pre6g-dashboard rollout restart deploy/autoscale-api
 - `openwrt_ap` 是否有完整 telemetry，仍取決於其 producer / upstream metrics 是否存在
 - `Fan-Cycle Experiment` 頁籤的 API wiring 已於 `2026-06-24` 重建，不應再因舊的路徑對齊錯誤而固定停在 `404`
 - 但若目前使用的是 `k3s` live-hostpath API Pod，仍需另外確認該 Pod 內是否具備 experiment control 所需的 `ssh` 與 private runtime 資產；若沒有，請優先改用 host-side `run_local_api.sh` / user-level systemd 驗證 experiment 頁面
+- 因此目前不建議把 `30080` / `30081` 當作正式入口對外說明。

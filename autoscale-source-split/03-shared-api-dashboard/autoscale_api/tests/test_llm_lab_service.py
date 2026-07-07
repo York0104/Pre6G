@@ -3,6 +3,7 @@ import threading
 import time
 import unittest
 import json
+import io
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -240,10 +241,22 @@ class LlmLabServiceTests(unittest.TestCase):
             "profile_id": "pascal-smoke",
             "status": "running",
             "namespace": "ai-serving",
-            "target_pod": "llamacpp-qwen25-15b-q4km-bench",
+            "target_pod": "llamacpp-gemma4-e2b-q4km-bench",
             "node_name": "icclz1",
             "started_at_ts": 1710000990,
             "completed_at_ts": None,
+            "progress": {
+                "elapsed_seconds": 12.0,
+                "completed_steps": 4,
+                "total_steps": 0,
+                "current_prompt_tps": 3510.1,
+                "current_generation_tps": 158.2,
+                "current_prompt_generation_tps": 612.4,
+                "mean_prompt_tps": 3498.0,
+                "mean_generation_tps": 157.9,
+                "mean_prompt_generation_tps": 605.8,
+                "buckets": [],
+            },
             "result": None,
             "error": None,
         }
@@ -252,21 +265,24 @@ class LlmLabServiceTests(unittest.TestCase):
         self.assertIn("pre6g_llamacpp_offline_benchmark_run_active", metrics)
         self.assertIn('state="running"', metrics)
         self.assertIn("pre6g_llamacpp_offline_benchmark_run_elapsed_seconds", metrics)
+        self.assertIn("pre6g_llamacpp_offline_benchmark_live_prompt_tps", metrics)
+        self.assertIn("pre6g_llamacpp_offline_benchmark_live_generation_tps", metrics)
+        self.assertIn("pre6g_llamacpp_offline_benchmark_live_pg_tps", metrics)
 
     def test_render_prometheus_metrics_for_completed_llamacpp_result(self) -> None:
         service = self._make_service()
-        run_id = "llamacpp-pascal-throughput-run-20260705T010500Z"
+        run_id = "llamacpp-pascal-continuous-run-20260705T010500Z"
         state = {
             "schema": "pre6g.llamacpp_offline_benchmark_run.v1",
             "ts": 1710001100,
             "run_id": run_id,
             "runtime": "llamacpp",
             "benchmark_mode": "offline",
-            "profile": "pascal-throughput",
-            "profile_id": "pascal-throughput",
+            "profile": "pascal-continuous",
+            "profile_id": "pascal-continuous",
             "status": "succeeded",
             "namespace": "ai-serving",
-            "target_pod": "llamacpp-qwen25-15b-q4km-bench",
+            "target_pod": "llamacpp-gemma4-e2b-q4km-bench",
             "node_name": "icclz1",
             "started_at_ts": 1710001089,
             "completed_at_ts": 1710001100,
@@ -542,6 +558,44 @@ class LlmLabServiceTests(unittest.TestCase):
         self.assertEqual(result["prompt_generation_tps_mean"], None)
         self.assertEqual(result["prompt_generation_tps_stddev"], None)
 
+    def test_parse_llamacpp_jsonl_record_maps_live_line(self) -> None:
+        service = self._make_service()
+        line = json.dumps(
+            {
+                "n_prompt": 128,
+                "n_gen": 0,
+                "avg_ts": 1746.758167,
+                "n_batch": 256,
+                "n_ubatch": 128,
+                "n_gpu_layers": -1,
+                "flash_attn": 0,
+            }
+        )
+        result = service._parse_llamacpp_jsonl_record(line)
+        assert result is not None
+        self.assertEqual(result["test"], "pp")
+        self.assertEqual(result["throughput"], 1746.758)
+
+    def test_update_llamacpp_live_stream_progress_appends_live_bucket(self) -> None:
+        service = self._make_service()
+        run_id = "llamacpp-live-run"
+        state = service._build_llamacpp_run_state(
+            run_id=run_id,
+            profile_id="pascal-smoke",
+            profile_config=service.LLAMACPP_OFFLINE_PROFILES["pascal-smoke"],
+        )
+        service._write_run_state(run_id, state)
+        service._update_llamacpp_live_stream_progress(
+            run_id=run_id,
+            started_monotonic=time.monotonic() - 1.0,
+            parsed_line={"test": "pp", "throughput": 1500.0},
+        )
+        snapshot = service.get_llamacpp_offline_run(run_id=run_id)
+        progress = snapshot["progress"]
+        self.assertEqual(progress["current_prompt_tps"], 1500.0)
+        self.assertEqual(progress["live_sample_count"], 1)
+        self.assertEqual(len(progress["live_buckets"]), 1)
+
     def test_parse_llamacpp_benchmark_payload_rejects_malformed_shape(self) -> None:
         service = self._make_service()
         with self.assertRaises(LlmInferenceError) as ctx:
@@ -556,7 +610,7 @@ class LlmLabServiceTests(unittest.TestCase):
         self.assertEqual(processes[0]["pid"], 5791)
         self.assertEqual(processes[0]["used_memory"], "402 MiB")
 
-    def test_start_llamacpp_offline_run_returns_latest_result(self) -> None:
+    def test_start_llamacpp_offline_smoke_run_returns_latest_result(self) -> None:
         service = self._make_service()
         fixture_path = Path(__file__).parent / "fixtures" / "llama_bench_pascal_output.json"
         fixture_stdout = fixture_path.read_text(encoding="utf-8")
@@ -564,9 +618,16 @@ class LlmLabServiceTests(unittest.TestCase):
             service,
             "_run_llamacpp_gpu_preflight",
             return_value=[{"pid": 5791, "process_name": "python3", "used_memory": "402 MiB"}],
-        ), patch("app.services.llm_lab_service.subprocess.run") as mock_run:
-            mock_run.return_value = Mock(returncode=0, stdout=fixture_stdout, stderr="")
-            started = service.start_llamacpp_offline_run(profile="pascal-throughput")
+        ), patch("app.services.llm_lab_service.subprocess.Popen") as mock_popen:
+            def _make_process(*args, **kwargs):
+                mock_process = Mock(returncode=0)
+                mock_process.poll.return_value = 0
+                mock_process.stdout = io.StringIO(fixture_stdout)
+                mock_process.stderr = io.StringIO("")
+                return mock_process
+
+            mock_popen.side_effect = _make_process
+            started = service.start_llamacpp_offline_run(profile="pascal-smoke")
             run_id = started["run_id"]
             deadline = time.time() + 2.0
             snapshot = service.get_llamacpp_offline_run(run_id=run_id)
@@ -579,6 +640,43 @@ class LlmLabServiceTests(unittest.TestCase):
         self.assertTrue(snapshot["result"]["gpu_contended"])
         self.assertEqual(snapshot["result"]["prompt_tps_mean"], 1188.432)
 
+    def test_start_llamacpp_offline_continuous_run_stays_running_until_cancel(self) -> None:
+        service = self._make_service()
+        fixture_path = Path(__file__).parent / "fixtures" / "llama_bench_pascal_output.json"
+        fixture_stdout = fixture_path.read_text(encoding="utf-8")
+        with patch.object(
+            service,
+            "_run_llamacpp_gpu_preflight",
+            return_value=[],
+        ), patch("app.services.llm_lab_service.subprocess.Popen") as mock_popen:
+            def _make_process(*args, **kwargs):
+                mock_process = Mock(returncode=0)
+                mock_process.poll.return_value = 0
+                mock_process.stdout = io.StringIO(fixture_stdout)
+                mock_process.stderr = io.StringIO("")
+                return mock_process
+
+            mock_popen.side_effect = _make_process
+            started = service.start_llamacpp_offline_run(profile="pascal-continuous")
+            run_id = started["run_id"]
+            deadline = time.time() + 1.0
+            snapshot = service.get_llamacpp_offline_run(run_id=run_id)
+            while snapshot["status"] in {"queued"} and time.time() < deadline:
+                time.sleep(0.05)
+                snapshot = service.get_llamacpp_offline_run(run_id=run_id)
+
+            self.assertEqual(snapshot["status"], "running")
+            self.assertEqual(snapshot["profile_id"], "pascal-continuous")
+
+            service.cancel_llamacpp_offline_run(run_id=run_id)
+            deadline = time.time() + 2.0
+            snapshot = service.get_llamacpp_offline_run(run_id=run_id)
+            while snapshot["status"] in {"queued", "running", "cancelling"} and time.time() < deadline:
+                time.sleep(0.05)
+                snapshot = service.get_llamacpp_offline_run(run_id=run_id)
+
+        self.assertIn(snapshot["status"], {"cancelled", "failed", "succeeded"})
+
     def test_start_llamacpp_offline_run_rejects_when_active_run_exists(self) -> None:
         service = self._make_service()
         with service._run_state_lock:
@@ -590,9 +688,13 @@ class LlmLabServiceTests(unittest.TestCase):
     def test_llamacpp_offline_run_marks_failed_on_command_error(self) -> None:
         service = self._make_service()
         with patch.object(service, "_run_llamacpp_gpu_preflight", return_value=[]), patch(
-            "app.services.llm_lab_service.subprocess.run"
-        ) as mock_run:
-            mock_run.return_value = Mock(returncode=2, stdout="", stderr="boom")
+            "app.services.llm_lab_service.subprocess.Popen"
+        ) as mock_popen:
+            mock_process = Mock(returncode=2)
+            mock_process.poll.return_value = 2
+            mock_process.stdout = io.StringIO("")
+            mock_process.stderr = io.StringIO("boom")
+            mock_popen.return_value = mock_process
             started = service.start_llamacpp_offline_run(profile="pascal-smoke")
             run_id = started["run_id"]
             deadline = time.time() + 2.0

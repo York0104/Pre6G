@@ -26,6 +26,19 @@
 
 因此它屬於「已重建、可在現場啟用」，但尚未宣稱為通用 `k3s` productized path。
 
+## Formal Entry Points
+
+目前正式使用入口已收斂為：
+
+- dashboard 正式入口：`http://140.113.179.9:4174`
+- dashboard 實際控制 API：`http://140.113.179.9:8000`
+
+也就是說：
+
+- `4174` 是目前應對外使用的正式 dashboard 入口
+- `8000` 是目前 `Fan-Cycle Experiment` 與 `Thermal Demo` 可完整操作的 host-side `autoscale_api`
+- `30080` / `30081` 只保留為 `k3s` live-hostpath / NodePort 部署紀錄與 fallback，不再作為正式入口描述
+
 ## 目前資料流
 
 `cluster-dashboard` 目前透過 `autoscale_api` 的兩個節點 API 顯示主畫面：
@@ -227,5 +240,6 @@
 
 - 若目標是目前可交付的 `k3s` 監控重建，請優先使用 `autoscale_api/README.md` 與 `cluster-dashboard/README.md`。
 - `Fan-Cycle Experiment` 目前建議優先走 host-side `run_local_api.sh` 或 user-level systemd 的 API 路徑。
+- 目前文件中若提到 `30080` / `30081`，應解讀為 `k3s` NodePort / live-hostpath fallback，而不是正式使用入口。
 - 一般化 `k3s` Pod 內若要完整啟用 experiment control，仍需同時處理 `kubectl`、`ssh`、worker credential 與 private runtime env。
 - 真實 `.env` 未放在本層；請使用 `../current-lab-handoff-private/private-files-to-fill/` 中的 private handoff。

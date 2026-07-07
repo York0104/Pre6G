@@ -165,6 +165,34 @@ pre6g_llamacpp_offline_benchmark_prompt_generation_tps_mean{runtime="llamacpp"}
 pre6g_llamacpp_offline_benchmark_gpu_contended{runtime="llamacpp"}
 ```
 
+`2026-07-06` 補充的 live bridge：
+
+```promql
+pre6g_llamacpp_offline_benchmark_live_prompt_tps{runtime="llamacpp"}
+pre6g_llamacpp_offline_benchmark_live_generation_tps{runtime="llamacpp"}
+pre6g_llamacpp_offline_benchmark_live_pg_tps{runtime="llamacpp"}
+```
+
+定義：
+
+- `live_prompt_tps`
+  - active run 最新完成 step 的 prompt-only throughput observation
+- `live_generation_tps`
+  - active run 最新完成 step 的 generation-only throughput observation
+- `live_pg_tps`
+  - active run 最新完成 step 的 end-to-end PG throughput observation
+
+這三條的用途是：
+
+- 提供 `VictoriaMetrics` / `Grafana` 對齊 active benchmark window
+- 對應 dashboard 的 `Live Rolling Throughput`
+- 來源改為 `llama-bench --progress --output jsonl` 在 active run 內逐段輸出的 live sample
+
+不是：
+
+- token-by-token true streaming metric
+- final `llama-bench pp/tg/pg` result
+
 這讓 `GTX 1080 Ti` 的 offline benchmark 可以和：
 
 - `DCGM_FI_DEV_GPU_UTIL`

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
   Label,
@@ -392,41 +392,6 @@ const BENCHMARK_PROFILES = [
   },
 ] as const;
 
-const OFFLINE_THROUGHPUT_PROFILES = [
-  {
-    id: "pascal-smoke",
-    label: "Smoke",
-    runtime: "llama.cpp CUDA",
-    model: "Qwen2.5-1.5B-Instruct GGUF",
-    promptSource: "Fixed llama-bench profile",
-    nPrompt: 128,
-    nGen: 64,
-    nDepth: 0,
-    batchSize: 256,
-    ubatchSize: 128,
-    repetitions: 3,
-    flashAttention: "off",
-    gpuLayers: "all",
-    runMode: "Fixed repetition-count benchmark",
-  },
-  {
-    id: "pascal-continuous",
-    label: "Continuous",
-    runtime: "llama.cpp CUDA",
-    model: "Qwen2.5-1.5B-Instruct GGUF",
-    promptSource: "Fixed llama-bench profile",
-    nPrompt: 512,
-    nGen: 128,
-    nDepth: 0,
-    batchSize: 512,
-    ubatchSize: 128,
-    repetitions: 24,
-    flashAttention: "off",
-    gpuLayers: "all",
-    runMode: "Repeated offline benchmark with live progress",
-  },
-] as const;
-
 type LlamacppOfflineBenchmarkProfile = {
   profile_id: string;
   display_name: string;
@@ -530,6 +495,15 @@ type LlamacppOfflineBenchmarkProgressBucket = {
   prompt_generation_tps?: number | null;
 };
 
+type LlamacppOfflineBenchmarkLiveBucket = {
+  sample: number;
+  elapsed_seconds: number;
+  phase?: string | null;
+  prompt_tps?: number | null;
+  generation_tps?: number | null;
+  prompt_generation_tps?: number | null;
+};
+
 type LlamacppOfflineBenchmarkProgressSnapshot = {
   elapsed_seconds: number;
   completed_steps: number;
@@ -537,9 +511,16 @@ type LlamacppOfflineBenchmarkProgressSnapshot = {
   current_prompt_tps?: number | null;
   current_generation_tps?: number | null;
   current_prompt_generation_tps?: number | null;
+  latest_completed_step_prompt_tps?: number | null;
+  latest_completed_step_generation_tps?: number | null;
+  latest_completed_step_prompt_generation_tps?: number | null;
   mean_prompt_tps?: number | null;
   mean_generation_tps?: number | null;
   mean_prompt_generation_tps?: number | null;
+  current_phase?: string | null;
+  current_phase_detail?: string | null;
+  live_sample_count?: number;
+  live_buckets?: LlamacppOfflineBenchmarkLiveBucket[];
   buckets: LlamacppOfflineBenchmarkProgressBucket[];
 };
 
@@ -586,10 +567,12 @@ type Health = "healthy" | "degraded" | "offline";
 type ActiveTab = "monitor" | "fan-experiment" | "llm-serving";
 type FanMode =
   | "GPU_DEFAULT"
+  | "FIXED_0"
   | "FIXED_5"
   | "FIXED_15"
   | "FIXED_20"
-  | "FIXED_25";
+  | "FIXED_25"
+  | "GPU_MAX";
 
 type NodeView = {
   inventory: NodeInventory;
@@ -913,37 +896,23 @@ function eventDot(level: ExperimentEvent["level"]): string {
 
 function modeLabel(mode: FanMode): string {
   if (mode === "GPU_DEFAULT") return "GPU_DEFAULT";
-  if (mode === "FIXED_5") return "FIXED_5";
-  if (mode === "FIXED_15") return "FIXED_15";
-  if (mode === "FIXED_20") return "FIXED_20";
-  if (mode === "FIXED_25") return "FIXED_25";
-  return "FIXED_25";
+  if (mode === "FIXED_0") return "GPU_FAULT_0";
+  if (mode === "FIXED_5") return "GPU_Fault_5";
+  if (mode === "FIXED_15") return "GPU_Fault_15";
+  if (mode === "FIXED_20") return "GPU_Fault_20";
+  if (mode === "FIXED_25") return "GPU_Fault_25";
+  if (mode === "GPU_MAX") return "GPU_Cool_Max";
+  return "GPU_Cool_Max";
 }
 
 function modeFanPercent(mode: FanMode, fallbackPercent: number): number {
   if (mode === "GPU_DEFAULT") return fallbackPercent;
+  if (mode === "FIXED_0") return 0;
   if (mode === "FIXED_5") return 5;
   if (mode === "FIXED_15") return 15;
   if (mode === "FIXED_20") return 20;
+  if (mode === "GPU_MAX") return 100;
   return 25;
-}
-
-function humanizePhase(phase?: string): string {
-  if (!phase) return "Waiting";
-  if (phase === "normal_hold") return "Baseline";
-  if (phase === "fault_hold") return "Fault Fan";
-  if (phase === "recovery_wait") return "Recovery";
-  if (phase === "setup") return "Setup";
-  if (phase === "completed") return "Completed";
-  return phase.replaceAll("_", " ");
-}
-
-function formatDelta(value: number, suffix: string, positiveIsGood = false): string {
-  if (!Number.isFinite(value)) return `0${suffix}`;
-  const sign = value > 0 ? "+" : "";
-  const fixed = Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(1);
-  if (positiveIsGood) return `${sign}${fixed}${suffix}`;
-  return `${sign}${fixed}${suffix}`;
 }
 
 function phaseBadgeClass(state: ThermalDemoStep["state"]): string {
@@ -952,27 +921,10 @@ function phaseBadgeClass(state: ThermalDemoStep["state"]): string {
   return "border-slate-700 bg-slate-900/60 text-slate-400";
 }
 
-function getDemoStageLabel(mode: FanMode, yoloRunning: boolean, current: FanCycleCurrentMetrics, config?: FanCycleConfig): string {
-  if (!yoloRunning) return "Ready";
-  if (mode === "GPU_DEFAULT") return "Baseline";
-  if (config && current.gpu_temp_c >= config.fault_temp_target_c) return "Thermal Rise";
-  if (current.sm_clock_mhz <= 1000) return "Clock Drop";
-  return "Fault Fan";
-}
-
-function humanizeRunStatus(status: string): string {
-  if (status === "demo_live") return "Live Demo";
-  if (status === "running") return "Running";
-  if (status === "starting") return "Starting";
-  if (status === "stopping") return "Stopping";
-  if (status === "stopped") return "Stopped";
-  if (status === "idle") return "Idle";
-  if (status === "error") return "Error";
-  return status.replaceAll("_", " ");
-}
-
 function displayFanModeLabel(mode: FanMode): string {
   if (mode === "GPU_DEFAULT") return "Auto Cooling";
+  if (mode === "FIXED_0") return "Fixed 0%";
+  if (mode === "GPU_MAX") return "Max Cooling";
   return modeLabel(mode);
 }
 
@@ -1002,6 +954,21 @@ function runtimeBadge(runtime?: string | null): string {
   if (runtime === "llamacpp") return "llama.cpp";
   if (runtime === "vllm") return "vLLM";
   return runtime || "runtime";
+}
+
+function isOfflineHistoryEvent(item: LlmRunHistoryItem): boolean {
+  return (
+    item.event_type === "offline_throughput_benchmark" ||
+    item.event_type === "llamacpp_offline_benchmark"
+  );
+}
+
+function offlineProfileRunMode(profile?: LlamacppOfflineBenchmarkProfile | null): string {
+  if (!profile) return "N/A";
+  if (profile.profile_id === "pascal-continuous") {
+    return "Repeated offline benchmark with live progress";
+  }
+  return "Fixed repetition-count benchmark";
 }
 
 function observationLine(label: string, value: string) {
@@ -1048,10 +1015,12 @@ function SummaryCard({
   label,
   value,
   tone = "blue",
+  compact = false,
 }: {
   label: string;
   value: string;
   tone?: "blue" | "green" | "orange" | "gray";
+  compact?: boolean;
 }) {
   const toneClass =
     tone === "green"
@@ -1063,18 +1032,15 @@ function SummaryCard({
           : "text-sky-300 border-sky-500/30";
 
   return (
-    <div className={`rounded-2xl border bg-slate-950/70 p-4 shadow-lg ${toneClass}`}>
+    <div
+      className={`rounded-2xl border bg-slate-950/70 shadow-lg ${toneClass} ${
+        compact ? "p-3" : "p-4"
+      }`}
+    >
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-2 font-mono text-2xl font-semibold">{value}</div>
+      <div className={`mt-2 font-mono font-semibold ${compact ? "text-xl" : "text-2xl"}`}>{value}</div>
     </div>
   );
-}
-
-function formatMaybeMs(value?: number | null): string {
-  if (value === undefined || value === null || Number.isNaN(value)) {
-    return "N/A";
-  }
-  return `${value.toFixed(1)} ms`;
 }
 
 function SectionCard({
@@ -1168,6 +1134,7 @@ function MultiLineChart({
   unit,
   xKey = "time",
   height = 180,
+  yDomain,
 }: {
   title: string;
   data: ChartPoint[];
@@ -1179,6 +1146,7 @@ function MultiLineChart({
   unit?: string;
   xKey?: string;
   height?: number;
+  yDomain?: [number | "auto", number | "auto"];
 }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
@@ -1204,6 +1172,7 @@ function MultiLineChart({
               <YAxis
                 tick={{ fill: "#94a3b8", fontSize: 10 }}
                 width={42}
+                domain={yDomain}
               />
               <Tooltip
                 contentStyle={{
@@ -1341,15 +1310,9 @@ function LlmServingLabPage({
   const [smokeLoading, setSmokeLoading] = useState(false);
   const [smokeError, setSmokeError] = useState("");
   const [smokeResult, setSmokeResult] = useState<LlmSmokeBenchmarkResponse | null>(null);
-  const [offlineLoading, setOfflineLoading] = useState(false);
-  const [offlineError, setOfflineError] = useState("");
-  const [, setOfflineProfiles] = useState<LlamacppOfflineBenchmarkProfile[]>([]);
-  const [offlineLatestRun, setOfflineLatestRun] = useState<LlamacppOfflineBenchmarkRunStateResponse | null>(null);
-  const [offlineActiveRunId, setOfflineActiveRunId] = useState("");
   const [activeBenchmarkRun, setActiveBenchmarkRun] = useState<LlmBenchmarkRunStatusResponse | null>(null);
   const [activeBenchmarkRunId, setActiveBenchmarkRunId] = useState("");
   const [benchmarkProfileId, setBenchmarkProfileId] = useState<(typeof BENCHMARK_PROFILES)[number]["id"]>("smoke");
-  const [offlineProfileId, setOfflineProfileId] = useState<(typeof OFFLINE_THROUGHPUT_PROFILES)[number]["id"]>("pascal-smoke");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [runHistory, setRunHistory] = useState<LlmRunHistoryItem[]>([]);
@@ -1367,13 +1330,6 @@ function LlmServingLabPage({
   const primaryDetail = primaryKey ? workloadDetails[primaryKey] || null : null;
   const selectedBenchmarkProfile =
     BENCHMARK_PROFILES.find((profile) => profile.id === benchmarkProfileId) || BENCHMARK_PROFILES[0];
-  const selectedOfflineProfile =
-    OFFLINE_THROUGHPUT_PROFILES.find((profile) => profile.id === offlineProfileId) || OFFLINE_THROUGHPUT_PROFILES[0];
-  const offlineLatestResult = offlineLatestRun?.result || null;
-  const offlineRunInProgress =
-    offlineLatestRun?.status === "queued" ||
-    offlineLatestRun?.status === "running" ||
-    offlineLatestRun?.status === "cancelling";
   const shouldHideContinuousPercentiles = smokeResult?.profile_id === "continuous";
   const filteredRunHistory = runHistory.filter((item) => {
     if (historyFilter === "all") return true;
@@ -1476,96 +1432,6 @@ function LlmServingLabPage({
     }
   }
 
-  async function loadOfflineProfiles() {
-    try {
-      const response = await fetchJson<LlamacppOfflineBenchmarkProfilesResponse>(
-        "/api/v1/llm-lab/llamacpp/offline-benchmark/profiles",
-      );
-      setOfflineProfiles(response.profiles || []);
-    } catch (error) {
-      setOfflineError(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  async function loadOfflineLatestRun() {
-    try {
-      const response = await fetchJson<LlamacppOfflineBenchmarkRunStateResponse>(
-        "/api/v1/llm-lab/llamacpp/offline-benchmark/runs/latest",
-      );
-      setOfflineLatestRun(response);
-      if (
-        response.status === "queued" ||
-        response.status === "running" ||
-        response.status === "cancelling"
-      ) {
-        setOfflineActiveRunId(response.run_id);
-      } else if (offlineActiveRunId === response.run_id) {
-        setOfflineActiveRunId("");
-      }
-      return response;
-    } catch (error) {
-      if (!isNotFoundError(error)) {
-        setOfflineError(error instanceof Error ? error.message : String(error));
-      }
-      return null;
-    }
-  }
-
-  async function loadOfflineRun(runId: string) {
-    try {
-      const response = await fetchJson<LlamacppOfflineBenchmarkRunStateResponse>(
-        `/api/v1/llm-lab/llamacpp/offline-benchmark/runs/${encodeURIComponent(runId)}`,
-      );
-      setOfflineLatestRun(response);
-      if (
-        response.status !== "queued" &&
-        response.status !== "running" &&
-        response.status !== "cancelling"
-      ) {
-        setOfflineActiveRunId("");
-        await loadRunHistory(primaryWorkload?.namespace);
-      }
-      return response;
-    } catch (error) {
-      setOfflineError(error instanceof Error ? error.message : String(error));
-      return null;
-    }
-  }
-
-  async function startOfflineThroughputBenchmark() {
-    setOfflineLoading(true);
-    setOfflineError("");
-    setOfflineLatestRun(null);
-    try {
-      const response = await postJsonBody<LlamacppOfflineBenchmarkRunStartResponse>(
-        "/api/v1/llm-lab/llamacpp/offline-benchmark/runs",
-        {
-          profile: offlineProfileId,
-        } satisfies LlamacppOfflineBenchmarkRunRequest,
-      );
-      setOfflineActiveRunId(response.run_id);
-      await loadOfflineRun(response.run_id);
-    } catch (error) {
-      setOfflineError(error instanceof Error ? error.message : "Failed to run offline hardware benchmark.");
-    } finally {
-      setOfflineLoading(false);
-    }
-  }
-
-  async function cancelOfflineThroughputBenchmark() {
-    if (!offlineActiveRunId) return;
-    setOfflineError("");
-    try {
-      await postJsonBody<LlamacppOfflineBenchmarkRunCancelResponse>(
-        `/api/v1/llm-lab/llamacpp/offline-benchmark/runs/${encodeURIComponent(offlineActiveRunId)}/cancel`,
-        {},
-      );
-      await loadOfflineRun(offlineActiveRunId);
-    } catch (error) {
-      setOfflineError(error instanceof Error ? error.message : "Failed to cancel offline benchmark.");
-    }
-  }
-
   async function loadRunHistory(namespace?: string, workload?: string) {
     setHistoryLoading(true);
     setHistoryError("");
@@ -1586,11 +1452,6 @@ function LlmServingLabPage({
   }
 
   useEffect(() => {
-    loadOfflineProfiles().catch(() => undefined);
-    loadOfflineLatestRun().catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
     if (!primaryWorkload) {
       loadRunHistory().catch(() => undefined);
       return;
@@ -1607,21 +1468,12 @@ function LlmServingLabPage({
     return () => window.clearInterval(timer);
   }, [activeBenchmarkRunId]);
 
-  useEffect(() => {
-    if (!offlineActiveRunId) return;
-    const timer = window.setInterval(() => {
-      loadOfflineRun(offlineActiveRunId).catch(() => undefined);
-    }, 2000);
-    loadOfflineRun(offlineActiveRunId).catch(() => undefined);
-    return () => window.clearInterval(timer);
-  }, [offlineActiveRunId]);
-
   return (
     <section className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-slate-100">LLM Serving Lab</h2>
         <p className="mt-1 text-sm text-slate-400">
-          vLLM workload-level observation
+          Runtime observation and controlled benchmarking across vLLM serving and llama.cpp offline execution
         </p>
         {sortedWorkloads.length > 1 && primaryWorkload && (
           <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-sm text-amber-100">
@@ -1640,7 +1492,7 @@ function LlmServingLabPage({
             Observation
           </h3>
           <p className="mt-1 text-sm text-slate-400">
-            Runtime and Kubernetes observation for the active 4090 vLLM service and 1080 Ti llama.cpp benchmark target.
+            Runtime and Kubernetes observation for the active vLLM serving workload.
           </p>
         </div>
       </div>
@@ -1669,22 +1521,12 @@ function LlmServingLabPage({
                         key={`${primaryDetail.identity.namespace}/${primaryDetail.identity.workload}/${replica.pod}`}
                         className="border-t border-slate-800 text-slate-200"
                       >
-                            <td className="px-3 py-3 font-mono text-xs">{replica.pod}</td>
-                            <td className="px-3 py-3">{replica.node_name || "N/A"}</td>
-                            <td className="px-3 py-3">{replica.pod_phase || "Unknown"}</td>
-                            <td className="px-3 py-3">{formatReadyCondition(replica.ready_condition)}</td>
-                          </tr>
-                        ))}
-                    <tr className="border-t border-slate-800 text-slate-200">
-                      <td className="px-3 py-3 font-mono text-xs">
-                        {offlineLatestRun?.target_pod || "llamacpp-qwen25-15b-q4km-bench"}
-                      </td>
-                      <td className="px-3 py-3">
-                        {offlineLatestResult?.runtime_overview.node_name || "icclz1"}
-                      </td>
-                      <td className="px-3 py-3">Running</td>
-                      <td className="px-3 py-3">True</td>
-                    </tr>
+                        <td className="px-3 py-3 font-mono text-xs">{replica.pod}</td>
+                        <td className="px-3 py-3">{replica.node_name || "N/A"}</td>
+                        <td className="px-3 py-3">{replica.pod_phase || "Unknown"}</td>
+                        <td className="px-3 py-3">{formatReadyCondition(replica.ready_condition)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -1931,7 +1773,7 @@ function LlmServingLabPage({
                   {activeBenchmarkRun ? (
                     <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
                       <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">
-                        Live Run Progress
+                        Live Benchmark Progress
                       </div>
                       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         <SummaryCard
@@ -1946,12 +1788,12 @@ function LlmServingLabPage({
                           }
                         />
                         <SummaryCard
-                          label="Current Prompt TPS"
+                          label="Current Prompt-only TPS"
                           value={`${activeBenchmarkRun.progress.current_prompt_tps.toFixed(1)} tok/s`}
                           tone="blue"
                         />
                         <SummaryCard
-                          label="Current Gen TPS"
+                          label="Current Generation-only TPS"
                           value={`${activeBenchmarkRun.progress.current_generation_tps.toFixed(1)} tok/s`}
                           tone="blue"
                         />
@@ -2202,368 +2044,6 @@ function LlmServingLabPage({
         </SectionCard>
       )}
 
-      <SectionCard title="Offline Hardware Benchmark">
-        <div className="mb-4">
-          <div className="text-sm text-slate-300">llama.cpp · GTX 1080 Ti · Pascal SM61</div>
-          <div className="mt-1 text-sm text-slate-500">
-            Offline hardware throughput view. This does not use vLLM live queue or KV cache semantics.
-          </div>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
-          <div className="space-y-4">
-            <label className="block text-sm text-slate-300">
-              <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
-                Fixed Benchmark Profile
-              </span>
-              <select
-                value={offlineProfileId}
-                onChange={(event) =>
-                  setOfflineProfileId(event.target.value as (typeof OFFLINE_THROUGHPUT_PROFILES)[number]["id"])
-                }
-                disabled={offlineLoading || !!offlineActiveRunId}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-sky-500/60 disabled:cursor-not-allowed disabled:text-slate-500"
-              >
-                {OFFLINE_THROUGHPUT_PROFILES.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-              <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
-                Selected Profile
-              </div>
-              <div className="space-y-2">
-                {observationLine("Profile", selectedOfflineProfile.label)}
-                {observationLine("Benchmark Engine", "llama-bench")}
-                {observationLine("Prompt Tokens", String(selectedOfflineProfile.nPrompt))}
-                {observationLine("Generation Tokens", String(selectedOfflineProfile.nGen))}
-                {observationLine("Context Depth", String(selectedOfflineProfile.nDepth))}
-                {observationLine("Batch Size", String(selectedOfflineProfile.batchSize))}
-                {observationLine("Repetitions", String(selectedOfflineProfile.repetitions))}
-                {observationLine("Run Mode", selectedOfflineProfile.runMode)}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                startOfflineThroughputBenchmark().catch(() => undefined);
-              }}
-              disabled={offlineLoading || !!offlineActiveRunId}
-              className={`inline-flex items-center rounded-full border px-5 py-2.5 text-sm font-medium transition ${
-                offlineLoading || !!offlineActiveRunId
-                  ? "cursor-not-allowed border-slate-700 bg-slate-900/60 text-slate-500"
-                  : "border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-100 hover:border-fuchsia-400"
-              }`}
-            >
-              {offlineLoading || !!offlineActiveRunId ? "Running Offline Benchmark..." : "Run Offline Benchmark"}
-            </button>
-            {offlineActiveRunId && selectedOfflineProfile.id === "pascal-continuous" ? (
-              <button
-                type="button"
-                onClick={() => {
-                  cancelOfflineThroughputBenchmark().catch(() => undefined);
-                }}
-                className="ml-3 inline-flex items-center rounded-full border border-rose-500/40 bg-rose-500/10 px-5 py-2.5 text-sm font-medium text-rose-100 transition hover:border-rose-400"
-              >
-                Cancel Run
-              </button>
-            ) : null}
-          </div>
-
-          <div className="space-y-4">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
-              {!offlineLatestRun && !offlineError ? (
-                <div className="text-slate-400">
-                  Runs fixed `llama-bench` Pascal SM61 profiles on the dedicated GTX 1080 Ti target pod.
-                </div>
-              ) : offlineError ? (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
-                  {offlineError}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {offlineLatestRun && offlineRunInProgress && offlineLatestRun.progress ? (
-                    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
-                      <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">
-                        Live Run Progress
-                      </div>
-                      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <SummaryCard
-                          label="Status"
-                          value={offlineLatestRun.status}
-                          tone={
-                            offlineLatestRun.status === "running"
-                              ? "green"
-                              : offlineLatestRun.status === "cancelling"
-                                ? "orange"
-                                : "blue"
-                          }
-                        />
-                        <SummaryCard
-                          label="Current Prompt TPS"
-                          value={
-                            offlineLatestRun.progress.current_prompt_tps !== undefined &&
-                            offlineLatestRun.progress.current_prompt_tps !== null
-                              ? `${offlineLatestRun.progress.current_prompt_tps.toFixed(1)} tok/s`
-                              : "N/A"
-                          }
-                          tone="blue"
-                        />
-                        <SummaryCard
-                          label="Current Gen TPS"
-                          value={
-                            offlineLatestRun.progress.current_generation_tps !== undefined &&
-                            offlineLatestRun.progress.current_generation_tps !== null
-                              ? `${offlineLatestRun.progress.current_generation_tps.toFixed(1)} tok/s`
-                              : "N/A"
-                          }
-                          tone="blue"
-                        />
-                        <SummaryCard
-                          label="Current Prompt+Gen TPS"
-                          value={
-                            offlineLatestRun.progress.current_prompt_generation_tps !== undefined &&
-                            offlineLatestRun.progress.current_prompt_generation_tps !== null
-                              ? `${offlineLatestRun.progress.current_prompt_generation_tps.toFixed(1)} tok/s`
-                              : "N/A"
-                          }
-                          tone="green"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        {observationLine("Active Run ID", offlineLatestRun.run_id)}
-                        {observationLine("Elapsed", `${offlineLatestRun.progress.elapsed_seconds.toFixed(1)} sec`)}
-                        {observationLine(
-                          "Completed Steps",
-                          `${offlineLatestRun.progress.completed_steps}/${offlineLatestRun.progress.total_steps}`,
-                        )}
-                        {observationLine(
-                          "Mean Prompt TPS",
-                          offlineLatestRun.progress.mean_prompt_tps !== undefined &&
-                            offlineLatestRun.progress.mean_prompt_tps !== null
-                            ? `${offlineLatestRun.progress.mean_prompt_tps.toFixed(1)} tok/s`
-                            : "N/A",
-                        )}
-                        {observationLine(
-                          "Mean Gen TPS",
-                          offlineLatestRun.progress.mean_generation_tps !== undefined &&
-                            offlineLatestRun.progress.mean_generation_tps !== null
-                            ? `${offlineLatestRun.progress.mean_generation_tps.toFixed(1)} tok/s`
-                            : "N/A",
-                        )}
-                        {observationLine(
-                          "Mean Prompt+Gen TPS",
-                          offlineLatestRun.progress.mean_prompt_generation_tps !== undefined &&
-                            offlineLatestRun.progress.mean_prompt_generation_tps !== null
-                            ? `${offlineLatestRun.progress.mean_prompt_generation_tps.toFixed(1)} tok/s`
-                            : "N/A",
-                        )}
-                      </div>
-                      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-                        <div className="mb-3 text-sm font-medium text-slate-200">
-                          Per-Step Throughput
-                        </div>
-                        <div className="h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={offlineLatestRun.progress.buckets}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                              <XAxis dataKey="step" tick={{ fill: "#94a3b8", fontSize: 12 }}>
-                                <Label
-                                  value="Repetition Step"
-                                  position="insideBottom"
-                                  offset={-4}
-                                  fill="#94a3b8"
-                                  fontSize={12}
-                                />
-                              </XAxis>
-                              <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
-                                <Label
-                                  value="Throughput (tokens/s)"
-                                  angle={-90}
-                                  position="insideLeft"
-                                  fill="#94a3b8"
-                                  fontSize={12}
-                                  style={{ textAnchor: "middle" }}
-                                />
-                              </YAxis>
-                              <Tooltip />
-                              <Line
-                                type="monotone"
-                                dataKey="prompt_tps"
-                                stroke="#38bdf8"
-                                strokeWidth={2}
-                                dot={false}
-                                name="Prompt TPS"
-                              />
-                              <Line
-                                type="monotone"
-                                dataKey="generation_tps"
-                                stroke="#34d399"
-                                strokeWidth={2}
-                                dot={false}
-                                name="Generation TPS"
-                              />
-                              <Line
-                                type="monotone"
-                                dataKey="prompt_generation_tps"
-                                stroke="#f59e0b"
-                                strokeWidth={2}
-                                dot={false}
-                                name="Prompt + Generation TPS"
-                              />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  {!offlineRunInProgress ? (
-                    <>
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Latest Result</div>
-                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <SummaryCard
-                          label="Status"
-                          value={offlineLatestRun?.status || "N/A"}
-                          tone={
-                            offlineLatestRun?.status === "succeeded"
-                              ? "green"
-                              : offlineLatestRun?.status === "failed" || offlineLatestRun?.status === "cancelled"
-                                ? "orange"
-                                : "blue"
-                          }
-                        />
-                        <SummaryCard
-                          label="Prompt TPS"
-                          value={
-                            offlineLatestResult?.prompt_tps_mean !== undefined &&
-                            offlineLatestResult?.prompt_tps_mean !== null
-                              ? `${offlineLatestResult.prompt_tps_mean.toFixed(1)} tok/s`
-                              : "N/A"
-                          }
-                          tone="blue"
-                        />
-                        <SummaryCard
-                          label="Generation TPS"
-                          value={
-                            offlineLatestResult?.generation_tps_mean !== undefined &&
-                            offlineLatestResult?.generation_tps_mean !== null
-                              ? `${offlineLatestResult.generation_tps_mean.toFixed(1)} tok/s`
-                              : "N/A"
-                          }
-                          tone="blue"
-                        />
-                        <SummaryCard
-                          label="Prompt + Generation TPS"
-                          value={
-                            offlineLatestResult?.prompt_generation_tps_mean !== undefined &&
-                            offlineLatestResult?.prompt_generation_tps_mean !== null
-                              ? `${offlineLatestResult.prompt_generation_tps_mean.toFixed(1)} tok/s`
-                              : "N/A"
-                          }
-                          tone="green"
-                        />
-                      </div>
-                      {offlineLatestRun?.progress?.buckets?.length ? (
-                        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-                          <div className="mb-3 text-sm font-medium text-slate-200">
-                            Per-Step Throughput
-                          </div>
-                          <div className="h-64">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <LineChart data={offlineLatestRun.progress.buckets}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                                <XAxis dataKey="step" tick={{ fill: "#94a3b8", fontSize: 12 }}>
-                                  <Label
-                                    value="Repetition Step"
-                                    position="insideBottom"
-                                    offset={-4}
-                                    fill="#94a3b8"
-                                    fontSize={12}
-                                  />
-                                </XAxis>
-                                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
-                                  <Label
-                                    value="Throughput (tokens/s)"
-                                    angle={-90}
-                                    position="insideLeft"
-                                    fill="#94a3b8"
-                                    fontSize={12}
-                                    style={{ textAnchor: "middle" }}
-                                  />
-                                </YAxis>
-                                <Tooltip />
-                                <Line
-                                  type="monotone"
-                                  dataKey="prompt_tps"
-                                  stroke="#38bdf8"
-                                  strokeWidth={2}
-                                  dot={false}
-                                  name="Prompt TPS"
-                                />
-                                <Line
-                                  type="monotone"
-                                  dataKey="generation_tps"
-                                  stroke="#34d399"
-                                  strokeWidth={2}
-                                  dot={false}
-                                  name="Generation TPS"
-                                />
-                                <Line
-                                  type="monotone"
-                                  dataKey="prompt_generation_tps"
-                                  stroke="#f59e0b"
-                                  strokeWidth={2}
-                                  dot={false}
-                                  name="Prompt + Generation TPS"
-                                />
-                              </LineChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </div>
-                      ) : null}
-                      <div className="space-y-2">
-                        {observationLine("Profile", offlineLatestRun?.profile || "N/A")}
-                        {observationLine("Run ID", offlineLatestRun?.run_id || "N/A")}
-                        {observationLine(
-                          "Observed At",
-                          formatObservedTimestamp(offlineLatestResult?.observed_at_ts),
-                        )}
-                        {observationLine(
-                          "Result Freshness",
-                          formatResultFreshnessFromTs(offlineLatestResult?.completed_at_ts),
-                        )}
-                        {observationLine(
-                          "GPU Preflight",
-                          offlineLatestResult?.gpu_preflight_status || "N/A",
-                        )}
-                        {observationLine(
-                          "Run Duration",
-                          offlineLatestResult?.duration_seconds !== undefined &&
-                            offlineLatestResult?.duration_seconds !== null
-                            ? `${offlineLatestResult.duration_seconds.toFixed(3)} sec`
-                            : "N/A",
-                        )}
-                      </div>
-                      {offlineLatestResult?.preflight_warning ? (
-                        <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
-                          {offlineLatestResult.preflight_warning}
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                </div>
-              )}
-            </div>
-
-          </div>
-        </div>
-      </SectionCard>
-
       {primaryWorkload && (
         <SectionCard title="Recent Runtime History">
           <div className="mb-4 text-sm text-slate-400">
@@ -2614,22 +2094,27 @@ function LlmServingLabPage({
                   key={`${item.ts}-${item.event_type}-${item.run_id || item.prompt_sha256 || "entry"}`}
                   className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm"
                 >
+                  {(() => {
+                    const isInference = item.event_type === "single_inference";
+                    const isOffline = isOfflineHistoryEvent(item);
+                    return (
+                      <>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <span
                         className={`rounded-full border px-2 py-0.5 text-[11px] uppercase tracking-wide ${
-                          item.event_type === "single_inference"
+                          isInference
                             ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
                             : "border-orange-500/30 bg-orange-500/10 text-orange-200"
                         }`}
                       >
-                        {item.event_type === "single_inference" ? "Inference" : "Benchmark"}
+                        {isInference ? "Inference" : "Benchmark"}
                       </span>
                       <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-300">
                         {runtimeBadge(item.runtime)}
                       </span>
                       <div className="font-medium text-slate-100">
-                        {item.event_type === "single_inference"
+                        {isInference
                           ? "Single Inference"
                           : item.profile || "Benchmark"}
                       </div>
@@ -2645,36 +2130,62 @@ function LlmServingLabPage({
                     </div>
                     <div className="rounded-lg border border-slate-800 bg-slate-950/55 px-3 py-2">
                       <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                        {item.event_type === "single_inference" ? "Latency" : "Mean Latency"}
+                        {isInference
+                          ? "Latency"
+                          : isOffline
+                            ? "Prompt TPS"
+                            : "Mean Latency"}
                       </div>
                       <div className="mt-1 text-sm text-slate-100">
-                        {item.event_type === "single_inference"
+                        {isInference
                           ? item.latency_seconds !== undefined && item.latency_seconds !== null
                             ? `${item.latency_seconds.toFixed(3)} sec`
                             : "N/A"
-                          : item.mean_latency_seconds !== undefined && item.mean_latency_seconds !== null
+                          : isOffline
+                            ? item.prompt_tps_mean !== undefined && item.prompt_tps_mean !== null
+                              ? `${item.prompt_tps_mean.toFixed(3)} tok/s`
+                              : "N/A"
+                            : item.mean_latency_seconds !== undefined && item.mean_latency_seconds !== null
                             ? `${item.mean_latency_seconds.toFixed(3)} sec`
                             : "N/A"}
                       </div>
                     </div>
                     <div className="rounded-lg border border-slate-800 bg-slate-950/55 px-3 py-2">
                       <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                        {item.event_type === "single_inference" ? "Tokens" : "Requests"}
+                        {isInference
+                          ? "Tokens"
+                          : isOffline
+                            ? "Generation TPS"
+                            : "Requests"}
                       </div>
                       <div className="mt-1 text-sm text-slate-100">
-                        {item.event_type === "single_inference"
+                        {isInference
                           ? `${item.total_tokens ?? "N/A"} total`
-                          : `${item.completed_requests ?? 0}/${item.request_count ?? 0}`}
+                          : isOffline
+                            ? item.generation_tps_mean !== undefined && item.generation_tps_mean !== null
+                              ? `${item.generation_tps_mean.toFixed(3)} tok/s`
+                              : "N/A"
+                            : `${item.completed_requests ?? 0}/${item.request_count ?? 0}`}
                       </div>
                     </div>
                     <div className="rounded-lg border border-slate-800 bg-slate-950/55 px-3 py-2">
                       <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                        {item.event_type === "single_inference" ? "Finish Reason" : "Profile"}
+                        {isInference
+                          ? "Finish Reason"
+                          : isOffline
+                            ? "GPU Preflight"
+                            : "Profile"}
                       </div>
                       <div className="mt-1 text-sm text-slate-100">
-                        {item.event_type === "single_inference"
+                        {isInference
                           ? item.finish_reason || "N/A"
-                          : item.profile || "N/A"}
+                          : isOffline
+                            ? item.gpu_contended === null || item.gpu_contended === undefined
+                              ? "N/A"
+                              : item.gpu_contended
+                                ? "Contended"
+                                : "Idle"
+                            : item.profile || "N/A"}
                       </div>
                     </div>
                   </div>
@@ -2682,20 +2193,25 @@ function LlmServingLabPage({
                     <div className="space-y-2">
                       {observationLine("Workload", `${item.namespace}/${item.workload}`)}
                       {item.run_id ? observationLine("Run ID", item.run_id) : null}
-                      {item.event_type === "single_inference"
+                      {isInference
                         ? observationLine(
                             "Latency",
                             item.latency_seconds !== undefined && item.latency_seconds !== null
                               ? `${item.latency_seconds.toFixed(3)} sec`
                               : "N/A",
                           )
-                        : observationLine(
+                        : isOffline
+                          ? observationLine(
+                              "Observed At",
+                              item.observed_at_ts ? formatObservedTimestamp(item.observed_at_ts) : "N/A",
+                            )
+                          : observationLine(
                             "Profile ID",
                             item.profile_id || "N/A",
                           )}
                     </div>
                     <div className="space-y-2">
-                      {item.event_type === "single_inference" ? (
+                      {isInference ? (
                         <>
                           {observationLine(
                             "Prompt Chars",
@@ -2708,6 +2224,34 @@ function LlmServingLabPage({
                           {observationLine("Prompt Tokens", item.prompt_tokens?.toString() || "N/A")}
                           {observationLine("Completion Tokens", item.completion_tokens?.toString() || "N/A")}
                           {observationLine("Finish Reason", item.finish_reason || "N/A")}
+                        </>
+                      ) : isOffline ? (
+                        <>
+                          {observationLine(
+                            "End-to-End PG TPS",
+                            item.prompt_generation_tps_mean !== undefined &&
+                              item.prompt_generation_tps_mean !== null
+                              ? `${item.prompt_generation_tps_mean.toFixed(3)} tok/s`
+                              : "N/A",
+                          )}
+                          {observationLine(
+                            "Run Duration",
+                            item.duration_seconds !== undefined && item.duration_seconds !== null
+                              ? `${item.duration_seconds.toFixed(3)} sec`
+                              : "N/A",
+                          )}
+                          {observationLine(
+                            "Prompt TPS Stddev",
+                            item.prompt_tps_stddev !== undefined && item.prompt_tps_stddev !== null
+                              ? `${item.prompt_tps_stddev.toFixed(3)} tok/s`
+                              : "N/A",
+                          )}
+                          {observationLine(
+                            "Generation TPS Stddev",
+                            item.generation_tps_stddev !== undefined && item.generation_tps_stddev !== null
+                              ? `${item.generation_tps_stddev.toFixed(3)} tok/s`
+                              : "N/A",
+                          )}
                         </>
                       ) : (
                         <>
@@ -2786,6 +2330,9 @@ function LlmServingLabPage({
                       )}
                     </div>
                   </div>
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -2793,6 +2340,368 @@ function LlmServingLabPage({
         </SectionCard>
       )}
     </section>
+  );
+}
+
+function OfflineHardwareBenchmarkSection() {
+  const [offlineLoading, setOfflineLoading] = useState(false);
+  const [offlineError, setOfflineError] = useState("");
+  const [offlineProfiles, setOfflineProfiles] = useState<LlamacppOfflineBenchmarkProfile[]>([]);
+  const [offlineLatestRun, setOfflineLatestRun] = useState<LlamacppOfflineBenchmarkRunStateResponse | null>(null);
+  const [offlineActiveRunId, setOfflineActiveRunId] = useState("");
+  const [offlineProfileId, setOfflineProfileId] = useState("pascal-smoke");
+
+  const selectedOfflineProfile =
+    offlineProfiles.find((profile) => profile.profile_id === offlineProfileId) || offlineProfiles[0] || null;
+  const offlineLatestResult = offlineLatestRun?.result || null;
+  const offlineRunInProgress =
+    offlineLatestRun?.status === "queued" ||
+    offlineLatestRun?.status === "running" ||
+    offlineLatestRun?.status === "cancelling";
+
+  async function loadOfflineProfiles() {
+    const response = await fetchJson<LlamacppOfflineBenchmarkProfilesResponse>(
+      "/api/v1/llm-lab/llamacpp/offline-benchmark/profiles",
+    );
+    setOfflineProfiles(response.profiles || []);
+    if (!offlineProfileId && response.profiles?.[0]?.profile_id) {
+      setOfflineProfileId(response.profiles[0].profile_id);
+    }
+  }
+
+  async function loadOfflineLatestRun() {
+    const response = await fetchJson<LlamacppOfflineBenchmarkRunStateResponse>(
+      "/api/v1/llm-lab/llamacpp/offline-benchmark/runs/latest",
+    );
+    setOfflineLatestRun(response);
+    if (response.status === "queued" || response.status === "running" || response.status === "cancelling") {
+      setOfflineActiveRunId(response.run_id);
+    } else if (offlineActiveRunId === response.run_id) {
+      setOfflineActiveRunId("");
+    }
+    return response;
+  }
+
+  async function loadOfflineRun(runId: string) {
+    const response = await fetchJson<LlamacppOfflineBenchmarkRunStateResponse>(
+      `/api/v1/llm-lab/llamacpp/offline-benchmark/runs/${encodeURIComponent(runId)}`,
+    );
+    setOfflineLatestRun(response);
+    if (response.status !== "queued" && response.status !== "running" && response.status !== "cancelling") {
+      setOfflineActiveRunId("");
+    }
+    return response;
+  }
+
+  async function startOfflineThroughputBenchmark() {
+    if (!selectedOfflineProfile) return;
+    setOfflineLoading(true);
+    setOfflineError("");
+    try {
+      const response = await postJsonBody<LlamacppOfflineBenchmarkRunStartResponse>(
+        "/api/v1/llm-lab/llamacpp/offline-benchmark/runs",
+        {
+          profile: selectedOfflineProfile.profile_id,
+        } satisfies LlamacppOfflineBenchmarkRunRequest,
+      );
+      setOfflineActiveRunId(response.run_id);
+      await loadOfflineRun(response.run_id);
+    } catch (error) {
+      setOfflineError(error instanceof Error ? error.message : "Failed to run offline hardware benchmark.");
+    } finally {
+      setOfflineLoading(false);
+    }
+  }
+
+  async function cancelOfflineThroughputBenchmark() {
+    if (!offlineActiveRunId) return;
+    setOfflineError("");
+    try {
+      await postJsonBody<LlamacppOfflineBenchmarkRunCancelResponse>(
+        `/api/v1/llm-lab/llamacpp/offline-benchmark/runs/${encodeURIComponent(offlineActiveRunId)}/cancel`,
+        {},
+      );
+      await loadOfflineRun(offlineActiveRunId);
+    } catch (error) {
+      setOfflineError(error instanceof Error ? error.message : "Failed to cancel offline benchmark.");
+    }
+  }
+
+  useEffect(() => {
+    loadOfflineProfiles().catch((error) => {
+      setOfflineError(error instanceof Error ? error.message : String(error));
+    });
+    loadOfflineLatestRun().catch((error) => {
+      if (!isNotFoundError(error)) {
+        setOfflineError(error instanceof Error ? error.message : String(error));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!offlineActiveRunId) return;
+    const timer = window.setInterval(() => {
+      loadOfflineRun(offlineActiveRunId).catch((error) => {
+        setOfflineError(error instanceof Error ? error.message : String(error));
+      });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [offlineActiveRunId]);
+
+  return (
+    <SectionCard title="Offline Hardware Benchmark">
+      <div className="mb-4">
+        <div className="text-sm text-slate-300">llama.cpp · GTX 1080 Ti · Pascal SM61</div>
+        <div className="mt-1 text-sm text-slate-400">Model: Gemma 4 E2B it · Q4_K_M</div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
+        <div className="space-y-4">
+          <label className="block text-sm text-slate-300">
+            <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
+              Fixed Benchmark Profile
+            </span>
+            <select
+              value={selectedOfflineProfile?.profile_id || ""}
+              onChange={(event) => setOfflineProfileId(event.target.value)}
+              disabled={offlineLoading || !!offlineActiveRunId}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-sky-500/60 disabled:cursor-not-allowed disabled:text-slate-500"
+            >
+              {offlineProfiles.map((profile) => (
+                <option key={profile.profile_id} value={profile.profile_id}>
+                  {profile.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+            <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+              Selected Profile
+            </div>
+            <div className="space-y-2">
+              {observationLine("Profile", selectedOfflineProfile?.display_name || "N/A")}
+              {observationLine("Benchmark Engine", "llama-bench")}
+              {observationLine("Prompt Tokens", selectedOfflineProfile ? String(selectedOfflineProfile.n_prompt) : "N/A")}
+              {observationLine("Generation Tokens", selectedOfflineProfile ? String(selectedOfflineProfile.n_gen) : "N/A")}
+              {observationLine("Context Depth", selectedOfflineProfile ? String(selectedOfflineProfile.n_depth) : "N/A")}
+              {observationLine("Batch Size", selectedOfflineProfile ? String(selectedOfflineProfile.batch_size) : "N/A")}
+              {observationLine(
+                "Repetitions",
+                selectedOfflineProfile
+                  ? selectedOfflineProfile.profile_id === "pascal-continuous"
+                    ? "Until cancel"
+                    : String(selectedOfflineProfile.repetitions)
+                  : "N/A",
+              )}
+              {observationLine("Run Mode", offlineProfileRunMode(selectedOfflineProfile))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                startOfflineThroughputBenchmark().catch(() => undefined);
+              }}
+              disabled={offlineLoading || !!offlineActiveRunId || !selectedOfflineProfile}
+              className={`inline-flex items-center rounded-full border px-5 py-2.5 text-sm font-medium transition ${
+                offlineLoading || !!offlineActiveRunId || !selectedOfflineProfile
+                  ? "cursor-not-allowed border-slate-700 bg-slate-900/60 text-slate-500"
+                  : "border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-100 hover:border-fuchsia-400"
+              }`}
+            >
+              {offlineLoading || !!offlineActiveRunId ? "Running Offline Benchmark..." : "Run Offline Benchmark"}
+            </button>
+            {offlineActiveRunId && (offlineLatestRun?.profile_id || offlineProfileId) === "pascal-continuous" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  cancelOfflineThroughputBenchmark().catch(() => undefined);
+                }}
+                className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-500/10 px-5 py-2.5 text-sm font-medium text-rose-100 transition hover:border-rose-400"
+              >
+                Cancel Run
+              </button>
+            ) : null}
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+            <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+              Throughput Definitions
+            </div>
+
+            <div className="space-y-4 text-slate-300">
+              <div>
+                <div className="text-sm font-semibold text-sky-200">
+                  PROMPT PROCESSING (pp)
+                </div>
+                <div className="mt-1 text-sm text-slate-400">
+                  Measures batch prefill throughput while input prompt tokens are processed into the model context / KV cache.
+                </div>
+                <div className="mt-2 font-mono text-sm text-slate-100">
+                  TPS<sub>pp</sub> = N<sub>prompt</sub> / T<sub>pp</sub>
+                </div>
+              </div>
+
+              <div>
+                <div className="text-sm font-semibold text-emerald-200">
+                  TEXT GENERATION (tg)
+                </div>
+                <div className="mt-1 text-sm text-slate-400">
+                  Measures autoregressive decode throughput while output tokens are generated one by one.
+                </div>
+                <div className="mt-2 font-mono text-sm text-slate-100">
+                  TPS<sub>tg</sub> = N<sub>generation</sub> / T<sub>tg</sub>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+            {!offlineLatestRun && !offlineError ? (
+              <div className="text-slate-400">
+                Runs fixed `llama-bench` Pascal SM61 profiles on the dedicated GTX 1080 Ti target pod.
+              </div>
+            ) : offlineError ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
+                {offlineError}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {offlineLatestRun?.progress ? (
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
+                    <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">
+                      Live Run Progress
+                    </div>
+                    <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      <SummaryCard
+                        label="Status"
+                        value={offlineLatestRun.status}
+                        tone={
+                          offlineLatestRun.status === "running"
+                            ? "green"
+                            : offlineLatestRun.status === "cancelling"
+                              ? "orange"
+                              : "blue"
+                        }
+                      />
+                      <SummaryCard
+                        label="Prompt-only TPS"
+                        value={
+                          offlineLatestRun.progress.latest_completed_step_prompt_tps !== undefined &&
+                          offlineLatestRun.progress.latest_completed_step_prompt_tps !== null
+                            ? `${offlineLatestRun.progress.latest_completed_step_prompt_tps.toFixed(1)} tok/s`
+                            : "N/A"
+                        }
+                        tone="blue"
+                      />
+                      <SummaryCard
+                        label="Generation-only TPS"
+                        value={
+                          offlineLatestRun.progress.latest_completed_step_generation_tps !== undefined &&
+                          offlineLatestRun.progress.latest_completed_step_generation_tps !== null
+                            ? `${offlineLatestRun.progress.latest_completed_step_generation_tps.toFixed(1)} tok/s`
+                            : "N/A"
+                        }
+                        tone="blue"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      {observationLine("Active Run ID", offlineLatestRun.run_id)}
+                      {observationLine("Elapsed", `${offlineLatestRun.progress.elapsed_seconds.toFixed(1)} sec`)}
+                      {observationLine(
+                        "Completed Steps",
+                        offlineLatestRun.progress.total_steps > 0
+                          ? `${offlineLatestRun.progress.completed_steps}/${offlineLatestRun.progress.total_steps}`
+                          : `${offlineLatestRun.progress.completed_steps} / Until cancel`,
+                      )}
+                      {observationLine(
+                        "Mean Prompt-only TPS",
+                        offlineLatestRun.progress.mean_prompt_tps !== undefined &&
+                          offlineLatestRun.progress.mean_prompt_tps !== null
+                          ? `${offlineLatestRun.progress.mean_prompt_tps.toFixed(1)} tok/s`
+                          : "N/A",
+                      )}
+                      {observationLine(
+                        "Mean Generation-only TPS",
+                        offlineLatestRun.progress.mean_generation_tps !== undefined &&
+                          offlineLatestRun.progress.mean_generation_tps !== null
+                          ? `${offlineLatestRun.progress.mean_generation_tps.toFixed(1)} tok/s`
+                          : "N/A",
+                      )}
+                    </div>
+                    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                      <div className="mb-3 text-sm font-medium text-slate-200">
+                        Completed-Step Throughput History
+                      </div>
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={offlineLatestRun.progress.buckets}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                            <XAxis dataKey="step" tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                              <Label
+                                value="Completed Benchmark Step"
+                                position="insideBottom"
+                                offset={-4}
+                                fill="#94a3b8"
+                                fontSize={12}
+                              />
+                            </XAxis>
+                            <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                              <Label
+                                value="Throughput (tokens/s)"
+                                angle={-90}
+                                position="insideLeft"
+                                fill="#94a3b8"
+                                fontSize={12}
+                                style={{ textAnchor: "middle" }}
+                              />
+                            </YAxis>
+                            <Tooltip />
+                            <Line type="monotone" dataKey="prompt_tps" stroke="#38bdf8" strokeWidth={2} dot={false} name="Prompt-only TPS" />
+                            <Line type="monotone" dataKey="generation_tps" stroke="#34d399" strokeWidth={2} dot={false} name="Generation-only TPS" />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {!offlineRunInProgress ? (
+                  <>
+                    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
+                      <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">Final Benchmark Result</div>
+                      <div className="space-y-2">
+                        {observationLine("Profile", offlineLatestRun?.profile || "N/A")}
+                        {observationLine("Run ID", offlineLatestRun?.run_id || "N/A")}
+                        {observationLine("Observed At", formatObservedTimestamp(offlineLatestResult?.observed_at_ts))}
+                        {observationLine("Result Freshness", formatResultFreshnessFromTs(offlineLatestResult?.completed_at_ts))}
+                        {observationLine("GPU Preflight", offlineLatestResult?.gpu_preflight_status || "N/A")}
+                        {observationLine(
+                          "Run Duration",
+                          offlineLatestResult?.duration_seconds !== undefined &&
+                            offlineLatestResult?.duration_seconds !== null
+                            ? `${offlineLatestResult.duration_seconds.toFixed(3)} sec`
+                            : "N/A",
+                        )}
+                      </div>
+                    </div>
+                    {offlineLatestResult?.preflight_warning ? (
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
+                        {offlineLatestResult.preflight_warning}
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </SectionCard>
   );
 }
 
@@ -2807,8 +2716,6 @@ function FanExperimentPage({
   error,
   fanControl,
   onFanModeChange,
-  onStartFanCycle,
-  onStopFanCycle,
   onStartThermalDemo,
   onRestoreAutoCooling,
   onStartYoloDemo,
@@ -2817,6 +2724,7 @@ function FanExperimentPage({
   onStartCapture,
   onPauseCapture,
   demoWorkflowBusy,
+  yoloControlBusy,
 }: {
   data: FanCycleLatestResponse | null;
   execution: FanCycleExecutionStatusResponse | null;
@@ -2828,8 +2736,6 @@ function FanExperimentPage({
   error: string;
   fanControl: FanControlSelection;
   onFanModeChange: (mode: FanMode) => void;
-  onStartFanCycle: () => void;
-  onStopFanCycle: () => void;
   onStartThermalDemo: () => void;
   onRestoreAutoCooling: () => void;
   onStartYoloDemo: () => void;
@@ -2838,6 +2744,7 @@ function FanExperimentPage({
   onStartCapture: () => void;
   onPauseCapture: () => void;
   demoWorkflowBusy: boolean;
+  yoloControlBusy: boolean;
 }) {
   if (loading) {
     return (
@@ -2856,25 +2763,15 @@ function FanExperimentPage({
   }
 
   const hasHistoricalData = Boolean(data && data.timeseries.length > 0);
-  const run = data?.run;
   const config = data?.config;
   const current = data?.current;
   const phaseSummary = data?.phase_summary || [];
-  const displayCurrent = liveCurrent || current || {
-    gpu_temp_c: 0,
-    fan_pct: 0,
-    sm_clock_mhz: 0,
-    gpu_util_pct: 0,
-    server_latency_ms: 0,
-    e2e_latency_ms: 0,
-  };
   const [timeWindow, setTimeWindow] = useState<TimeWindow>("last-60s");
-  const displaySeries = liveSeries.length > 1 ? liveSeries : data?.timeseries || [];
-  const runtimeRunId = yoloDemo?.run_id || execution?.run_id || run?.run_id || "N/A";
-  const runtimeFocusPod = yoloDemo?.focus_pod || run?.focus_pod || "N/A";
-  const runtimeTargetUrl = yoloDemo?.target_url || run?.target_url || "N/A";
+  const liveChartsRef = useRef<HTMLDivElement | null>(null);
   const yoloDemoRunning =
     yoloDemo?.status === "running" || yoloDemo?.status === "starting";
+  const yoloDemoActuallyRunning = yoloDemo?.status === "running";
+  const yoloDemoStarting = yoloDemo?.status === "starting";
   const fanControlAvailable = yoloDemo?.fan_control_available ?? true;
   const fanControlMessage =
     yoloDemo?.fan_control_message || "Fixed fan override is available.";
@@ -2882,46 +2779,26 @@ function FanExperimentPage({
     execution?.status === "running" ||
     execution?.status === "starting" ||
     execution?.status === "stopping";
-  const activeServerLatency = yoloDemoRunning ? displayCurrent.server_latency_ms : null;
-  const activeE2ELatency = yoloDemoRunning ? displayCurrent.e2e_latency_ms : null;
+  const displayCurrent = liveCurrent || (fanCycleRunning ? current : null) || {
+    gpu_temp_c: 0,
+    fan_pct: 0,
+    sm_clock_mhz: 0,
+    gpu_util_pct: 0,
+    server_latency_ms: 0,
+    e2e_latency_ms: 0,
+  };
+  const displaySeries = liveSeries.length > 0 ? liveSeries : data?.timeseries || [];
   const selectedFanPercent = modeFanPercent(fanControl.mode, config?.fixed_fan_pct || 5);
   const actualFanPercent = displayCurrent.fan_pct;
   const requestedFanLabel =
     fanControl.mode === "GPU_DEFAULT" ? "Auto / GPU Default" : `${selectedFanPercent}%`;
+  const manualCoolingOverrideActive = fanControl.mode !== "GPU_DEFAULT";
   const fanOverrideNotHonored =
-    fanControl.mode !== "GPU_DEFAULT" &&
+    manualCoolingOverrideActive &&
     Math.abs(actualFanPercent - selectedFanPercent) >= 3;
-  const liveDemoMode = yoloDemoRunning && !fanCycleRunning;
-  const rawTargetNode = yoloDemo?.node_name || execution?.node_name || run?.target_node || "unknown";
-  const targetNode = rawTargetNode || "unknown";
-  const currentPhaseSummary =
-    phaseSummary.find(
-      (item) =>
-        item.cycle_index === run?.current_cycle &&
-        item.phase === run?.current_phase,
-    ) || phaseSummary[phaseSummary.length - 1];
-  const thermalRisk = config
-    ? displayCurrent.gpu_temp_c >= config.fault_temp_target_c
-      ? "Thermal target exceeded"
-      : displayCurrent.gpu_temp_c > config.normal_temp_max_c
-        ? "Above normal thermal band"
-        : "Within expected thermal band"
-    : "Waiting for the first completed fan-cycle run";
-  const currentRunStatus = fanCycleRunning
-    ? execution?.status || run?.status || "running"
-    : liveDemoMode
-      ? "demo_live"
-      : execution?.status || run?.status || "idle";
-  const demoModeLabel = fanCycleRunning
-    ? "Fan-Cycle Replay"
-    : yoloDemoRunning
-      ? "Live Demo"
-      : "Idle";
-  const currentPhase = fanCycleRunning
-    ? humanizePhase(run?.current_phase || "running")
-    : getDemoStageLabel(fanControl.mode, yoloDemoRunning, displayCurrent, config);
-  const gpuName = run?.gpu_name || "Unknown GPU";
-  const resultRunDir = execution?.result_run_dir || "Pending first output directory";
+  const fanOverrideVerified = manualCoolingOverrideActive && !fanOverrideNotHonored;
+  const engineeringModeActive = fanCycleRunning || manualCoolingOverrideActive;
+  const externalGpuLoadDetected = !yoloDemoRunning && displayCurrent.gpu_util_pct >= 20;
   const chartEmptyText = fanCycleRunning
     ? "Experiment is running. Charts will populate after live samples or the first completed run appear."
     : "No completed fan-cycle experiment run found yet.";
@@ -2936,60 +2813,96 @@ function FanExperimentPage({
       : timeWindow === "last-5m"
         ? last5mSeries
         : last60Series;
+  const latencySeries = yoloDemoRunning
+    ? (
+        timeWindow === "whole-run"
+          ? activeSeries
+          : activeSeries.filter(
+              (point) => Number(point.server_latency) > 0 || Number(point.e2e_latency) > 0,
+            )
+      )
+    : [];
   const baselineSeries =
     wholeRunSeries.filter((point) => point.phase === "normal_hold").slice(0, 120) ||
     [];
-  const fallbackBaselineSeries = wholeRunSeries.slice(0, Math.min(wholeRunSeries.length, 30));
-  const baselineWindow = baselineSeries.length > 0 ? baselineSeries : fallbackBaselineSeries;
-  const baseline = baselineWindow.length > 0
+  const baselineWindow = baselineSeries.length > 0 ? baselineSeries : [];
+  const baselineAvailable = baselineWindow.length > 0;
+  const baseline = baselineAvailable
     ? {
         gpu_temp: baselineWindow.reduce((sum, point) => sum + point.gpu_temp, 0) / baselineWindow.length,
         sm_clock: baselineWindow.reduce((sum, point) => sum + point.sm_clock, 0) / baselineWindow.length,
         server_latency: baselineWindow.reduce((sum, point) => sum + point.server_latency, 0) / baselineWindow.length,
         e2e_latency: baselineWindow.reduce((sum, point) => sum + point.e2e_latency, 0) / baselineWindow.length,
       }
-    : {
-        gpu_temp: displayCurrent.gpu_temp_c,
-        sm_clock: displayCurrent.sm_clock_mhz,
-        server_latency: displayCurrent.server_latency_ms,
-        e2e_latency: displayCurrent.e2e_latency_ms,
-      };
-  const deltaTemp = displayCurrent.gpu_temp_c - baseline.gpu_temp;
-  const deltaClock = displayCurrent.sm_clock_mhz - baseline.sm_clock;
-  const deltaServerLatency = displayCurrent.server_latency_ms - baseline.server_latency;
-  const deltaE2E = displayCurrent.e2e_latency_ms - baseline.e2e_latency;
+    : null;
+  const deltaTemp = baseline ? displayCurrent.gpu_temp_c - baseline.gpu_temp : null;
+  const deltaClock = baseline ? displayCurrent.sm_clock_mhz - baseline.sm_clock : null;
+  const phaseHistorySeen =
+    new Set(phaseSummary.map((item) => item.phase));
+  const recoveryEligible =
+    phaseHistorySeen.has("fault_hold") ||
+    phaseHistorySeen.has("recovery_wait") ||
+    manualCoolingOverrideActive;
+  const faultCoolingApplied = manualCoolingOverrideActive && yoloDemoRunning;
+  const thermalTargetReached =
+    Boolean(config) &&
+    displayCurrent.gpu_temp_c >= (config?.fault_temp_target_c || 85) &&
+    displayCurrent.gpu_util_pct >= 20;
+  const clockDropObserved = deltaClock !== null && deltaClock <= -150;
+  const recoveryStable =
+    recoveryEligible &&
+    fanControl.mode === "GPU_DEFAULT" &&
+    yoloDemoRunning &&
+    deltaTemp !== null &&
+    deltaClock !== null &&
+    deltaTemp <= 2 &&
+    deltaClock >= -100;
   const phaseSteps: ThermalDemoStep[] = [
     {
       key: "baseline",
       label: "Baseline",
-      detail: yoloDemoRunning ? "YOLO steady-state with auto cooling" : "Start YOLO demo workload",
-      state: yoloDemoRunning ? "done" : "active",
+      detail: yoloDemoRunning
+        ? manualCoolingOverrideActive
+          ? "Baseline ended after manual cooling override"
+          : "YOLO steady-state with auto cooling"
+        : "Start YOLO demo workload",
+      state:
+        !yoloDemoRunning
+          ? "active"
+          : manualCoolingOverrideActive
+            ? "done"
+            : "done",
     },
     {
       key: "fault_fan",
-      label: "Fault Fan",
+      label: "Reduced Cooling",
       detail: `Requested ${requestedFanLabel}`,
-      state: fanControl.mode !== "GPU_DEFAULT" ? "done" : yoloDemoRunning ? "active" : "pending",
+      state:
+        fanOverrideVerified
+          ? "done"
+          : faultCoolingApplied
+            ? "active"
+            : "pending",
     },
     {
       key: "thermal_rise",
       label: "Thermal Rise",
       detail: config ? `Target > ${config.fault_temp_target_c.toFixed(0)}°C` : "Observe GPU temp climb",
       state:
-        config && displayCurrent.gpu_temp_c >= config.fault_temp_target_c
+        thermalTargetReached
           ? "done"
-          : fanControl.mode !== "GPU_DEFAULT" && yoloDemoRunning
+          : faultCoolingApplied
             ? "active"
             : "pending",
     },
     {
       key: "clock_drop",
-      label: "Clock Drop",
-      detail: "SM clock should collapse under heat",
+      label: "Clock Response",
+      detail: "Observe whether SM clock decreases under sustained thermal stress",
       state:
-        deltaClock <= -200
+        clockDropObserved
           ? "done"
-          : config && displayCurrent.gpu_temp_c >= (config.fault_temp_target_c || 85)
+          : faultCoolingApplied && thermalTargetReached
             ? "active"
             : "pending",
     },
@@ -2998,238 +2911,219 @@ function FanExperimentPage({
       label: "Recovery",
       detail: "Restore GPU_DEFAULT and watch latency recover",
       state:
-        fanControl.mode === "GPU_DEFAULT" && yoloDemoRunning && deltaTemp <= 2
+        recoveryStable
           ? "done"
-          : fanControl.mode === "GPU_DEFAULT" && yoloDemoRunning
+          : recoveryEligible && fanControl.mode === "GPU_DEFAULT" && yoloDemoRunning
             ? "active"
             : "pending",
     },
   ];
 
+  const nextActionText = !yoloDemoRunning
+    ? "Start YOLO workload to establish a thermal baseline."
+    : !manualCoolingOverrideActive && !recoveryEligible
+      ? "Use Engineering Controls or Start Live Thermal Demo to reduce cooling and induce thermal stress."
+      : manualCoolingOverrideActive && !thermalTargetReached
+        ? "Hold reduced cooling and watch GPU temperature rise toward the configured fault target."
+        : manualCoolingOverrideActive && !clockDropObserved
+          ? "Continue thermal stress and observe whether SM clock decreases."
+          : manualCoolingOverrideActive
+            ? "Restore Auto Cooling to begin recovery."
+            : recoveryEligible && !recoveryStable
+              ? "Keep auto cooling enabled and observe recovery until temperature and clock stabilize."
+              : "Thermal workflow is currently aligned with the observed state.";
+
+  const stepperActiveStep =
+    phaseSteps.find((step) => step.state === "active") ||
+    [...phaseSteps].reverse().find((step) => step.state === "done") ||
+    phaseSteps[0];
+
+  async function handleStartLiveThermalDemo() {
+    await onStartThermalDemo();
+    window.setTimeout(() => {
+      liveChartsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
+  }
+
   return (
     <section className="space-y-6">
-      <SectionCard title="Thermal Demo">
-        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Demo Mode</div>
-              <div className="mt-2 text-lg font-semibold text-slate-100">{demoModeLabel}</div>
-              <div className="mt-1 text-sm text-slate-400">{humanizeRunStatus(currentRunStatus)}</div>
-            </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Current Stage</div>
-              <div className="mt-2 text-lg font-semibold text-orange-300">{currentPhase}</div>
-              <div className="mt-1 text-sm text-slate-400">{thermalRisk}</div>
-            </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Current GPU Temp</div>
-              <div className="mt-2 text-lg font-semibold text-orange-200">
-                {displayCurrent.gpu_temp_c.toFixed(1)}°C
-              </div>
-              <div className="mt-1 text-sm text-slate-400">Fan {displayCurrent.fan_pct.toFixed(0)}%</div>
-            </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Current E2E Latency</div>
-              <div className="mt-2 text-lg font-semibold text-slate-100">
-                {formatMaybeMs(activeE2ELatency)}
-              </div>
-              <div className="mt-1 text-sm text-slate-400">
-                {activeServerLatency === null
-                  ? "YOLO workload is not running"
-                  : `Server ${activeServerLatency.toFixed(1)} ms`}
-              </div>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-5">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Primary Actions</div>
-            <div className="mt-4 grid gap-3">
-              <button
-                onClick={onStartThermalDemo}
-                disabled={demoWorkflowBusy || !fanControlAvailable}
-                className={`rounded-2xl border px-4 py-4 text-left transition ${
-                  demoWorkflowBusy || !fanControlAvailable
-                    ? "border-slate-700 bg-slate-900/60 text-slate-500"
-                    : "border-red-500/40 bg-red-500/15 text-red-100 hover:border-red-400"
-                }`}
-              >
-                <div className="text-sm font-semibold uppercase tracking-wide">Start Live Thermal Demo</div>
-                <div className="mt-1 text-xs opacity-80">
-                  Start YOLO workload if needed, resume live view, and apply the demo fault fan preset.
-                </div>
-              </button>
-              <button
-                onClick={onRestoreAutoCooling}
-                disabled={demoWorkflowBusy}
-                className={`rounded-2xl border px-4 py-4 text-left transition ${
-                  demoWorkflowBusy
-                    ? "border-slate-700 bg-slate-900/60 text-slate-500"
-                    : "border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:border-emerald-400"
-                }`}
-              >
-                <div className="text-sm font-semibold uppercase tracking-wide">Restore Auto Cooling</div>
-                <div className="mt-1 text-xs opacity-80">
-                  Switch fan control back to GPU default and observe recovery.
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-      </SectionCard>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={handleStartLiveThermalDemo}
+          disabled={demoWorkflowBusy || !fanControlAvailable || fanCycleRunning}
+          className={`rounded-xl border px-4 py-2 text-sm transition ${
+            demoWorkflowBusy || !fanControlAvailable || fanCycleRunning
+              ? "border-slate-700 bg-slate-900/60 text-slate-500"
+              : "border-red-500/40 bg-red-500/15 text-red-100 hover:border-red-400"
+          }`}
+        >
+          Start Live Thermal Demo
+        </button>
+        <button
+          onClick={onRestoreAutoCooling}
+          disabled={demoWorkflowBusy}
+          className={`rounded-xl border px-4 py-2 text-sm transition ${
+            demoWorkflowBusy
+              ? "border-slate-700 bg-slate-900/60 text-slate-500"
+              : "border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:border-emerald-400"
+          }`}
+        >
+          Restore Auto Cooling
+        </button>
+      </div>
 
-      <SectionCard title="System Context">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Node</div>
-            <div className="mt-2 text-lg font-semibold text-slate-100">{targetNode}</div>
-            <div className="mt-1 text-xs text-slate-400">{gpuName}</div>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Workload</div>
-            <div className="mt-2 break-all text-sm font-semibold text-slate-100">{runtimeRunId}</div>
-            <div className="mt-1 text-xs text-slate-400">Focus {runtimeFocusPod}</div>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Path</div>
-            <div className="mt-2 break-all text-sm font-semibold text-slate-100">{runtimeTargetUrl}</div>
-            <div className="mt-1 text-xs text-slate-400">{yoloDemoRunning ? "Workload active" : "Workload stopped"}</div>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Cooling</div>
-            <div className="mt-2 text-lg font-semibold text-slate-100">{requestedFanLabel}</div>
-            <div className="mt-1 text-xs text-slate-400">Actual {actualFanPercent.toFixed(0)}%</div>
-          </div>
+      {(engineeringModeActive || externalGpuLoadDetected) && (
+        <div
+          className={`rounded-xl border p-4 text-sm ${
+            manualCoolingOverrideActive || fanCycleRunning
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+              : "border-orange-500/40 bg-orange-500/10 text-orange-200"
+          }`}
+        >
+          {manualCoolingOverrideActive
+            ? "Manual cooling override is active. Demo Flow is being interpreted from the current operator-selected thermal state."
+            : fanCycleRunning
+              ? "Thermal experiment runner is active. Demo Flow reflects the active workflow state until the run stops."
+            : "External GPU load detected while the YOLO demo workload is stopped. Baseline and thermal interpretation may be contaminated."}
         </div>
-      </SectionCard>
+      )}
 
       <SectionCard title="Demo Flow">
-        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="grid gap-3 md:grid-cols-5">
+        <div className="space-y-3">
+          <div className="grid gap-2 md:grid-cols-5">
             {phaseSteps.map((step) => (
               <div
                 key={step.key}
-                className={`rounded-2xl border p-4 shadow-sm ${phaseBadgeClass(step.state)}`}
+                className={`rounded-xl border p-3 shadow-sm ${phaseBadgeClass(step.state)}`}
               >
-                <div className="text-[11px] uppercase tracking-[0.18em] opacity-70">
+                <div className="text-[10px] uppercase tracking-[0.16em] opacity-70">
                   {step.state === "active" ? "Active" : step.state === "done" ? "Done" : "Pending"}
                 </div>
-                <div className="mt-3 text-sm font-semibold">{step.label}</div>
-                <div className="mt-2 text-xs leading-5 opacity-90">{step.detail}</div>
+                <div className="mt-2 text-[13px] font-semibold">{step.label}</div>
+                <div className="mt-1.5 text-[11px] leading-4.5 opacity-90">{step.detail}</div>
               </div>
             ))}
           </div>
-          <div className="rounded-2xl border border-slate-700 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-5 text-sm text-slate-300 shadow-lg">
-            <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Narration</div>
-            <div className="mt-3 text-2xl font-semibold text-slate-50">{currentPhase}</div>
-            <div className="mt-2 text-sm leading-6 text-slate-300">
-              {fanControl.mode === "GPU_DEFAULT"
-                ? "System is still in baseline / recovery mode."
-                : "Fault fan mode is applied. Watch temperature, SM clock, and latency drift."}
-            </div>
-            <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Next Cue</div>
-              <div className="mt-2 text-sm leading-6 text-slate-200">
-              {fanControl.mode === "GPU_DEFAULT"
-                ? "Press Start Thermal Demo to enter the degraded cooling stage."
-                : "Press Restore Auto Cooling after the degradation is visible to show recovery."}
-              </div>
-            </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Requested</div>
-                <div className="mt-2 text-lg font-semibold text-slate-100">{requestedFanLabel}</div>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Actual Fan</div>
-                <div className="mt-2 text-lg font-semibold text-slate-100">{actualFanPercent.toFixed(0)}%</div>
-              </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Active Step</div>
+            <div className="mt-2 text-base font-semibold text-slate-100">{stepperActiveStep.label}</div>
+            <div className="mt-1 text-xs text-slate-400">{stepperActiveStep.detail}</div>
+            <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-300">
+              Next Action: {nextActionText}
             </div>
           </div>
         </div>
       </SectionCard>
 
-      <SectionCard title="Delta KPI">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard label="Temp Delta" value={formatDelta(deltaTemp, "°C")} tone={deltaTemp >= 5 ? "orange" : "blue"} />
-          <SummaryCard label="SM Clock Delta" value={formatDelta(deltaClock, " MHz")} tone={deltaClock <= -150 ? "orange" : "blue"} />
-          <SummaryCard label="Server Delta" value={formatDelta(deltaServerLatency, " ms")} tone={deltaServerLatency >= 20 ? "orange" : "blue"} />
-          <SummaryCard label="E2E Delta" value={formatDelta(deltaE2E, " ms")} tone={deltaE2E >= 20 ? "orange" : "blue"} />
+      <div ref={liveChartsRef} className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {(
+            [
+              ["last-60s", "Last 60s"],
+              ["last-5m", "5 min"],
+              ["whole-run", "Whole Run"],
+            ] as [TimeWindow, string][]
+          ).map(([windowKey, label]) => (
+            <button
+              key={windowKey}
+              onClick={() => setTimeWindow(windowKey)}
+              className={`rounded-full border px-3 py-1 text-xs transition ${
+                timeWindow === windowKey
+                  ? "border-sky-500/40 bg-sky-500/15 text-sky-200"
+                  : "border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-500"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <div className="mt-4 text-xs text-slate-400">
-          Relative to the earliest stable baseline window.
-        </div>
-      </SectionCard>
+        {hasHistoricalData || displaySeries.length > 0 ? (
+          <div className="grid gap-4 xl:grid-cols-2">
+            <MultiLineChart
+              title="GPU Temperature / Fan Speed"
+              data={activeSeries}
+              lines={[
+                { key: "gpu_temp", name: "GPU Temp", stroke: "#f97316" },
+                { key: "fan_pct", name: "Fan %", stroke: "#38bdf8" },
+              ]}
+              height={220}
+            />
+            <MultiLineChart
+              title="SM Clock"
+              data={activeSeries}
+              lines={[{ key: "sm_clock", name: "SM Clock", stroke: "#a78bfa" }]}
+              height={220}
+            />
+            <MultiLineChart
+              title="E2E / Server Latency"
+              data={latencySeries}
+              unit=" ms"
+              lines={[
+                { key: "e2e_latency", name: "E2E Latency", stroke: "#38bdf8" },
+                { key: "server_latency", name: "Server Latency", stroke: "#f59e0b" },
+              ]}
+              height={220}
+            />
+            <MultiLineChart
+              title="GPU Utilization"
+              data={activeSeries}
+              lines={[{ key: "gpu_util", name: "GPU Util", stroke: "#22c55e" }]}
+              yDomain={[0, 100]}
+              height={220}
+            />
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-8 text-sm text-slate-400">
+            {chartEmptyText}
+          </div>
+        )}
+      </div>
 
-      <SectionCard title="Thermal State">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <SummaryCard label="GPU Temp" value={`${displayCurrent.gpu_temp_c.toFixed(1)}°C`} tone="orange" />
-          <SummaryCard label="Fan Speed" value={`${displayCurrent.fan_pct.toFixed(0)}%`} tone="gray" />
-          <SummaryCard label="SM Clock" value={`${displayCurrent.sm_clock_mhz.toFixed(0)} MHz`} />
-          <SummaryCard label="GPU Util" value={`${displayCurrent.gpu_util_pct.toFixed(1)}%`} tone="green" />
-          <SummaryCard label="Server Latency" value={formatMaybeMs(activeServerLatency)} />
-          <SummaryCard label="E2E Latency" value={formatMaybeMs(activeE2ELatency)} tone="blue" />
-        </div>
-        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-xs text-slate-400">
-          {captureRunning
-            ? "Live refresh is enabled. These cards, charts, and YOLO demo events update every 1 second."
-            : "Live refresh is paused. Resume capture to continue syncing the latest experiment result."}
-        </div>
-      </SectionCard>
+      <OfflineHardwareBenchmarkSection />
 
-      <div className="grid grid-cols-[minmax(320px,0.92fr)_minmax(420px,1.08fr)] items-start gap-6 overflow-x-auto">
-        <div className="min-w-0 space-y-6">
-          <SectionCard title="Advanced Controls">
+      <SectionCard title="Engineering Controls">
             <div className="space-y-3 text-sm text-slate-300">
-              <details className="group rounded-2xl border border-slate-800 bg-slate-900/40 p-0 open:bg-slate-900/55">
-                <summary className="cursor-pointer list-none px-4 py-4 text-sm font-semibold text-slate-200">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div>Engineering Controls</div>
-                      <div className="mt-1 text-xs font-normal text-slate-500">
-                        Manual workload, replay, cooling mode, and live-view toggles
-                      </div>
-                    </div>
-                    <div className="rounded-full border border-slate-700 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">
-                      Expand
-                    </div>
-                  </div>
-                </summary>
-                <div className="border-t border-slate-800 px-4 py-4 space-y-4">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-4 space-y-4">
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+                Replay mode, manual YOLO workload control, manual cooling overrides, and live-view toggles live here.
+                These controls are for engineering use and can invalidate the formal live thermal demo state. The focus YOLO pod is kept warm between runs to reduce restart latency.
+              </div>
               <div className="rounded-xl bg-slate-900/60 p-3">
                 <div className="text-xs uppercase tracking-wide text-slate-500">YOLO Workload Status</div>
                 <div className="mt-1 flex items-center gap-2 font-semibold text-slate-100">
                   <span
                     className={`h-2.5 w-2.5 rounded-full ${
-                      yoloDemoRunning ? "bg-emerald-400" : "bg-slate-500"
+                      yoloDemoActuallyRunning ? "bg-emerald-400" : yoloDemoStarting ? "bg-amber-400" : "bg-slate-500"
                     }`}
                   />
-                  <span>{yoloDemoRunning ? "Running" : "Stopped"}</span>
+                  <span>{yoloDemoActuallyRunning ? "Running" : yoloDemoStarting ? "Starting" : "Stopped"}</span>
                 </div>
                 <div className="mt-1 text-xs text-slate-400">
-                  {yoloDemo?.message || "Start the demo to keep single-pod YOLO inference and GPU bgload running."}
+                  {yoloDemo?.message || "Start the demo to run measurement and GPU bgload against the warm single-pod YOLO target."}
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <button
                   onClick={onStartYoloDemo}
-                  disabled={yoloDemoRunning}
+                  disabled={yoloDemoRunning || fanCycleRunning || yoloControlBusy}
                   className={`rounded-xl border px-3 py-2 text-sm transition ${
-                    yoloDemoRunning
+                    yoloDemoRunning || fanCycleRunning || yoloControlBusy
                       ? "border-slate-700 bg-slate-900/60 text-slate-500"
                       : "border-red-500/40 bg-red-500/15 text-red-200 hover:border-red-400"
                   }`}
                 >
-                  Start YOLO Workload
+                  {yoloControlBusy ? "Starting YOLO Workload..." : "Start YOLO Workload"}
                 </button>
                 <button
                   onClick={onStopYoloDemo}
-                  disabled={!yoloDemoRunning}
+                  disabled={!yoloDemoActuallyRunning || fanCycleRunning || yoloControlBusy}
                   className={`rounded-xl border px-3 py-2 text-sm transition ${
-                    yoloDemoRunning
+                    yoloDemoActuallyRunning && !fanCycleRunning && !yoloControlBusy
                       ? "border-orange-500/40 bg-orange-500/15 text-orange-200 hover:border-orange-400"
                       : "border-slate-700 bg-slate-900/60 text-slate-500"
                   }`}
                 >
-                  Stop YOLO Workload
+                  {yoloControlBusy ? "Stopping YOLO Workload..." : "Stop YOLO Workload"}
                 </button>
                 <button
                   onClick={onStartCapture}
@@ -3252,52 +3146,6 @@ function FanExperimentPage({
                   Pause Live View
                 </button>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl bg-slate-900/60 p-3">
-                  <div className="text-xs text-slate-500">Current p95-like Signal</div>
-                  <div className="mt-1 font-mono text-xl text-slate-100">
-                    {currentPhaseSummary?.server_latency_ms_p95.toFixed(0) || "0"} ms
-                  </div>
-                </div>
-                <div className="rounded-xl bg-slate-900/60 p-3">
-                  <div className="text-xs text-slate-500">Current E2E</div>
-                  <div className="mt-1 font-mono text-xl text-slate-100">
-                    {activeE2ELatency === null ? "N/A" : `${activeE2ELatency.toFixed(0)} ms`}
-                  </div>
-                </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button
-                  onClick={onStartFanCycle}
-                  disabled={fanCycleRunning}
-                  className={`rounded-xl border px-3 py-2 text-sm transition ${
-                    fanCycleRunning
-                      ? "border-slate-700 bg-slate-900/60 text-slate-500"
-                      : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:border-emerald-400"
-                  }`}
-                >
-                  Start Fan-Cycle Replay
-                </button>
-                <button
-                  onClick={onStopFanCycle}
-                  disabled={!fanCycleRunning}
-                  className={`rounded-xl border px-3 py-2 text-sm transition ${
-                    fanCycleRunning
-                      ? "border-orange-500/40 bg-orange-500/15 text-orange-200 hover:border-orange-400"
-                      : "border-slate-700 bg-slate-900/60 text-slate-500"
-                  }`}
-                >
-                  Stop Fan-Cycle Replay
-                </button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl bg-slate-900/60 p-3 text-sm text-slate-300">
-                  Replay State: {execution?.message || "Waiting for a fan-cycle run"}
-                </div>
-                <div className="rounded-xl bg-slate-900/60 p-3 text-sm text-slate-300">
-                  Result Run Dir: <span className="font-mono text-xs">{resultRunDir}</span>
-                </div>
-              </div>
               <div className="text-xs uppercase tracking-wide text-slate-500">Cooling Mode</div>
               {!fanControlAvailable && (
                 <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
@@ -3308,20 +3156,22 @@ function FanExperimentPage({
                 {(
                   [
                     "GPU_DEFAULT",
+                    "FIXED_0",
                     "FIXED_5",
                     "FIXED_15",
                     "FIXED_20",
                     "FIXED_25",
+                    "GPU_MAX",
                   ] as FanMode[]
                 ).map((mode) => (
                   <button
                     key={mode}
                     onClick={() => onFanModeChange(mode)}
-                    disabled={mode !== "GPU_DEFAULT" && !fanControlAvailable}
+                    disabled={fanCycleRunning || (mode !== "GPU_DEFAULT" && !fanControlAvailable)}
                     className={`rounded-xl border px-3 py-2 text-left text-sm transition ${
                       fanControl.mode === mode
                         ? "border-orange-500/40 bg-orange-500/15 text-orange-200"
-                        : mode !== "GPU_DEFAULT" && !fanControlAvailable
+                        : fanCycleRunning || (mode !== "GPU_DEFAULT" && !fanControlAvailable)
                           ? "border-slate-700 bg-slate-900/60 text-slate-600"
                           : "border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-500"
                     }`}
@@ -3339,9 +3189,6 @@ function FanExperimentPage({
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl bg-slate-900/60 p-3 text-sm text-slate-300">
-                  Actual Fan %: {actualFanPercent.toFixed(0)}%
-                </div>
                 <div
                   className={`rounded-xl border p-3 text-sm ${
                     fanOverrideNotHonored
@@ -3354,90 +3201,13 @@ function FanExperimentPage({
                     : "fan override matches requested value"}
                 </div>
               </div>
-              {data?.command_preview && (
-                <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-400">
-                  <div className="mb-2 uppercase tracking-wide text-slate-500">CLI Fallback</div>
-                  <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-slate-300">
-                    {data.command_preview.smoke_test}
-                  </pre>
-                </div>
-              )}
-                </div>
-              </details>
-            </div>
-          </SectionCard>
-        </div>
-
-        <div className="min-w-0 space-y-6">
-          {hasHistoricalData || displaySeries.length > 0 ? (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                {(
-                  [
-                    ["last-60s", "Last 60s"],
-                    ["last-5m", "5min"],
-                    ["whole-run", "Whole Run"],
-                  ] as [TimeWindow, string][]
-                ).map(([windowKey, label]) => (
-                  <button
-                    key={windowKey}
-                    onClick={() => setTimeWindow(windowKey)}
-                    className={`rounded-full border px-3 py-1 text-xs transition ${
-                      timeWindow === windowKey
-                        ? "border-sky-500/40 bg-sky-500/15 text-sky-200"
-                        : "border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-500"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
               </div>
-              <MultiLineChart
-                title="GPU Temperature / Fan Speed"
-                data={activeSeries}
-                lines={[
-                  { key: "gpu_temp", name: "GPU Temp", stroke: "#f97316" },
-                  { key: "fan_pct", name: "Fan %", stroke: "#38bdf8" },
-                ]}
-                height={220}
-              />
-              <MultiLineChart
-                title="SM Clock"
-                data={activeSeries}
-                lines={[
-                  { key: "sm_clock", name: "SM Clock", stroke: "#a78bfa" },
-                ]}
-                height={220}
-              />
-              <MultiLineChart
-                title="GPU Utilization"
-                data={activeSeries}
-                lines={[
-                  { key: "gpu_util", name: "GPU Util", stroke: "#22c55e" },
-                ]}
-                height={220}
-              />
-              <MultiLineChart
-                title="Server Latency"
-                data={timeWindow === "whole-run" ? activeSeries : activeSeries.filter((point) => Number(point.server_latency) > 0)}
-                unit=" ms"
-                lines={[
-                  { key: "server_latency", name: "Server Latency", stroke: "#f59e0b" },
-                ]}
-                height={220}
-              />
-            </>
-          ) : (
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-8 text-sm text-slate-400">
-              {chartEmptyText}
             </div>
-          )}
-        </div>
-      </div>
+      </SectionCard>
 
       <SectionCard title="Event Timeline">
         <div className="space-y-4">
-          {yoloEvents.map((event) => (
+          {yoloEvents.slice(-10).map((event) => (
             <div key={`${event.time}-${event.message}`} className="flex gap-3">
               <div className={`mt-1 h-2.5 w-2.5 rounded-full ${eventDot(event.level)}`} />
               <div>
@@ -3480,6 +3250,7 @@ export default function App() {
   const [yoloDemoStatus, setYoloDemoStatus] = useState<YoloDemoStatusResponse | null>(null);
   const [yoloDemoEvents, setYoloDemoEvents] = useState<YoloDemoEvent[]>([]);
   const [demoWorkflowBusy, setDemoWorkflowBusy] = useState(false);
+  const [yoloControlBusy, setYoloControlBusy] = useState(false);
 
   async function loadInventory() {
     const data = await fetchJson<NodeListResponse>("/api/v1/nodes");
@@ -3976,21 +3747,6 @@ export default function App() {
                   loadYoloDemoStatus().catch(() => undefined);
                 });
             }}
-            onStartFanCycle={() => {
-              postJson<FanCycleExecutionStatusResponse>("/api/v1/experiments/fan-cycle/start")
-                .then(setFanExecutionStatus)
-                .then(() => loadFanExperiment())
-                .catch((e) =>
-                  setFanExperimentError(e instanceof Error ? e.message : String(e)),
-                );
-            }}
-            onStopFanCycle={() => {
-              postJson<FanCycleExecutionStatusResponse>("/api/v1/experiments/fan-cycle/stop")
-                .then(setFanExecutionStatus)
-                .catch((e) =>
-                  setFanExperimentError(e instanceof Error ? e.message : String(e)),
-                );
-            }}
             onStartThermalDemo={() => {
               runThermalDemoWorkflow().catch(() => undefined);
             }}
@@ -3998,20 +3754,59 @@ export default function App() {
               restoreAutoCoolingWorkflow().catch(() => undefined);
             }}
             onStartYoloDemo={() => {
+              setYoloControlBusy(true);
+              setFanExperimentError("");
+              setFanLiveCurrent(null);
+              setFanLiveSeries([]);
+              setYoloDemoStatus((prev) => ({
+                schema_name: prev?.schema_name || "pre6g.experiments.yolo_demo.status.v1",
+                generated_at: Math.floor(Date.now() / 1000),
+                status: "starting",
+                run_id: prev?.run_id || "",
+                namespace: prev?.namespace || "intent-lab",
+                focus_deploy: prev?.focus_deploy || "yolo26n-focus",
+                bg_deploy: prev?.bg_deploy || "yolo26n-bg-1",
+                focus_pod: "",
+                target_url: "",
+                target_mode: prev?.target_mode || "",
+                node_name: prev?.node_name || "icclz1",
+                measurement_pid: 0,
+                bgload_pid: 0,
+                fan_mode: prev?.fan_mode || fanControl.mode,
+                fan_control_available: prev?.fan_control_available ?? true,
+                fan_control_message: prev?.fan_control_message || "Fixed fan override is available.",
+                started_at: Math.floor(Date.now() / 1000),
+                message: "Preparing YOLO demo workload",
+              }));
               postJson<YoloDemoStatusResponse>("/api/v1/experiments/yolo-demo/start")
-                .then(setYoloDemoStatus)
-                .then(() => loadYoloDemoEvents())
+                .then(async (status) => {
+                  setYoloDemoStatus(status);
+                  await loadYoloDemoStatus();
+                  await loadYoloDemoEvents();
+                  await loadFanLive();
+                })
                 .catch((e) =>
                   setFanExperimentError(e instanceof Error ? e.message : String(e)),
-                );
+                )
+                .finally(() => {
+                  setYoloControlBusy(false);
+                });
             }}
             onStopYoloDemo={() => {
+              setYoloControlBusy(true);
               postJson<YoloDemoStatusResponse>("/api/v1/experiments/yolo-demo/stop")
-                .then(setYoloDemoStatus)
-                .then(() => loadYoloDemoEvents())
+                .then(async (status) => {
+                  setYoloDemoStatus(status);
+                  setFanLiveCurrent(null);
+                  setFanLiveSeries([]);
+                  await loadYoloDemoEvents();
+                })
                 .catch((e) =>
                   setFanExperimentError(e instanceof Error ? e.message : String(e)),
-                );
+                )
+                .finally(() => {
+                  setYoloControlBusy(false);
+                });
             }}
             captureRunning={fanCaptureRunning}
             onStartCapture={() => {
@@ -4040,6 +3835,7 @@ export default function App() {
               ].slice(-50));
             }}
             demoWorkflowBusy={demoWorkflowBusy}
+            yoloControlBusy={yoloControlBusy}
           />
         )}
       </div>

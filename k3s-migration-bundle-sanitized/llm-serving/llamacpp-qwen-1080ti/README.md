@@ -34,19 +34,17 @@
 
 ## Fixed Model
 
-- model family: `Qwen2.5-1.5B-Instruct`
+- model family: `Gemma 4 E2B IT`
 - format: `GGUF`
 - quantization: `Q4_K_M`
-- suggested source: `bartowski/Qwen2.5-1.5B-Instruct-GGUF`
-- fixed filename: `Qwen2.5-1.5B-Instruct-Q4_K_M.gguf`
-- fixed in-container path: `/models/qwen/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf`
-- sha256: `2157775c19b6a2ecfec3233e923c7979a43855d4bde88722576c308fccca20a5`
+- suggested source: `unsloth/gemma-4-E2B-it-GGUF`
+- fixed filename: `gemma-4-E2B-it-Q4_K_M.gguf`
+- fixed in-container path: `/models/gemma/gemma-4-E2B-it-Q4_K_M.gguf`
+- host path on `icclz1`: `/var/lib/pre6g/models/gemma-4-e2b-it-gguf`
+- sha256: `9378bc471710229ef165709b62e34bfb62231420ddaf6d729e727305b5b8672d`
 
-正式跑 benchmark 前，請先把實際檔案 SHA-256 填進：
+正式跑 benchmark 前，請確認 manifest / runtime env / autoscale_api env / benchmark result metadata 使用同一個模型檔與 checksum。
 
-- manifest / runtime env
-- autoscale_api env
-- benchmark result metadata
 
 ## Why `CMAKE_CUDA_ARCHITECTURES=61`
 
@@ -65,17 +63,18 @@ cd /home/icclz2/Pre6G/k3s-migration-bundle-sanitized/llm-serving/llamacpp-qwen-1
 docker build \
   -f Dockerfile.cuda118-sm61 \
   --build-arg LLAMA_CPP_REF=b9870 \
-  -t pre6g/llamacpp-cuda118-sm61:qwen25-15b-q4km \
+  -t pre6g/llamacpp-cuda118-sm61:gemma4-e2b-q4km \
   .
 ```
 
-目前這顆 image 已在 `icclz2` 成功 build 成：
+目前這顆 image 需要為 Gemma build/import 到 `icclz1`：
 
-- image: `pre6g/llamacpp-cuda118-sm61:qwen25-15b-q4km`
-- image id: `sha256:8f12722aa010...`
+- image: `pre6g/llamacpp-cuda118-sm61:gemma4-e2b-q4km`
 
 注意：
 
+- `benchmark-target.yaml` 使用 `imagePullPolicy: Never`，避免 K3s 嘗試從 Docker Hub 拉取 `docker.io/pre6g/...`。
+- 因此 image 必須先存在於 `icclz1` 的 k3s/containerd runtime。
 - 在沒有 NVIDIA runtime 的普通 `docker run` 下，`llama-bench` 會因為缺少 `libcuda.so.1` 而無法啟動。
 - 這是預期行為；正式 target pod 會透過 `runtimeClassName: nvidia` 注入 driver libraries。
 
@@ -111,28 +110,38 @@ REMOTE_SSH_TARGET="icclz1@icclz1" ./build_and_import_to_icclz1.sh
 
 ```bash
 kubectl apply -f benchmark-target.yaml
-kubectl -n ai-serving get pod -l app=llamacpp-qwen25-15b-q4km-bench -o wide
+kubectl -n ai-serving get pod -l app=llamacpp-gemma4-e2b-q4km-bench -o wide
 ```
+
+在 apply 前，請先確認 `icclz1` 已有模型檔：
+
+```text
+/var/lib/pre6g/models/gemma-4-e2b-it-gguf/gemma-4-E2B-it-Q4_K_M.gguf
+```
+
+Pod 內掛載位置為：
+
+```text
+/models/gemma/gemma-4-E2B-it-Q4_K_M.gguf
+```
+
+這個 Deployment 是長駐 benchmark environment；啟動時只會 `sleep infinity`，正式測試需透過 `kubectl exec` 手動執行 `llama-bench`。
 
 ## Smoke Validation
 
 ```bash
-kubectl -n ai-serving exec deploy/llamacpp-qwen25-15b-q4km-bench -- nvidia-smi
-kubectl -n ai-serving exec deploy/llamacpp-qwen25-15b-q4km-bench -- llama-bench --list-devices
-kubectl -n ai-serving exec deploy/llamacpp-qwen25-15b-q4km-bench -- /bin/bash -lc '\
-  llama-bench \
-    --model /models/qwen/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf \
-    --n-prompt 128 \
-    --n-gen 64 \
-    -pg 128,64 \
-    --n-depth 0 \
-    --batch-size 256 \
-    --ubatch-size 128 \
-    --n-gpu-layers -1 \
-    --flash-attn off \
-    --repetitions 3 \
-    --output json'
+kubectl -n ai-serving exec deploy/llamacpp-gemma4-e2b-q4km-bench -- nvidia-smi
+kubectl -n ai-serving exec deploy/llamacpp-gemma4-e2b-q4km-bench -- llama-bench --list-devices
+kubectl -n ai-serving exec deploy/llamacpp-gemma4-e2b-q4km-bench -- /bin/bash -lc '\
+  /usr/local/bin/llama-bench \
+    -m /models/gemma/gemma-4-E2B-it-Q4_K_M.gguf \
+    -ngl 999 \
+    -p 512 \
+    -n 128 \
+    -r 3'
 ```
+
+目前 image 只包含 `llama-bench`，不包含 `llama-cli` 或 `llama-server`；它是 offline benchmark target，不是互動式聊天或 OpenAI-compatible serving runtime。
 
 ## Metrics Semantics
 
@@ -174,10 +183,14 @@ llama-bench run state / final result
 注意：
 
 - 這些 metrics 會保存 `run lifecycle` 與 `final benchmark result`
-- 目前**不會偽裝成** `llama-bench` 執行中的逐秒 token throughput
-- 若未來要做到執行中 token curve，需另補 benchmark progress exporter
+- active run 期間，`autoscale_api` 會以 `llama-bench --progress --output jsonl` 逐段解析 `pp / tg / pg` 結果，輸出執行中的 live sample
+- `Live Rolling Throughput` 代表 active run 中最近一次已解析的 `pp / tg / pg` live sample 與 timeline
+- `Final Benchmark Result` 則保留正式 completed result 與 latest completed-step throughput
+- 這仍不是 token-by-token stream；它是 `llama-bench` 在單次執行過程中逐段吐出的 live benchmark sample
 
 ## 2026-07-05 Measured Baseline
+
+以下 baseline 是此 1080 Ti llama.cpp benchmark target 的既有歷史結果，模型為切換 Gemma 前的舊固定模型；Gemma 需要重新跑一輪後再更新正式數字。
 
 本 image 與 target pod 已完成 live cluster 驗證。
 
@@ -194,12 +207,12 @@ llama-bench run state / final result
 | Profile | Run ID | Duration | Prompt TPS (`pp`) | Generation TPS (`tg`) | Prompt + Generation TPS (`pg`) | GPU Preflight |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
 | `pascal-smoke` | `llamacpp-pascal-smoke-run-20260705T014938Z` | `5.0 sec` | `3356.873` | `161.313` | `443.227` | `Contended` |
-| `pascal-throughput` | `llamacpp-pascal-throughput-run-20260705T015400Z` | `11.0 sec` | `3600.395` | `160.452` | `632.824` | `Contended` |
+| `pascal-continuous` | `llamacpp-pascal-continuous-run-20260705T015400Z` | `11.0 sec` | `3600.395` | `160.452` | `632.824` | `Contended` |
 
 注意：
 
 - 這兩次 run 都是在 `nvidia.com/gpu.shared: 1` 條件下完成
-- API preflight 在 `pascal-throughput` 前偵測到 `2` 個既有 GPU compute process
+- API preflight 在 `pascal-continuous` 前偵測到 `2` 個既有 GPU compute process
 - 因此目前最適合將它們解讀為 `shared GPU usable baseline`
 - 若要做正式對外報告的 hardware baseline，仍建議在較乾淨的 isolation 條件下重跑
 
@@ -221,7 +234,44 @@ llama-bench run state / final result
 | Profile | Run ID | Duration | Prompt TPS (`pp`) | Generation TPS (`tg`) | Prompt + Generation TPS (`pg`) | GPU Preflight |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
 | `pascal-smoke` | `llamacpp-pascal-smoke-run-20260705T020757Z` | `4.0 sec` | `3653.644` | `156.710` | `432.436` | `Idle` |
-| `pascal-throughput` | `llamacpp-pascal-throughput-run-20260705T020802Z` | `11.0 sec` | `3610.145` | `156.691` | `619.870` | `Idle` |
+| `pascal-continuous` | `llamacpp-pascal-continuous-run-20260705T020802Z` | `11.0 sec` | `3610.145` | `156.691` | `619.870` | `Idle` |
+
+## 2026-07-07 Gemma 4 E2B Q4_K_M Baseline
+
+Gemma 模型已在 `icclz1` 的 GTX 1080 Ti target pod 上完成 llama.cpp CUDA benchmark。
+
+驗證項目：
+
+- model file: `/models/gemma/gemma-4-E2B-it-Q4_K_M.gguf`
+- host path: `/var/lib/pre6g/models/gemma-4-e2b-it-gguf/gemma-4-E2B-it-Q4_K_M.gguf`
+- file size: `3106736256 bytes`
+- sha256: `9378bc471710229ef165709b62e34bfb62231420ddaf6d729e727305b5b8672d`
+- image pull policy: `Never`
+- container tool: `/usr/local/bin/llama-bench`
+
+執行指令：
+
+```bash
+kubectl -n ai-serving exec deploy/llamacpp-gemma4-e2b-q4km-bench -- /usr/local/bin/llama-bench \
+  -m /models/gemma/gemma-4-E2B-it-Q4_K_M.gguf \
+  -ngl 999 \
+  -p 512 \
+  -n 128 \
+  -r 3
+```
+
+實測結果：
+
+| Model | Backend | GPU | GPU Offload | Prompt TPS (`pp512`) | Generation TPS (`tg128`) | llama.cpp build |
+| --- | --- | --- | --- | ---: | ---: | --- |
+| Gemma 4 E2B Q4_K_M | CUDA | NVIDIA GeForce GTX 1080 Ti | `ngl=999` | `2729.31 ± 15.72` | `103.63 ± 0.05` | `2d97363` |
+
+補充：
+
+- GPU compute capability: `6.1`
+- VRAM: `11170 MiB`
+- model size: `2.88 GiB`
+- parameter count: `4.65B`
 
 ## Shared GPU Caveat
 

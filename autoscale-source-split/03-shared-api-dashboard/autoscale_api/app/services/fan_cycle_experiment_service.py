@@ -90,6 +90,10 @@ def _run_command(args: list[str], timeout: float = 8.0) -> str:
     return completed.stdout.strip()
 
 
+def _now_epoch() -> int:
+    return int(time.time())
+
+
 class FanCycleExperimentService:
     def __init__(self, cache: SimpleTTLCache | None = None) -> None:
         self.cache = cache or SimpleTTLCache()
@@ -399,11 +403,6 @@ class FanCycleExperimentService:
         return response
 
     def get_live(self) -> FanCycleLiveResponse:
-        cache_key = "fan_cycle_experiment::live"
-        cached = self.cache.get(cache_key, ttl_seconds=2)
-        if cached is not None:
-            return cached
-
         latest = self.get_latest()
         _, config_raw, run = self._load_run_context()
         demo_status = self.yolo_demo_service.get_status()
@@ -411,34 +410,64 @@ class FanCycleExperimentService:
         focus_pod = demo_status.focus_pod or run.focus_pod
         node_ip = self._resolve_node_ip(target_node)
         gpu_metrics = self._probe_gpu_live_metrics(target_node, node_ip)
-        latency_metrics = self._probe_latency_live_metrics(demo_status.run_id or run.run_id)
+        demo_active = demo_status.status in {"starting", "running"}
+        latency_metrics = self._probe_latency_live_metrics(demo_status.run_id) if demo_active else {}
 
         current = FanCycleCurrentMetrics(
-            gpu_temp_c=gpu_metrics.get("gpu_temp_c", latest.current.gpu_temp_c),
-            fan_pct=gpu_metrics.get("fan_pct", latest.current.fan_pct),
-            sm_clock_mhz=gpu_metrics.get("sm_clock_mhz", latest.current.sm_clock_mhz),
-            gpu_util_pct=gpu_metrics.get("gpu_util_pct", latest.current.gpu_util_pct),
-            server_latency_ms=latency_metrics.get("server_latency_ms", latest.current.server_latency_ms),
-            e2e_latency_ms=latency_metrics.get("e2e_latency_ms", latest.current.e2e_latency_ms),
+            gpu_temp_c=gpu_metrics.get("gpu_temp_c", latest.current.gpu_temp_c if not demo_active else 0.0),
+            fan_pct=gpu_metrics.get("fan_pct", latest.current.fan_pct if not demo_active else 0.0),
+            sm_clock_mhz=gpu_metrics.get("sm_clock_mhz", latest.current.sm_clock_mhz if not demo_active else 0.0),
+            gpu_util_pct=gpu_metrics.get("gpu_util_pct", latest.current.gpu_util_pct if not demo_active else 0.0),
+            server_latency_ms=latency_metrics.get("server_latency_ms", 0.0),
+            e2e_latency_ms=latency_metrics.get("e2e_latency_ms", 0.0),
         )
 
-        response = FanCycleLiveResponse(
-            schema_name="pre6g.experiments.fan_cycle.live.v1",
-            generated_at=int(time.time()),
-            run=FanCycleRunInfo(
-                run_id=config_raw.get("RUN_ID", run.run_id),
+        if demo_status.status == "starting":
+            run_info = FanCycleRunInfo(
+                run_id=demo_status.run_id,
+                status="starting",
+                target_node=target_node,
+                gpu_name=run.gpu_name,
+                workload=run.workload,
+                cycles=0,
+                current_cycle=0,
+                current_phase="starting",
+                elapsed_seconds=max(0.0, float(_now_epoch() - int(demo_status.started_at or 0))),
+                focus_pod="",
+                target_url="",
+            )
+        elif not demo_active:
+            run_info = FanCycleRunInfo(
+                run_id="",
+                status=demo_status.status,
+                target_node=target_node,
+                gpu_name=run.gpu_name,
+                workload=run.workload,
+                cycles=0,
+                current_cycle=0,
+                current_phase="idle",
+                elapsed_seconds=0.0,
+                focus_pod=demo_status.focus_pod or "",
+                target_url=demo_status.target_url or "",
+            )
+        else:
+            run_info = FanCycleRunInfo(
+                run_id=demo_status.run_id,
                 status="live",
                 target_node=target_node,
                 gpu_name=run.gpu_name,
                 workload=run.workload,
-                cycles=run.cycles,
-                current_cycle=run.current_cycle,
-                current_phase=run.current_phase,
-                elapsed_seconds=run.elapsed_seconds,
+                cycles=0,
+                current_cycle=0,
+                current_phase="live_demo",
+                elapsed_seconds=max(0.0, float(_now_epoch() - int(demo_status.started_at or 0))),
                 focus_pod=focus_pod,
-                target_url=demo_status.target_url or run.target_url,
-            ),
+                target_url=demo_status.target_url or "",
+            )
+        response = FanCycleLiveResponse(
+            schema_name="pre6g.experiments.fan_cycle.live.v1",
+            generated_at=int(time.time()),
+            run=run_info,
             current=current,
         )
-        self.cache.set(cache_key, response)
         return response

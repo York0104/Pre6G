@@ -2,6 +2,7 @@ import json
 import os
 import signal
 import subprocess
+import threading
 import time
 from typing import Literal
 
@@ -36,15 +37,17 @@ DEFAULT_BG_SIZE = CONFIG.default_bg_size
 DEFAULT_BG_DUTY = CONFIG.default_bg_duty
 DEFAULT_BG_PERIOD_MS = CONFIG.default_bg_period_ms
 CC_PASSWORD = CONFIG.cc_password
-STARTUP_GRACE_SECONDS = 20
+STARTUP_GRACE_SECONDS = 180
 
-FanMode = Literal["GPU_DEFAULT", "FIXED_5", "FIXED_15", "FIXED_20", "FIXED_25"]
+FanMode = Literal["GPU_DEFAULT", "FIXED_0", "FIXED_5", "FIXED_15", "FIXED_20", "FIXED_25", "GPU_MAX"]
 VALID_FAN_MODES: tuple[FanMode, ...] = (
     "GPU_DEFAULT",
+    "FIXED_0",
     "FIXED_5",
     "FIXED_15",
     "FIXED_20",
     "FIXED_25",
+    "GPU_MAX",
 )
 
 
@@ -143,20 +146,157 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _measurement_has_samples(run_id: str) -> bool:
+    if not run_id:
+        return False
+    path = RUNS_ROOT / run_id / "measurement_raw.csv"
+    if not path.exists():
+        return False
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            fh.readline()
+            for line in fh:
+                if line.strip():
+                    return True
+    except OSError:
+        return False
+    return False
+
+
 class YoloDemoService:
+    def _try_resolve_existing_target(self) -> tuple[str, str, str] | None:
+        try:
+            return self._resolve_target()
+        except Exception:
+            return None
+
+    def _run_start_sequence(self, run_id: str, run_dir: os.PathLike[str] | str) -> None:
+        measurement_proc = None
+        bgload_pid = 0
+        try:
+            existing_target = self._try_resolve_existing_target()
+            if existing_target is None:
+                _run_command(
+                    ["kubectl", "-n", NAMESPACE, "scale", f"deploy/{FOCUS_DEPLOY}", "--replicas=1"],
+                    timeout=20.0,
+                )
+                _append_event("info", "focus_scaled", f"Scaled {FOCUS_DEPLOY} to 1 replica")
+            else:
+                _append_event("info", "focus_warm_reused", f"Reusing warm {FOCUS_DEPLOY} pod")
+            _run_command(
+                ["kubectl", "-n", NAMESPACE, "scale", f"deploy/{BG_DEPLOY}", "--replicas=0"],
+                timeout=20.0,
+            )
+            _append_event("info", "bg_scaled", f"Scaled {BG_DEPLOY} to 0 replicas")
+            if existing_target is None:
+                _run_command(
+                    ["kubectl", "-n", NAMESPACE, "rollout", "status", f"deploy/{FOCUS_DEPLOY}", "--timeout=180s"],
+                    timeout=190.0,
+                )
+                _append_event("info", "focus_ready", f"{FOCUS_DEPLOY} rollout completed")
+                focus_pod, target_url, target_mode = self._resolve_target()
+            else:
+                focus_pod, target_url, target_mode = existing_target
+
+            _append_event("info", "focus_pod_resolved", f"Resolved focus pod {focus_pod}")
+            _append_event("info", "target_url_resolved", f"Resolved target URL via {target_mode} mode")
+
+            bgload_pid = self._start_remote_bgload(run_id)
+            _append_event("info", "bgload_started", f"Started GPU background load pid={bgload_pid}")
+
+            run_dir_path = RUNS_ROOT / run_id
+            measurement_stdout = (run_dir_path / "measurement_stdout.log").open("w", encoding="utf-8")
+            measurement_stderr = (run_dir_path / "measurement_stderr.log").open("w", encoding="utf-8")
+            measurement_cmd = [
+                "bash",
+                "-lc",
+                (
+                    f"cd {REPO_ROOT} && "
+                    "source iccl/bin/activate && "
+                    f"python3 {REQUEST_CLIENT} "
+                    "--role measurement "
+                    f"--url '{target_url}' "
+                    f"--image {SANITY_IMAGE} "
+                    f"--duration {DEFAULT_DURATION_SEC} "
+                    f"--timeout {DEFAULT_TIMEOUT_SEC} "
+                    f"--output {run_dir_path / 'measurement_raw.csv'}"
+                ),
+            ]
+            measurement_proc = subprocess.Popen(
+                measurement_cmd,
+                stdout=measurement_stdout,
+                stderr=measurement_stderr,
+                cwd=REPO_ROOT,
+                start_new_session=True,
+            )
+            _append_event("info", "serial_client_started", f"Started serial request client pid={measurement_proc.pid}")
+
+            state = _read_state()
+            if state.get("run_id") != run_id or state.get("status") not in {"starting", "running"}:
+                if measurement_proc is not None:
+                    try:
+                        os.killpg(os.getpgid(measurement_proc.pid), signal.SIGTERM)
+                    except OSError:
+                        pass
+                if bgload_pid:
+                    self._stop_remote_bgload(bgload_pid)
+                return
+
+            state.update(
+                {
+                    "status": "starting",
+                    "focus_pod": focus_pod,
+                    "target_url": target_url,
+                    "target_mode": target_mode,
+                    "measurement_pid": measurement_proc.pid,
+                    "bgload_pid": bgload_pid,
+                    "message": "YOLO demo workload launched; waiting for first live samples",
+                }
+            )
+            _write_state(state)
+            _append_event("info", "demo_launch_ready", "YOLO demo workload launched and waiting for first live samples")
+        except Exception:
+            if measurement_proc is not None:
+                try:
+                    os.killpg(os.getpgid(measurement_proc.pid), signal.SIGTERM)
+                except OSError:
+                    pass
+            if bgload_pid:
+                self._stop_remote_bgload(bgload_pid)
+
+            state = _read_state()
+            if state.get("run_id") == run_id:
+                state.update(
+                    {
+                        "status": "error",
+                        "measurement_pid": 0,
+                        "bgload_pid": 0,
+                        "focus_pod": "",
+                        "target_url": "",
+                        "target_mode": "",
+                        "message": "YOLO demo failed to start",
+                    }
+                )
+                _write_state(state)
+            raise
+
     def _refresh_state(self) -> dict:
         state = _read_state()
         measurement_alive = _pid_alive(int(state.get("measurement_pid", 0)))
         bgload_alive = self._remote_bgload_alive(int(state.get("bgload_pid", 0)))
+        has_measurement_samples = _measurement_has_samples(state.get("run_id", ""))
+        startup_age = _now_epoch() - int(state.get("started_at", 0))
 
         if state["status"] in {"running", "starting"}:
-            if measurement_alive or bgload_alive:
+            if measurement_alive and bgload_alive and has_measurement_samples:
                 state["status"] = "running"
                 state["message"] = "YOLO demo is running"
-            elif (
-                state["status"] == "starting"
-                and (_now_epoch() - int(state.get("started_at", 0))) < STARTUP_GRACE_SECONDS
-            ):
+            elif state["status"] == "starting" and (measurement_alive or bgload_alive):
+                if startup_age < STARTUP_GRACE_SECONDS:
+                    state["message"] = "YOLO demo is still starting"
+                else:
+                    state["message"] = "YOLO demo is waiting for first live samples"
+            elif state["status"] == "starting" and startup_age < STARTUP_GRACE_SECONDS:
                 state["message"] = "YOLO demo is still starting"
             else:
                 state["status"] = "stopped"
@@ -358,7 +498,7 @@ PY'"""
                 f"&& python fan_control_lab/cc.py -p {CC_PASSWORD} --mode GPU_DEFAULT'"
             )
         else:
-            pct = int(mode.split("_")[1])
+            pct = 100 if mode == "GPU_MAX" else int(mode.split("_")[1])
             remote_cmd = (
                 f"bash -lc 'cd {WORKER_REPO} "
                 f"&& source {WORKER_VENV} "
@@ -395,7 +535,7 @@ PY'"""
 
     def start(self) -> YoloDemoStatusResponse:
         state = self._refresh_state()
-        if state["status"] == "running":
+        if state["status"] in {"starting", "running"}:
             return self._state_response(state)
 
         run_id = f"yolo_demo_{time.strftime('%Y%m%d_%H%M%S')}"
@@ -412,94 +552,13 @@ PY'"""
         )
         _write_state(state)
         _append_event("info", "demo_start_requested", f"Starting YOLO demo run {run_id}")
-
-        measurement_proc = None
-        bgload_pid = 0
-        try:
-            _run_command(
-                ["kubectl", "-n", NAMESPACE, "scale", f"deploy/{FOCUS_DEPLOY}", "--replicas=1"],
-                timeout=20.0,
-            )
-            _append_event("info", "focus_scaled", f"Scaled {FOCUS_DEPLOY} to 1 replica")
-            _run_command(
-                ["kubectl", "-n", NAMESPACE, "scale", f"deploy/{BG_DEPLOY}", "--replicas=0"],
-                timeout=20.0,
-            )
-            _append_event("info", "bg_scaled", f"Scaled {BG_DEPLOY} to 0 replicas")
-            _run_command(
-                ["kubectl", "-n", NAMESPACE, "rollout", "status", f"deploy/{FOCUS_DEPLOY}", "--timeout=180s"],
-                timeout=190.0,
-            )
-            _append_event("info", "focus_ready", f"{FOCUS_DEPLOY} rollout completed")
-
-            focus_pod, target_url, target_mode = self._resolve_target()
-            _append_event("info", "focus_pod_resolved", f"Resolved focus pod {focus_pod}")
-            _append_event("info", "target_url_resolved", f"Resolved target URL via {target_mode} mode")
-
-            bgload_pid = self._start_remote_bgload(run_id)
-            _append_event("info", "bgload_started", f"Started GPU background load pid={bgload_pid}")
-
-            measurement_stdout = (run_dir / "measurement_stdout.log").open("w", encoding="utf-8")
-            measurement_stderr = (run_dir / "measurement_stderr.log").open("w", encoding="utf-8")
-            measurement_cmd = [
-                "bash",
-                "-lc",
-                (
-                    f"cd {REPO_ROOT} && "
-                    "source iccl/bin/activate && "
-                    f"python3 {REQUEST_CLIENT} "
-                    "--role measurement "
-                    f"--url '{target_url}' "
-                    f"--image {SANITY_IMAGE} "
-                    f"--duration {DEFAULT_DURATION_SEC} "
-                    f"--timeout {DEFAULT_TIMEOUT_SEC} "
-                    f"--output {run_dir / 'measurement_raw.csv'}"
-                ),
-            ]
-            measurement_proc = subprocess.Popen(
-                measurement_cmd,
-                stdout=measurement_stdout,
-                stderr=measurement_stderr,
-                cwd=REPO_ROOT,
-                start_new_session=True,
-            )
-            _append_event("info", "serial_client_started", f"Started serial request client pid={measurement_proc.pid}")
-
-            state.update(
-                {
-                    "status": "running",
-                    "focus_pod": focus_pod,
-                    "target_url": target_url,
-                    "target_mode": target_mode,
-                    "measurement_pid": measurement_proc.pid,
-                    "bgload_pid": bgload_pid,
-                    "message": "YOLO demo is running",
-                }
-            )
-            _write_state(state)
-            _append_event("info", "demo_running", "YOLO demo is now running")
-            return self._state_response(state)
-        except Exception:
-            if measurement_proc is not None:
-                try:
-                    os.killpg(os.getpgid(measurement_proc.pid), signal.SIGTERM)
-                except OSError:
-                    pass
-            if bgload_pid:
-                self._stop_remote_bgload(bgload_pid)
-            state.update(
-                {
-                    "status": "error",
-                    "measurement_pid": 0,
-                    "bgload_pid": 0,
-                    "focus_pod": "",
-                    "target_url": "",
-                    "target_mode": "",
-                    "message": "YOLO demo failed to start",
-                }
-            )
-            _write_state(state)
-            raise
+        threading.Thread(
+            target=self._run_start_sequence,
+            args=(run_id, str(run_dir)),
+            daemon=True,
+            name=f"yolo-demo-start-{run_id}",
+        ).start()
+        return self._state_response(state)
 
     def stop(self) -> YoloDemoStatusResponse:
         state = _read_state()
@@ -523,14 +582,6 @@ PY'"""
 
         try:
             _run_command(
-                ["kubectl", "-n", NAMESPACE, "scale", f"deploy/{FOCUS_DEPLOY}", "--replicas=0"],
-                timeout=20.0,
-            )
-            _append_event("warn", "focus_scaled_down", f"Scaled {FOCUS_DEPLOY} to 0 replicas")
-        except Exception:
-            pass
-        try:
-            _run_command(
                 ["kubectl", "-n", NAMESPACE, "scale", f"deploy/{BG_DEPLOY}", "--replicas=0"],
                 timeout=20.0,
             )
@@ -546,9 +597,9 @@ PY'"""
                 "focus_pod": "",
                 "target_url": "",
                 "target_mode": "",
-                "message": "YOLO demo stopped and services scaled down",
+                "message": "YOLO demo stopped; focus pod kept warm for faster restart",
             }
         )
         _write_state(state)
-        _append_event("info", "demo_stopped", "YOLO demo stopped and services scaled down")
+        _append_event("info", "demo_stopped", "YOLO demo stopped; focus pod kept warm for faster restart")
         return self._state_response(state)

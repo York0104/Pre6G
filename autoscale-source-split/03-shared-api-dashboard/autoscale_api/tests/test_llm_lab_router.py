@@ -217,8 +217,8 @@ class LlmLabRouterTests(unittest.TestCase):
             "benchmark_mode": "offline",
             "profiles": [
                 {
-                    "profile_id": "pascal-throughput",
-                    "display_name": "pascal-throughput",
+                    "profile_id": "pascal-continuous",
+                    "display_name": "pascal-continuous",
                     "description": "Main offline PP/TG throughput baseline.",
                     "runtime": "llamacpp",
                     "benchmark_mode": "offline",
@@ -237,7 +237,7 @@ class LlmLabRouterTests(unittest.TestCase):
         with patch.object(llm_lab_router.llm_lab_service, "get_llamacpp_offline_profiles", return_value=payload):
             response = llm_lab_router.get_llamacpp_offline_profiles()
         self.assertEqual(response.runtime, "llamacpp")
-        self.assertEqual(response.profiles[0].profile_id, "pascal-throughput")
+        self.assertEqual(response.profiles[0].profile_id, "pascal-continuous")
 
     def test_metrics_route_returns_prometheus_text(self) -> None:
         from app.routers import metrics as metrics_router
@@ -252,18 +252,18 @@ class LlmLabRouterTests(unittest.TestCase):
         payload = {
             "schema": "pre6g.llamacpp_offline_benchmark_run_start.v1",
             "ts": 1710000021,
-            "run_id": "llamacpp-pascal-throughput-run-20260704T010203Z",
+            "run_id": "llamacpp-pascal-continuous-run-20260704T010203Z",
             "runtime": "llamacpp",
             "benchmark_mode": "offline",
-            "profile": "pascal-throughput",
-            "profile_id": "pascal-throughput",
+            "profile": "pascal-continuous",
+            "profile_id": "pascal-continuous",
             "status": "queued",
             "namespace": "ai-serving",
-            "target_pod": "llamacpp-qwen25-15b-q4km-bench",
+            "target_pod": "llamacpp-gemma4-e2b-q4km-bench",
         }
         with patch.object(llm_lab_router.llm_lab_service, "start_llamacpp_offline_run", return_value=payload):
             response = llm_lab_router.start_llamacpp_offline_run(
-                LlamacppOfflineBenchmarkRunRequest(profile="pascal-throughput")
+                LlamacppOfflineBenchmarkRunRequest(profile="pascal-continuous")
             )
         self.assertEqual(response.run_id, payload["run_id"])
 
@@ -271,14 +271,14 @@ class LlmLabRouterTests(unittest.TestCase):
         payload = {
             "schema": "pre6g.llamacpp_offline_benchmark_run.v1",
             "ts": 1710000022,
-            "run_id": "llamacpp-pascal-throughput-run-20260704T010203Z",
+            "run_id": "llamacpp-pascal-continuous-run-20260704T010203Z",
             "runtime": "llamacpp",
             "benchmark_mode": "offline",
-            "profile": "pascal-throughput",
-            "profile_id": "pascal-throughput",
+            "profile": "pascal-continuous",
+            "profile_id": "pascal-continuous",
             "status": "succeeded",
             "namespace": "ai-serving",
-            "target_pod": "llamacpp-qwen25-15b-q4km-bench",
+            "target_pod": "llamacpp-gemma4-e2b-q4km-bench",
             "node_name": "icclz1",
             "started_at_ts": 1710000010,
             "completed_at_ts": 1710000022,
@@ -298,14 +298,14 @@ class LlmLabRouterTests(unittest.TestCase):
                 {
                     "schema": "pre6g.llamacpp_offline_benchmark_run.v1",
                     "ts": 1710000022,
-                    "run_id": "llamacpp-pascal-throughput-run-20260704T010203Z",
+                    "run_id": "llamacpp-pascal-continuous-run-20260704T010203Z",
                     "runtime": "llamacpp",
                     "benchmark_mode": "offline",
-                    "profile": "pascal-throughput",
-                    "profile_id": "pascal-throughput",
+                    "profile": "pascal-continuous",
+                    "profile_id": "pascal-continuous",
                     "status": "succeeded",
                     "namespace": "ai-serving",
-                    "target_pod": "llamacpp-qwen25-15b-q4km-bench",
+                    "target_pod": "llamacpp-gemma4-e2b-q4km-bench",
                     "node_name": "icclz1",
                     "started_at_ts": 1710000010,
                     "completed_at_ts": 1710000022,

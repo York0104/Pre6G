@@ -256,12 +256,16 @@ response summary:
 - `GTX 1080 Ti` 的正式 offline 路徑已改為
   `POST /api/v1/llm-lab/llamacpp/offline-benchmark/runs`
 - `autoscale_api -> kubectl exec -> llama-bench -> parser -> history` 已實際跑通
+- 目前預設 benchmark target 已切到 `Gemma 4 E2B it Q4_K_M`
+  - target pod: `deploy/llamacpp-gemma4-e2b-q4km-bench`
+  - runtime image: `pre6g/llamacpp-cuda118-sm61:gemma4-e2b-q4km`
+  - gguf path: `/models/gemma/gemma-4-E2B-it-Q4_K_M.gguf`
 - 已完成成功實測：
   - `pascal-smoke`
     - `pp = 3356.873 tok/s`
     - `tg = 161.313 tok/s`
     - `pg = 443.227 tok/s`
-  - `pascal-throughput`
+  - `pascal-continuous`
     - `pp = 3600.395 tok/s`
     - `tg = 160.452 tok/s`
     - `pg = 632.824 tok/s`
@@ -281,7 +285,7 @@ response summary:
     - `pp = 3653.644 tok/s`
     - `tg = 156.710 tok/s`
     - `pg = 432.436 tok/s`
-  - `pascal-throughput`
+  - `pascal-continuous`
     - `pp = 3610.145 tok/s`
     - `tg = 156.691 tok/s`
     - `pg = 619.870 tok/s`
@@ -290,6 +294,20 @@ response summary:
 
 - shared-GPU usable baseline
 - isolated rerun baseline
+
+`2026-07-06` 監控通路補充：
+
+- `autoscale_api /metrics` 已新增三條 live gauge，可直接由 `vmagent -> VictoriaMetrics` scrape：
+  - `pre6g_llamacpp_offline_benchmark_live_prompt_tps`
+  - `pre6g_llamacpp_offline_benchmark_live_generation_tps`
+  - `pre6g_llamacpp_offline_benchmark_live_pg_tps`
+- 這三條對應的是 active run 的 `Live Rolling Throughput`
+- 語意是 `llama-bench --progress --output jsonl` 在單次執行中逐段吐出的 latest live sample
+- 它們不是 final `llama-bench pp/tg/pg` 結果
+- 正式 final benchmark result 仍看：
+  - `pre6g_llamacpp_offline_benchmark_prompt_tps_mean`
+  - `pre6g_llamacpp_offline_benchmark_generation_tps_mean`
+  - `pre6g_llamacpp_offline_benchmark_prompt_generation_tps_mean`
 
 ### `/api/v1/llm-lab/benchmarks/runs`
 

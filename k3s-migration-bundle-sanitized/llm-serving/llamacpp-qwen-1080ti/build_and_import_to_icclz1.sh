@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE_NAME="${IMAGE_NAME:-pre6g/llamacpp-cuda118-sm61:qwen25-15b-q4km}"
+IMAGE_NAME="${IMAGE_NAME:-pre6g/llamacpp-cuda118-sm61:gemma4-e2b-q4km}"
 LLAMA_CPP_REF="${LLAMA_CPP_REF:-b9870}"
 REMOTE_SSH_TARGET="${REMOTE_SSH_TARGET:-icclz1@icclz1}"
 REMOTE_IMPORT_CMD="${REMOTE_IMPORT_CMD:-sudo k3s ctr images import -}"

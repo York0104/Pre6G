@@ -130,7 +130,7 @@ class YoloDemoStatusResponse(BaseModel):
     node_name: str
     measurement_pid: int
     bgload_pid: int
-    fan_mode: Literal["GPU_DEFAULT", "FIXED_5", "FIXED_15", "FIXED_20", "FIXED_25"]
+    fan_mode: Literal["GPU_DEFAULT", "FIXED_0", "FIXED_5", "FIXED_15", "FIXED_20", "FIXED_25", "GPU_MAX"]
     fan_control_available: bool
     fan_control_message: str
     started_at: int
