@@ -1,0 +1,17 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: device-avail-cpu-stress
+  namespace: intent-lab
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: icclz1
+      containers:
+      - name: stress
+        image: polinux/stress:latest
+        command: ["stress"]
+        args: ["--cpu", "4"]

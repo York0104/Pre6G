@@ -198,6 +198,7 @@ bash build_and_import_image_to_k3s.sh
 | 路徑 | 說明 |
 | --- | --- |
 | `DEPENDENCY_TRACE.md` | 說明本層不再依賴舊 `experiments/load_injection/`、`model_load/`、`monitoring/`，並追蹤 fan/load 來源。 |
+| `device_availability/` | 單節點設備服務可用性實驗設計與後續 probe/stress/manifests 落點。 |
 | `experiments_yolo/` | 目前主要 YOLO 實驗 workflow，包含 saturation、single pod、fault fan、bgload fan cycle。 |
 | `scripts/` | 較早期或通用的 YOLO26 thermal/rate sweep 腳本。 |
 | `thermal_analysis/` | thermal YOLO 資料收集、合併、繪圖與 batch runner。 |

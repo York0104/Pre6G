@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-sentinel
+  namespace: intent-lab
+spec:
+  selector:
+    matchLabels:
+      app: node-sentinel
+  template:
+    metadata:
+      labels:
+        app: node-sentinel
+    spec:
+      hostNetwork: true
+      nodeSelector:
+        availability-test: target
+      tolerations:
+      - operator: Exists
+      containers:
+      - name: node-sentinel
+        image: python:3.12-slim
+        imagePullPolicy: IfNotPresent
+        command: ["python3", "/app/node_sentinel.py"]
+        ports:
+        - containerPort: 18080
+          name: http
+        env:
+        - name: NODE_SENTINEL_PORT
+          value: "18080"
+        - name: NODE_SENTINEL_COMPUTE_LOOPS
+          value: "20000"
+        - name: NODE_SENTINEL_COMPUTE_MAX_MS
+          value: "2000"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: app
+          mountPath: /app
+          readOnly: true
+      volumes:
+      - name: app
+        configMap:
+          name: node-sentinel-script
+          defaultMode: 0555
