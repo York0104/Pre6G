@@ -870,6 +870,16 @@ function getHealth(inventory: NodeInventory, status?: NodeStatus): Health {
   return "healthy";
 }
 
+function hasUsableNodeMetric(status: NodeStatus | undefined, metric: "cpu" | "memory"): boolean {
+  if (!status) return false;
+  const nodeSource = status.sources?.node_metrics?.toLowerCase() || "";
+  if (nodeSource === "error") return false;
+  if (metric === "cpu") {
+    return status.cpu?.usage_percent !== undefined && status.cpu?.usage_percent !== null;
+  }
+  return status.memory?.usage_percent !== undefined && status.memory?.usage_percent !== null;
+}
+
 function healthClass(health: Health): string {
   if (health === "healthy") return "border-emerald-500/50 text-emerald-300";
   if (health === "degraded") return "border-orange-500/60 text-orange-300";
@@ -931,18 +941,6 @@ function displayFanModeLabel(mode: FanMode): string {
 function formatObservedTimestamp(ts?: number | null): string {
   if (!ts) return "N/A";
   return new Date(ts * 1000).toLocaleString();
-}
-
-function formatFreshness(value?: number | null): string {
-  if (value === undefined || value === null || Number.isNaN(value)) {
-    return "N/A";
-  }
-  return `${value.toFixed(1)} sec`;
-}
-
-function formatResultFreshnessFromTs(ts?: number | null): string {
-  if (!ts) return "N/A";
-  return formatFreshness(Math.max(Date.now() / 1000 - ts, 0));
 }
 
 function formatReadyCondition(value?: boolean | null): string {
@@ -1115,7 +1113,7 @@ function NodeCard({
         <MetricBar label="Disk" value={st?.disk?.root_usage_percent} />
 
         <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-400">GPU FB Used</span>
+          <span className="text-slate-400">GPU VRAM Used</span>
           <span className="font-mono text-slate-200">
             {st?.gpu?.fb_used_mib !== undefined && st?.gpu?.fb_used_mib !== null
               ? `${st.gpu.fb_used_mib.toFixed(0)} MiB`
@@ -1278,11 +1276,11 @@ function NodeDetail({
           />
 
           <MultiLineChart
-            title="GPU Framebuffer Used"
+            title="GPU VRAM Used"
             data={history}
             unit=" MiB"
             lines={[
-              { key: "gpuFbUsed", name: "GPU FB Used", stroke: "#a78bfa" },
+              { key: "gpuFbUsed", name: "GPU VRAM Used", stroke: "#a78bfa" },
             ]}
           />
         </div>
@@ -2343,7 +2341,17 @@ function LlmServingLabPage({
   );
 }
 
-function OfflineHardwareBenchmarkSection() {
+function OfflineHardwareBenchmarkSection({
+  fanControlMode,
+  fanControlAvailable,
+  fanCycleRunning,
+  onFanModeChange,
+}: {
+  fanControlMode: FanMode;
+  fanControlAvailable: boolean;
+  fanCycleRunning: boolean;
+  onFanModeChange: (mode: FanMode) => void;
+}) {
   const [offlineLoading, setOfflineLoading] = useState(false);
   const [offlineError, setOfflineError] = useState("");
   const [offlineProfiles, setOfflineProfiles] = useState<LlamacppOfflineBenchmarkProfile[]>([]);
@@ -2557,6 +2565,49 @@ function OfflineHardwareBenchmarkSection() {
               </div>
             </div>
           </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 text-sm">
+            <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+              Cooling Shortcuts
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => onFanModeChange("GPU_DEFAULT")}
+                disabled={fanCycleRunning}
+                className={`rounded-xl border px-4 py-3 text-left text-sm transition ${
+                  fanControlMode === "GPU_DEFAULT"
+                    ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-100"
+                    : fanCycleRunning
+                      ? "border-slate-700 bg-slate-900/60 text-slate-500"
+                      : "border-slate-700 bg-slate-950/60 text-slate-200 hover:border-emerald-400/50"
+                }`}
+              >
+                <div className="font-medium">Auto Cooling</div>
+                <div className="mt-1 text-xs text-slate-400">
+                  Same control path as Engineering Controls.
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onFanModeChange("FIXED_0")}
+                disabled={fanCycleRunning || !fanControlAvailable}
+                className={`rounded-xl border px-4 py-3 text-left text-sm transition ${
+                  fanControlMode === "FIXED_0"
+                    ? "border-orange-500/40 bg-orange-500/15 text-orange-100"
+                    : fanCycleRunning || !fanControlAvailable
+                      ? "border-slate-700 bg-slate-900/60 text-slate-500"
+                      : "border-slate-700 bg-slate-950/60 text-slate-200 hover:border-orange-400/50"
+                }`}
+              >
+                <div className="font-medium">Fixed 0%</div>
+                <div className="mt-1 text-xs text-slate-400">
+                  Mirrors Cooling Mode → Fixed 0%.
+                </div>
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -2633,68 +2684,82 @@ function OfflineHardwareBenchmarkSection() {
                           : "N/A",
                       )}
                     </div>
-                    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-                      <div className="mb-3 text-sm font-medium text-slate-200">
-                        Completed-Step Throughput History
+                    <div className="mt-4 grid gap-4">
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                        <div className="mb-3 text-sm font-medium text-slate-200">
+                          Completed-Step Prompt-only TPS
+                        </div>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={offlineLatestRun.progress.buckets}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                              <XAxis dataKey="step" tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                                <Label
+                                  value="Completed Benchmark Step"
+                                  position="insideBottom"
+                                  offset={-4}
+                                  fill="#94a3b8"
+                                  fontSize={12}
+                                />
+                              </XAxis>
+                              <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                                <Label
+                                  value="Throughput (tokens/s)"
+                                  angle={-90}
+                                  position="insideLeft"
+                                  fill="#94a3b8"
+                                  fontSize={12}
+                                  style={{ textAnchor: "middle" }}
+                                />
+                              </YAxis>
+                              <Tooltip />
+                              <Line type="monotone" dataKey="prompt_tps" stroke="#38bdf8" strokeWidth={2} dot={false} name="Prompt-only TPS" />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={offlineLatestRun.progress.buckets}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                            <XAxis dataKey="step" tick={{ fill: "#94a3b8", fontSize: 12 }}>
-                              <Label
-                                value="Completed Benchmark Step"
-                                position="insideBottom"
-                                offset={-4}
-                                fill="#94a3b8"
-                                fontSize={12}
-                              />
-                            </XAxis>
-                            <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
-                              <Label
-                                value="Throughput (tokens/s)"
-                                angle={-90}
-                                position="insideLeft"
-                                fill="#94a3b8"
-                                fontSize={12}
-                                style={{ textAnchor: "middle" }}
-                              />
-                            </YAxis>
-                            <Tooltip />
-                            <Line type="monotone" dataKey="prompt_tps" stroke="#38bdf8" strokeWidth={2} dot={false} name="Prompt-only TPS" />
-                            <Line type="monotone" dataKey="generation_tps" stroke="#34d399" strokeWidth={2} dot={false} name="Generation-only TPS" />
-                          </LineChart>
-                        </ResponsiveContainer>
+
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                        <div className="mb-3 text-sm font-medium text-slate-200">
+                          Completed-Step Generation-only TPS
+                        </div>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={offlineLatestRun.progress.buckets}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                              <XAxis dataKey="step" tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                                <Label
+                                  value="Completed Benchmark Step"
+                                  position="insideBottom"
+                                  offset={-4}
+                                  fill="#94a3b8"
+                                  fontSize={12}
+                                />
+                              </XAxis>
+                              <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }}>
+                                <Label
+                                  value="Throughput (tokens/s)"
+                                  angle={-90}
+                                  position="insideLeft"
+                                  fill="#94a3b8"
+                                  fontSize={12}
+                                  style={{ textAnchor: "middle" }}
+                                />
+                              </YAxis>
+                              <Tooltip />
+                              <Line type="monotone" dataKey="generation_tps" stroke="#34d399" strokeWidth={2} dot={false} name="Generation-only TPS" />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
                     </div>
                   </div>
                 ) : null}
 
-                {!offlineRunInProgress ? (
-                  <>
-                    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-4">
-                      <div className="mb-3 text-xs uppercase tracking-wide text-slate-500">Final Benchmark Result</div>
-                      <div className="space-y-2">
-                        {observationLine("Profile", offlineLatestRun?.profile || "N/A")}
-                        {observationLine("Run ID", offlineLatestRun?.run_id || "N/A")}
-                        {observationLine("Observed At", formatObservedTimestamp(offlineLatestResult?.observed_at_ts))}
-                        {observationLine("Result Freshness", formatResultFreshnessFromTs(offlineLatestResult?.completed_at_ts))}
-                        {observationLine("GPU Preflight", offlineLatestResult?.gpu_preflight_status || "N/A")}
-                        {observationLine(
-                          "Run Duration",
-                          offlineLatestResult?.duration_seconds !== undefined &&
-                            offlineLatestResult?.duration_seconds !== null
-                            ? `${offlineLatestResult.duration_seconds.toFixed(3)} sec`
-                            : "N/A",
-                        )}
-                      </div>
-                    </div>
-                    {offlineLatestResult?.preflight_warning ? (
-                      <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
-                        {offlineLatestResult.preflight_warning}
-                      </div>
-                    ) : null}
-                  </>
+                {!offlineRunInProgress && offlineLatestResult?.preflight_warning ? (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-amber-100">
+                    {offlineLatestResult.preflight_warning}
+                  </div>
                 ) : null}
               </div>
             )}
@@ -2947,46 +3012,50 @@ function FanExperimentPage({
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={handleStartLiveThermalDemo}
-          disabled={demoWorkflowBusy || !fanControlAvailable || fanCycleRunning}
-          className={`rounded-xl border px-4 py-2 text-sm transition ${
-            demoWorkflowBusy || !fanControlAvailable || fanCycleRunning
-              ? "border-slate-700 bg-slate-900/60 text-slate-500"
-              : "border-red-500/40 bg-red-500/15 text-red-100 hover:border-red-400"
-          }`}
-        >
-          Start Live Thermal Demo
-        </button>
-        <button
-          onClick={onRestoreAutoCooling}
-          disabled={demoWorkflowBusy}
-          className={`rounded-xl border px-4 py-2 text-sm transition ${
-            demoWorkflowBusy
-              ? "border-slate-700 bg-slate-900/60 text-slate-500"
-              : "border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:border-emerald-400"
-          }`}
-        >
-          Restore Auto Cooling
-        </button>
-      </div>
+      {false ? (
+        <>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleStartLiveThermalDemo}
+              disabled={demoWorkflowBusy || !fanControlAvailable || fanCycleRunning}
+              className={`rounded-xl border px-4 py-2 text-sm transition ${
+                demoWorkflowBusy || !fanControlAvailable || fanCycleRunning
+                  ? "border-slate-700 bg-slate-900/60 text-slate-500"
+                  : "border-red-500/40 bg-red-500/15 text-red-100 hover:border-red-400"
+              }`}
+            >
+              Start Live Thermal Demo
+            </button>
+            <button
+              onClick={onRestoreAutoCooling}
+              disabled={demoWorkflowBusy}
+              className={`rounded-xl border px-4 py-2 text-sm transition ${
+                demoWorkflowBusy
+                  ? "border-slate-700 bg-slate-900/60 text-slate-500"
+                  : "border-emerald-500/40 bg-emerald-500/15 text-emerald-100 hover:border-emerald-400"
+              }`}
+            >
+              Restore Auto Cooling
+            </button>
+          </div>
 
-      {(engineeringModeActive || externalGpuLoadDetected) && (
-        <div
-          className={`rounded-xl border p-4 text-sm ${
-            manualCoolingOverrideActive || fanCycleRunning
-              ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
-              : "border-orange-500/40 bg-orange-500/10 text-orange-200"
-          }`}
-        >
-          {manualCoolingOverrideActive
-            ? "Manual cooling override is active. Demo Flow is being interpreted from the current operator-selected thermal state."
-            : fanCycleRunning
-              ? "Thermal experiment runner is active. Demo Flow reflects the active workflow state until the run stops."
-            : "External GPU load detected while the YOLO demo workload is stopped. Baseline and thermal interpretation may be contaminated."}
-        </div>
-      )}
+          {(engineeringModeActive || externalGpuLoadDetected) && (
+            <div
+              className={`rounded-xl border p-4 text-sm ${
+                manualCoolingOverrideActive || fanCycleRunning
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+                  : "border-orange-500/40 bg-orange-500/10 text-orange-200"
+              }`}
+            >
+              {manualCoolingOverrideActive
+                ? "Manual cooling override is active. Demo Flow is being interpreted from the current operator-selected thermal state."
+                : fanCycleRunning
+                  ? "Thermal experiment runner is active. Demo Flow reflects the active workflow state until the run stops."
+                  : "External GPU load detected while the YOLO demo workload is stopped. Baseline and thermal interpretation may be contaminated."}
+            </div>
+          )}
+        </>
+      ) : null}
 
       <SectionCard title="Demo Flow">
         <div className="space-y-3">
@@ -3079,7 +3148,12 @@ function FanExperimentPage({
         )}
       </div>
 
-      <OfflineHardwareBenchmarkSection />
+      <OfflineHardwareBenchmarkSection
+        fanControlMode={fanControl.mode}
+        fanControlAvailable={fanControlAvailable}
+        fanCycleRunning={fanCycleRunning}
+        onFanModeChange={onFanModeChange}
+      />
 
       <SectionCard title="Engineering Controls">
             <div className="space-y-3 text-sm text-slate-300">
@@ -3575,24 +3649,25 @@ export default function App() {
     const degraded = nodes.filter((n) => n.health === "degraded").length;
     const offline = nodes.filter((n) => n.health === "offline").length;
 
-    const cpuVals = nodes
-      .map((n) => n.status?.cpu?.usage_percent)
-      .filter((v): v is number => typeof v === "number");
-    const memVals = nodes
-      .map((n) => n.status?.memory?.usage_percent)
-      .filter((v): v is number => typeof v === "number");
+    const highestCpuNode = nodes
+      .filter((n) => hasUsableNodeMetric(n.status, "cpu"))
+      .reduce<NodeView | null>((best, node) => {
+        if (!best) return node;
+        return (node.status?.cpu?.usage_percent || 0) > (best.status?.cpu?.usage_percent || 0)
+          ? node
+          : best;
+      }, null);
 
-    const avgCpu =
-      cpuVals.length > 0
-        ? cpuVals.reduce((a, b) => a + b, 0) / cpuVals.length
-        : 0;
+    const highestMemoryNode = nodes
+      .filter((n) => hasUsableNodeMetric(n.status, "memory"))
+      .reduce<NodeView | null>((best, node) => {
+        if (!best) return node;
+        return (node.status?.memory?.usage_percent || 0) > (best.status?.memory?.usage_percent || 0)
+          ? node
+          : best;
+      }, null);
 
-    const avgMem =
-      memVals.length > 0
-        ? memVals.reduce((a, b) => a + b, 0) / memVals.length
-        : 0;
-
-    return { total, healthy, degraded, offline, avgCpu, avgMem };
+    return { total, healthy, degraded, offline, highestCpuNode, highestMemoryNode };
   }, [nodes]);
 
   return (
@@ -3679,8 +3754,22 @@ export default function App() {
               <SummaryCard label="Healthy" value={summary.healthy.toString()} tone="green" />
               <SummaryCard label="Degraded" value={summary.degraded.toString()} tone="orange" />
               <SummaryCard label="Offline" value={summary.offline.toString()} tone="gray" />
-              <SummaryCard label="Avg CPU" value={`${summary.avgCpu.toFixed(1)}%`} />
-              <SummaryCard label="Avg Memory" value={`${summary.avgMem.toFixed(1)}%`} />
+              <SummaryCard
+                label="Highest CPU Node"
+                value={
+                  summary.highestCpuNode
+                    ? `${summary.highestCpuNode.inventory.node_name} · ${(summary.highestCpuNode.status?.cpu?.usage_percent || 0).toFixed(1)}%`
+                    : "N/A"
+                }
+              />
+              <SummaryCard
+                label="Highest Memory Node"
+                value={
+                  summary.highestMemoryNode
+                    ? `${summary.highestMemoryNode.inventory.node_name} · ${(summary.highestMemoryNode.status?.memory?.usage_percent || 0).toFixed(1)}%`
+                    : "N/A"
+                }
+              />
             </section>
 
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_520px]">
