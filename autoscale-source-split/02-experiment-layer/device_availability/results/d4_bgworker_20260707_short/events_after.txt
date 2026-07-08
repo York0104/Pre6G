@@ -1,0 +1,35 @@
+LAST SEEN   TYPE      REASON             OBJECT                              MESSAGE
+37m         Warning   DNSConfigForming   pod/node-sentinel-5lf5v             Nameserver limits were exceeded, some nameservers have been omitted, the applied nameserver line is: 1.1.1.1 8.8.8.8 8.8.8.8
+48m         Normal    SuccessfulCreate   job/device-avail-cpu-stress         Created pod: device-avail-cpu-stress-b42f5
+48m         Normal    Scheduled          pod/device-avail-cpu-stress-b42f5   Successfully assigned intent-lab/device-avail-cpu-stress-b42f5 to icclz1
+48m         Normal    Pulling            pod/device-avail-cpu-stress-b42f5   Pulling image "polinux/stress:latest"
+48m         Warning   Failed             pod/device-avail-cpu-stress-b42f5   Failed to pull image "polinux/stress:latest": failed to pull and unpack image "docker.io/polinux/stress:latest": failed to resolve reference "docker.io/polinux/stress:latest": failed to do request: Head "https://registry-1.docker.io/v2/polinux/stress/manifests/latest": net/http: TLS handshake timeout
+48m         Warning   Failed             pod/device-avail-cpu-stress-b42f5   Error: ErrImagePull
+48m         Normal    BackOff            pod/device-avail-cpu-stress-b42f5   Back-off pulling image "polinux/stress:latest"
+48m         Warning   Failed             pod/device-avail-cpu-stress-b42f5   Error: ImagePullBackOff
+48m         Normal    Pulled             pod/device-avail-cpu-stress-b42f5   Successfully pulled image "polinux/stress:latest" in 14.919s (14.919s including waiting). Image size: 4041495 bytes.
+48m         Normal    Created            pod/device-avail-cpu-stress-b42f5   Container created
+48m         Normal    Started            pod/device-avail-cpu-stress-b42f5   Container started
+46m         Normal    Killing            pod/device-avail-cpu-stress-b42f5   Stopping container stress
+34m         Normal    Killing            pod/node-sentinel-5lf5v             Stopping container node-sentinel
+34m         Normal    SuccessfulDelete   daemonset/node-sentinel             Deleted pod: node-sentinel-5lf5v
+33m         Normal    SuccessfulCreate   daemonset/node-sentinel             Created pod: node-sentinel-5h9mq
+33m         Normal    Scheduled          pod/node-sentinel-5h9mq             Successfully assigned intent-lab/node-sentinel-5h9mq to icclz1
+9m29s       Warning   DNSConfigForming   pod/node-sentinel-5h9mq             Nameserver limits were exceeded, some nameservers have been omitted, the applied nameserver line is: 1.1.1.1 8.8.8.8 8.8.8.8
+33m         Normal    Pulled             pod/node-sentinel-5h9mq             Container image "python:3.12-slim" already present on machine and can be accessed by the pod
+33m         Normal    Created            pod/node-sentinel-5h9mq             Container created
+33m         Normal    Started            pod/node-sentinel-5h9mq             Container started
+9m17s       Normal    SuccessfulDelete   daemonset/node-sentinel             Deleted pod: node-sentinel-5h9mq
+9m17s       Normal    Killing            pod/node-sentinel-5h9mq             Stopping container node-sentinel
+8m47s       Normal    Scheduled          pod/node-sentinel-lkbw8             Successfully assigned intent-lab/node-sentinel-lkbw8 to icclz1
+8m47s       Normal    SuccessfulCreate   daemonset/node-sentinel             Created pod: node-sentinel-lkbw8
+8m46s       Normal    Created            pod/node-sentinel-lkbw8             Container created
+2s          Warning   DNSConfigForming   pod/node-sentinel-lkbw8             Nameserver limits were exceeded, some nameservers have been omitted, the applied nameserver line is: 1.1.1.1 8.8.8.8 8.8.8.8
+8m46s       Normal    Pulled             pod/node-sentinel-lkbw8             Container image "python:3.12-slim" already present on machine and can be accessed by the pod
+8m46s       Normal    Started            pod/node-sentinel-lkbw8             Container started
+63s         Normal    Scheduled          pod/device-avail-cpu-stress-czzts   Successfully assigned intent-lab/device-avail-cpu-stress-czzts to icclz1
+63s         Normal    SuccessfulCreate   job/device-avail-cpu-stress         Created pod: device-avail-cpu-stress-czzts
+62s         Normal    Pulling            pod/device-avail-cpu-stress-czzts   Pulling image "polinux/stress:latest"
+61s         Normal    Created            pod/device-avail-cpu-stress-czzts   Container created
+61s         Normal    Pulled             pod/device-avail-cpu-stress-czzts   Successfully pulled image "polinux/stress:latest" in 1.234s (1.234s including waiting). Image size: 4041495 bytes.
+61s         Normal    Started            pod/device-avail-cpu-stress-czzts   Container started

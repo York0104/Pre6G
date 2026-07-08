@@ -1,0 +1,13 @@
+timestamp,phase,node,ready,healthz_ok,compute_ok,metrics_ok,healthz_ms,compute_ms,health_failure_streak,compute_failure_streak,sample_reason,anomaly_reason,is_transient_anomaly,state,downtime_reason
+2026-07-07T15:00:44+00:00,unknown,icclz1,1,1,1,1,18.461,148.403,0,0,,,0,UP,
+2026-07-07T15:00:50+00:00,BASELINE,icclz1,1,1,1,1,9.020,11.074,0,0,,,0,UP,
+2026-07-07T15:00:55+00:00,CPU-M,icclz1,1,1,1,1,37.340,21.183,0,0,,,0,UP,
+2026-07-07T15:01:00+00:00,CPU-M,icclz1,1,1,1,1,23.145,15.442,0,0,,,0,UP,
+2026-07-07T15:01:07+00:00,RECOVERY-1,icclz1,1,1,1,1,35.579,23.414,0,0,,,0,UP,
+2026-07-07T15:01:14+00:00,MEM-M,icclz1,1,1,1,1,19.253,144.429,0,0,,,0,UP,
+2026-07-07T15:01:20+00:00,MEM-M,icclz1,1,1,1,1,15.589,24.102,0,0,,,0,UP,
+2026-07-07T15:01:25+00:00,RECOVERY-2,icclz1,1,1,1,1,74.313,11.134,0,0,,,0,UP,
+2026-07-07T15:01:30+00:00,MIX-M,icclz1,1,1,1,0,26.659,22.971,0,0,,,0,UP,
+2026-07-07T15:01:38+00:00,FINAL-RECOVERY,icclz1,1,1,1,1,12.988,10.400,0,0,,,0,UP,
+2026-07-07T15:01:43+00:00,FINAL-RECOVERY,icclz1,1,1,1,1,117.250,25.731,0,0,,,0,UP,
+2026-07-07T15:01:49+00:00,COMPLETE,icclz1,1,1,1,1,18.608,10.184,0,0,,,0,UP,

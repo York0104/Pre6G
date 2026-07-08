@@ -1,0 +1,12 @@
+{
+  "target_node": "icclz1",
+  "sampling_interval_seconds": 5.0,
+  "samples_total": 219,
+  "samples_down": 0,
+  "samples_degraded": 1,
+  "total_observation_seconds": 1095.0,
+  "total_down_seconds": 0.0,
+  "availability_percent": 100.0,
+  "downtime_reason_breakdown": {},
+  "generated_at": "2026-07-07T07:47:34+00:00"
+}

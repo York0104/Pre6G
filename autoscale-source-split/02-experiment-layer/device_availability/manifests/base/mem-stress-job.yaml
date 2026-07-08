@@ -1,0 +1,17 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: device-avail-mem-stress
+  namespace: intent-lab
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: icclz1
+      containers:
+      - name: stress
+        image: polinux/stress:latest
+        command: ["stress"]
+        args: ["--vm", "1", "--vm-bytes", "6G", "--vm-keep"]

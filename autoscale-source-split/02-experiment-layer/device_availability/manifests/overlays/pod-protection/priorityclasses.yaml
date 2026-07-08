@@ -1,0 +1,17 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: device-availability-sentinel-high
+value: 100000
+preemptionPolicy: PreemptLowerPriority
+globalDefault: false
+description: "Prepared only. Higher priority for node-sentinel during pod-level protection A/B tests."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: device-availability-stress-low
+value: 1000
+preemptionPolicy: PreemptLowerPriority
+globalDefault: false
+description: "Prepared only. Lower priority for stress jobs during pod-level protection A/B tests."

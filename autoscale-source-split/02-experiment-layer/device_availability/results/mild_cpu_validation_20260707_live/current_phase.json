@@ -1,0 +1,8 @@
+{
+  "phase_name": "BASELINE",
+  "cpu_load_percent": 0,
+  "memory_size_percent": 0,
+  "duration_seconds": 1200,
+  "target_node": "icclz1",
+  "updated_at": "2026-07-07T08:27:45Z"
+}

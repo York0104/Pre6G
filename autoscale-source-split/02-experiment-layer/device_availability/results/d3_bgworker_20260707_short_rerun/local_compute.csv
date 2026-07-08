@@ -1,0 +1,13 @@
+timestamp,label,url,http_code,elapsed_ms,ok,exception_type,exception_text
+2026-07-07T08:58:43Z,local_compute,http://127.0.0.1:18080/compute-check,200,104.36,1,,
+2026-07-07T08:58:48Z,local_compute,http://127.0.0.1:18080/compute-check,200,3.164,1,,
+2026-07-07T08:58:53Z,local_compute,http://127.0.0.1:18080/compute-check,200,0.686,1,,
+2026-07-07T08:58:58Z,local_compute,http://127.0.0.1:18080/compute-check,200,0.726,1,,
+2026-07-07T08:59:03Z,local_compute,http://127.0.0.1:18080/compute-check,200,1.392,1,,
+2026-07-07T08:59:08Z,local_compute,http://127.0.0.1:18080/compute-check,200,3.004,1,,
+2026-07-07T08:59:13Z,local_compute,http://127.0.0.1:18080/compute-check,200,183.612,1,,
+2026-07-07T08:59:19Z,local_compute,http://127.0.0.1:18080/compute-check,200,0.685,1,,
+2026-07-07T08:59:24Z,local_compute,http://127.0.0.1:18080/compute-check,200,1.146,1,,
+2026-07-07T08:59:29Z,local_compute,http://127.0.0.1:18080/compute-check,200,0.711,1,,
+2026-07-07T08:59:34Z,local_compute,http://127.0.0.1:18080/compute-check,200,0.774,1,,
+2026-07-07T08:59:39Z,local_compute,http://127.0.0.1:18080/compute-check,200,0.961,1,,

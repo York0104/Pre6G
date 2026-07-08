@@ -118,18 +118,35 @@ def load_phase_name(phase_file: Path):
     return str(data.get("phase_name", "unknown"))
 
 
-def classify(ready_ok, health, compute, metrics, compute_latency_ms, compute_timeout_ms):
+def classify_sample(ready_ok, health, compute, compute_latency_ms, compute_timeout_ms, degraded_threshold_ms):
     if not ready_ok:
         return "DOWN", "node_not_ready"
     if not health["ok"]:
-        return "DOWN", "sentinel_unreachable"
+        return "DEGRADED", "sentinel_unreachable"
     if not compute["ok"]:
-        return "DOWN", "compute_check_failed"
+        return "DEGRADED", "compute_check_failed"
     if compute_latency_ms >= compute_timeout_ms:
-        return "DOWN", "compute_check_timeout"
-    if compute_latency_ms >= 1000.0:
-        return "DEGRADED", ""
+        return "DEGRADED", "compute_check_timeout"
+    if compute_latency_ms >= degraded_threshold_ms:
+        return "DEGRADED", "compute_latency_high"
     return "UP", ""
+
+
+def classify_effective_state(
+    sample_state,
+    sample_reason,
+    health_failure_streak,
+    health_failure_confirmation_count,
+):
+    if sample_reason == "node_not_ready":
+        return "DOWN", sample_reason, False
+    if sample_reason == "sentinel_unreachable":
+        if health_failure_streak >= health_failure_confirmation_count:
+            return "DOWN", "sentinel_confirmed_outage", False
+        return "DEGRADED", sample_reason, True
+    if sample_state == "DEGRADED":
+        return "DEGRADED", sample_reason, False
+    return "UP", "", False
 
 
 def append_row(csv_path: Path, fieldnames, row: dict):
@@ -145,21 +162,32 @@ def write_summary(out_dir: Path, rows: list, sample_interval: float, target: str
     total = len(rows)
     down = sum(1 for row in rows if row["state"] == "DOWN")
     degraded = sum(1 for row in rows if row["state"] == "DEGRADED")
+    transient = sum(1 for row in rows if int(row["is_transient_anomaly"]) == 1)
+    functional_impairment = sum(1 for row in rows if row["sample_reason"] in {"compute_check_failed", "compute_check_timeout"})
     total_obs = total * sample_interval
     down_seconds = down * sample_interval
     availability = 100.0 if total == 0 else ((total - down) / total) * 100.0
     reason_counts = {}
+    confirmed_outage_events = 0
+    prev_state = "UP"
     for row in rows:
         reason = row["downtime_reason"]
         if not reason:
+            prev_state = row["state"]
             continue
         reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        if row["state"] == "DOWN" and prev_state != "DOWN":
+            confirmed_outage_events += 1
+        prev_state = row["state"]
     payload = {
         "target_node": target,
         "sampling_interval_seconds": sample_interval,
         "samples_total": total,
         "samples_down": down,
         "samples_degraded": degraded,
+        "samples_transient_anomaly": transient,
+        "samples_functional_impairment": functional_impairment,
+        "confirmed_outage_events": confirmed_outage_events,
         "total_observation_seconds": total_obs,
         "total_down_seconds": down_seconds,
         "availability_percent": round(availability, 6),
@@ -182,6 +210,8 @@ def main():
     ap.add_argument("--iterations", type=int, default=0)
     ap.add_argument("--http-timeout-seconds", type=float, default=2.5)
     ap.add_argument("--compute-timeout-ms", type=float, default=2000.0)
+    ap.add_argument("--degraded-threshold-ms", type=float, default=1000.0)
+    ap.add_argument("--health-failure-confirmation-count", type=int, default=3)
     ap.add_argument("--phase-file", default="results/current_phase.json")
     ap.add_argument("--out-dir", default="results/manual_run")
     ap.add_argument("--stop-phase-name", default="")
@@ -203,11 +233,18 @@ def main():
         "metrics_ok",
         "healthz_ms",
         "compute_ms",
+        "health_failure_streak",
+        "compute_failure_streak",
+        "sample_reason",
+        "anomaly_reason",
+        "is_transient_anomaly",
         "state",
         "downtime_reason",
     ]
     rows = []
     sentinel_base = f"http://{args.target_host}:{args.sentinel_port}"
+    health_failure_streak = 0
+    compute_failure_streak = 0
 
     remaining = args.iterations
     while True:
@@ -219,16 +256,26 @@ def main():
         metrics = probe_text(args.metrics_url, args.http_timeout_seconds)
 
         compute_latency_ms = compute["elapsed_ms"]
-        state, reason = classify(
+        sample_state, sample_reason = classify_sample(
             ready_ok,
             health,
             compute,
-            metrics,
             compute_latency_ms,
             args.compute_timeout_ms,
+            args.degraded_threshold_ms,
         )
-        if not reason and ready_error:
+        health_failure_streak = 0 if health["ok"] else health_failure_streak + 1
+        compute_failure = sample_reason in {"compute_check_failed", "compute_check_timeout"}
+        compute_failure_streak = 0 if not compute_failure else compute_failure_streak + 1
+        state, reason, is_transient_anomaly = classify_effective_state(
+            sample_state,
+            sample_reason,
+            health_failure_streak,
+            args.health_failure_confirmation_count,
+        )
+        if state == "UP" and ready_error:
             reason = ready_error
+        anomaly_reason = sample_reason if state != "DOWN" else ""
 
         row = {
             "timestamp": ts,
@@ -240,6 +287,11 @@ def main():
             "metrics_ok": int(metrics["ok"]),
             "healthz_ms": f"{health['elapsed_ms']:.3f}",
             "compute_ms": f"{compute_latency_ms:.3f}",
+            "health_failure_streak": health_failure_streak,
+            "compute_failure_streak": compute_failure_streak,
+            "sample_reason": sample_reason,
+            "anomaly_reason": anomaly_reason,
+            "is_transient_anomaly": int(is_transient_anomaly),
             "state": state,
             "downtime_reason": reason,
         }
@@ -259,6 +311,12 @@ def main():
                     "http_code": metrics["http_code"],
                     "error": metrics["error"],
                 },
+                "health_failure_streak": health_failure_streak,
+                "compute_failure_streak": compute_failure_streak,
+                "sample_state": sample_state,
+                "sample_reason": sample_reason,
+                "anomaly_reason": anomaly_reason,
+                "is_transient_anomaly": is_transient_anomaly,
                 "state": state,
                 "downtime_reason": reason,
             }, ensure_ascii=False) + "\n")

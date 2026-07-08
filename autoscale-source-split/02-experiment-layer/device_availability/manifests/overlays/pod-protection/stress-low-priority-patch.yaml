@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: device-avail-cpu-stress
+  namespace: intent-lab
+spec:
+  template:
+    spec:
+      priorityClassName: device-availability-stress-low
+      containers:
+        - name: stress
+          resources:
+            requests:
+              cpu: 500m
+              memory: 64Mi
+            limits:
+              cpu: "4"
+              memory: 128Mi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: device-avail-mem-stress
+  namespace: intent-lab
+spec:
+  template:
+    spec:
+      priorityClassName: device-availability-stress-low
+      containers:
+        - name: stress
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 7Gi

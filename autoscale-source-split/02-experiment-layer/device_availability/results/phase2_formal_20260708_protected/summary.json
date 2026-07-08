@@ -1,0 +1,20 @@
+{
+  "target_node": "icclz1",
+  "sampling_interval_seconds": 5.0,
+  "samples_total": 3883,
+  "samples_down": 0,
+  "samples_degraded": 39,
+  "samples_transient_anomaly": 17,
+  "samples_functional_impairment": 3,
+  "confirmed_outage_events": 0,
+  "total_observation_seconds": 19415.0,
+  "total_down_seconds": 0.0,
+  "availability_percent": 100.0,
+  "downtime_reason_breakdown": {
+    "sentinel_unreachable": 17,
+    "compute_latency_high": 19,
+    "compute_check_timeout": 2,
+    "compute_check_failed": 1
+  },
+  "generated_at": "2026-07-08T00:49:09+00:00"
+}
