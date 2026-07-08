@@ -197,6 +197,12 @@ elif [[ "${EXPERIMENT_PROFILE}" == "phase1_quick_validation" ]]; then
   run_phase "RECOVERY-2" "0" "0" "${RECOVERY_2_SECONDS:-600}"
   run_phase "MIX-M" "65" "60" "${MIX_M_SECONDS:-1800}" "${MIX_M_CPU_WORKERS:-4}" "${MIX_M_MEM_WORKERS:-1}" "${MIX_M_MEM_BYTES:-6G}"
   run_phase "FINAL-RECOVERY" "0" "0" "${FINAL_RECOVERY_SECONDS:-1200}"
+elif [[ "${EXPERIMENT_PROFILE}" == "r1_pod_memory_limit_validation" ]]; then
+  run_phase "BASELINE" "0" "0" "${BASELINE_SECONDS:-600}"
+  run_phase "MEM-contained" "0" "55" "${MEM_CONTAINED_SECONDS:-1200}" "0" "${MEM_CONTAINED_WORKERS:-1}" "${MEM_CONTAINED_BYTES:-6G}"
+  run_phase "RECOVERY-1" "0" "0" "${RECOVERY_1_SECONDS:-600}"
+  run_phase "MEM-boundary" "0" "65" "${MEM_BOUNDARY_SECONDS:-1200}" "0" "${MEM_BOUNDARY_WORKERS:-1}" "${MEM_BOUNDARY_BYTES:-7G}"
+  run_phase "FINAL-RECOVERY" "0" "0" "${FINAL_RECOVERY_SECONDS:-600}"
 else
   run_phase "BASELINE" "0" "0" "${BASELINE_SECONDS:-1800}"
   run_phase "CPU-M" "65" "0" "${CPU_M_SECONDS:-3600}" "${CPU_M_WORKERS:-4}"

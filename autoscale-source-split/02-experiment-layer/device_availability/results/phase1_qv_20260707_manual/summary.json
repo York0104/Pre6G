@@ -7,13 +7,23 @@
   "samples_transient_anomaly": 6,
   "samples_functional_impairment": 0,
   "confirmed_outage_events": 0,
-  "total_observation_seconds": 8425.0,
+  "observation_start": "2026-07-07T09:08:25+00:00",
+  "observation_end": "2026-07-07T11:38:24+00:00",
+  "observation_duration_s": 8999.0,
+  "expected_samples_at_nominal_interval": 1799.8,
+  "effective_sample_interval_s": 5.343824,
+  "total_observation_seconds": 8999.0,
   "total_down_seconds": 0.0,
   "availability_percent": 100.0,
+  "confirmed_outage_availability_percent": 100.0,
   "downtime_reason_breakdown": {
     "sentinel_unreachable": 6,
     "compute_latency_high": 1
   },
-  "generated_at": "2026-07-07T14:56:06+00:00",
+  "degraded_per_1000_samples": 4.154303,
+  "sentinel_unreachable_per_1000_samples": 3.560831,
+  "compute_latency_high_per_1000_samples": 0.593472,
+  "compute_timeout_or_failed_per_1000_samples": 0.0,
+  "generated_at": "2026-07-08T02:44:35+00:00",
   "generated_by": "backfill_summary.py"
 }

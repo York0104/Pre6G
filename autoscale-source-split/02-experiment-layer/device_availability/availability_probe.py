@@ -14,6 +14,10 @@ def iso_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def parse_timestamp(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def http_get(url: str, timeout: float):
     started = time.perf_counter()
     req = urllib.request.Request(url, method="GET")
@@ -164,7 +168,12 @@ def write_summary(out_dir: Path, rows: list, sample_interval: float, target: str
     degraded = sum(1 for row in rows if row["state"] == "DEGRADED")
     transient = sum(1 for row in rows if int(row["is_transient_anomaly"]) == 1)
     functional_impairment = sum(1 for row in rows if row["sample_reason"] in {"compute_check_failed", "compute_check_timeout"})
-    total_obs = total * sample_interval
+    started_at = parse_timestamp(rows[0]["timestamp"])
+    ended_at = parse_timestamp(rows[-1]["timestamp"])
+    actual_duration = max((ended_at - started_at).total_seconds(), 0.0)
+    expected_samples = actual_duration / sample_interval if sample_interval > 0 else 0.0
+    effective_interval = actual_duration / (total - 1) if total > 1 else sample_interval
+    total_obs = actual_duration if total > 1 else sample_interval
     down_seconds = down * sample_interval
     availability = 100.0 if total == 0 else ((total - down) / total) * 100.0
     reason_counts = {}
@@ -179,6 +188,13 @@ def write_summary(out_dir: Path, rows: list, sample_interval: float, target: str
         if row["state"] == "DOWN" and prev_state != "DOWN":
             confirmed_outage_events += 1
         prev_state = row["state"]
+    sentinel_unreachable = reason_counts.get("sentinel_unreachable", 0)
+    compute_latency_high = reason_counts.get("compute_latency_high", 0)
+    compute_timeout_or_failed = (
+        reason_counts.get("compute_check_timeout", 0)
+        + reason_counts.get("compute_check_failed", 0)
+    )
+    per_1000_denominator = total / 1000.0 if total > 0 else 1.0
     payload = {
         "target_node": target,
         "sampling_interval_seconds": sample_interval,
@@ -188,10 +204,20 @@ def write_summary(out_dir: Path, rows: list, sample_interval: float, target: str
         "samples_transient_anomaly": transient,
         "samples_functional_impairment": functional_impairment,
         "confirmed_outage_events": confirmed_outage_events,
+        "observation_start": rows[0]["timestamp"],
+        "observation_end": rows[-1]["timestamp"],
+        "observation_duration_s": round(actual_duration, 3),
+        "expected_samples_at_nominal_interval": round(expected_samples, 3),
+        "effective_sample_interval_s": round(effective_interval, 6),
         "total_observation_seconds": total_obs,
         "total_down_seconds": down_seconds,
         "availability_percent": round(availability, 6),
+        "confirmed_outage_availability_percent": round(availability, 6),
         "downtime_reason_breakdown": reason_counts,
+        "degraded_per_1000_samples": round(degraded / per_1000_denominator, 6),
+        "sentinel_unreachable_per_1000_samples": round(sentinel_unreachable / per_1000_denominator, 6),
+        "compute_latency_high_per_1000_samples": round(compute_latency_high / per_1000_denominator, 6),
+        "compute_timeout_or_failed_per_1000_samples": round(compute_timeout_or_failed / per_1000_denominator, 6),
         "generated_at": iso_now(),
     }
     (out_dir / "summary.json").write_text(
