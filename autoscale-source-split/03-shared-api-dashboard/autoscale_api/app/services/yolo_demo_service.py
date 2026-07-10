@@ -231,8 +231,8 @@ class YoloDemoService:
             )
             _append_event("info", "serial_client_started", f"Started serial request client pid={measurement_proc.pid}")
 
-            state = _read_state()
-            if state.get("run_id") != run_id or state.get("status") not in {"starting", "running"}:
+            current_state = _read_state()
+            if current_state.get("run_id") != run_id or current_state.get("status") not in {"starting", "running"}:
                 if measurement_proc is not None:
                     try:
                         os.killpg(os.getpgid(measurement_proc.pid), signal.SIGTERM)
@@ -242,7 +242,7 @@ class YoloDemoService:
                     self._stop_remote_bgload(bgload_pid)
                 return
 
-            state.update(
+            current_state.update(
                 {
                     "status": "starting",
                     "focus_pod": focus_pod,
@@ -253,7 +253,7 @@ class YoloDemoService:
                     "message": "YOLO demo workload launched; waiting for first live samples",
                 }
             )
-            _write_state(state)
+            _write_state(current_state)
             _append_event("info", "demo_launch_ready", "YOLO demo workload launched and waiting for first live samples")
         except Exception:
             if measurement_proc is not None:
@@ -288,9 +288,12 @@ class YoloDemoService:
         startup_age = _now_epoch() - int(state.get("started_at", 0))
 
         if state["status"] in {"running", "starting"}:
-            if measurement_alive and bgload_alive and has_measurement_samples:
+            if measurement_alive and bgload_alive:
                 state["status"] = "running"
-                state["message"] = "YOLO demo is running"
+                if has_measurement_samples:
+                    state["message"] = "YOLO demo is running"
+                else:
+                    state["message"] = "YOLO demo is running; waiting for first live samples"
             elif state["status"] == "starting" and (measurement_alive or bgload_alive):
                 if startup_age < STARTUP_GRACE_SECONDS:
                     state["message"] = "YOLO demo is still starting"
