@@ -1,2 +1,0 @@
-split,status,reason,note
-leave_one_replicate_per_load_level_out,enabled,manifest_replicate_available,replicate identity read from manifest_replicate column
