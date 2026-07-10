@@ -8,3 +8,10 @@
 # Shared dashboard runtime state, histories, and generated run outputs.
 03-shared-api-dashboard/autoscale_api/app/runtime/
 03-shared-api-dashboard/autoscale_api/runtime/
+
+# Keep reports/manifests in experiment results, but ignore derived tables
+# and JSON outputs that can be regenerated from preserved artifacts.
+02-experiment-layer/experiments_yolo/results/**/*.csv
+02-experiment-layer/experiments_yolo/results/**/*.json
+!02-experiment-layer/experiments_yolo/results/**/analysis_manifest.json
+!02-experiment-layer/experiments_yolo/results/**/run_manifest.json
