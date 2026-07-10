@@ -14,13 +14,11 @@ data:
     set -euo pipefail
 
     NODE_NAME="${NODE_NAME:-unknown}"
-
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
     apt-get install -y -qq util-linux dmidecode >/dev/null
 
     LSCU_OUT="$(lscpu || true)"
-
     model_name="$(echo "$LSCU_OUT" | awk -F: '/Model name/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')"
     max_mhz="$(echo "$LSCU_OUT" | awk -F: '/CPU max MHz/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')"
     min_mhz="$(echo "$LSCU_OUT" | awk -F: '/CPU min MHz/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')"
@@ -29,102 +27,55 @@ data:
     l2="$(echo "$LSCU_OUT" | awk -F: '/L2 cache/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')"
     l3="$(echo "$LSCU_OUT" | awk -F: '/L3 cache/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')"
 
-    base_clock=""
-    if [[ -n "${model_name}" ]]; then
-      base_clock="$(python3 - <<'PY' "${model_name}"
-import re, sys
-s = sys.argv[1]
-m = re.search(r'@\s*([0-9.]+)GHz', s)
-print(m.group(1) if m else "")
-PY
-)"
+    base_clock="$(python3 -c 'import re, sys; match = re.search(r"@\s*([0-9.]+)GHz", sys.argv[1]); print(match.group(1) if match else "")' "$model_name")"
+    if [[ -z "$base_clock" && -n "$min_mhz" ]]; then
+      base_clock="$(python3 -c 'import sys; print(round(float(sys.argv[1]) / 1000.0, 2)) if sys.argv[1] else print("")' "$min_mhz" 2>/dev/null || true)"
     fi
-
-    if [[ -z "${base_clock}" && -n "${min_mhz}" ]]; then
-      base_clock="$(python3 - <<'PY' "${min_mhz}"
-import sys
-try:
-    print(round(float(sys.argv[1]) / 1000.0, 2))
-except Exception:
-    print("")
-PY
-)"
-    fi
-
-    max_clock=""
-    if [[ -n "${max_mhz}" ]]; then
-      max_clock="$(python3 - <<'PY' "${max_mhz}"
-import sys
-try:
-    print(round(float(sys.argv[1]) / 1000.0, 2))
-except Exception:
-    print("")
-PY
-)"
-    fi
+    max_clock="$(python3 -c 'import sys; print(round(float(sys.argv[1]) / 1000.0, 2)) if sys.argv[1] else print("")' "$max_mhz" 2>/dev/null || true)"
 
     DMI_OUT="$(dmidecode --type memory 2>/dev/null || true)"
-
     ddr_gen="$(echo "$DMI_OUT" | awk -F: '/^[[:space:]]*Type:/ {gsub(/^[ \t]+/, "", $2); if ($2 ~ /^DDR[0-9]+$/) {print $2; exit}}')"
     freq="$(echo "$DMI_OUT" | awk -F: '/Configured Memory Speed|Speed/ {gsub(/^[ \t]+/, "", $2); if ($2 ~ /MT\/s/) {gsub(/ MT\/s/, "", $2); print $2; exit}}')"
 
-    cas_latency=""
+    python3 -c '
+    import json
+    import sys
 
-    python3 - <<'PY' \
-      "${NODE_NAME}" "${model_name}" "${base_clock}" "${max_clock}" \
-      "${l1d}" "${l1i}" "${l2}" "${l3}" \
-      "${ddr_gen}" "${freq}" "${cas_latency}"
-import json
-import sys
+    def null_if_empty(value):
+        return None if value == "" else value
 
-def null_if_empty(x):
-    return None if x == "" else x
+    def to_float(value):
+        try:
+            return float(value)
+        except Exception:
+            return None
 
-def to_float(x):
-    try:
-        return float(x)
-    except Exception:
-        return None
+    def to_int(value):
+        try:
+            return int(value)
+        except Exception:
+            return None
 
-def to_int(x):
-    try:
-        return int(x)
-    except Exception:
-        return None
-
-node_name = sys.argv[1]
-model_name = null_if_empty(sys.argv[2])
-base_clock = to_float(sys.argv[3])
-max_clock = to_float(sys.argv[4])
-l1d = null_if_empty(sys.argv[5])
-l1i = null_if_empty(sys.argv[6])
-l2 = null_if_empty(sys.argv[7])
-l3 = null_if_empty(sys.argv[8])
-ddr_gen = null_if_empty(sys.argv[9])
-freq = to_int(sys.argv[10])
-cas_latency = null_if_empty(sys.argv[11])
-
-obj = {
-    "node_name": node_name,
-    "cpu": {
-        "model_name": model_name,
-        "base_clock_ghz": base_clock,
-        "max_clock_ghz": max_clock,
-        "cache": {
-            "l1d": l1d,
-            "l1i": l1i,
-            "l2": l2,
-            "l3": l3
-        }
-    },
-    "memory": {
-        "ddr_gen": ddr_gen,
-        "frequency_mt_s": freq,
-        "cas_latency": cas_latency
-    }
-}
-print(json.dumps(obj, ensure_ascii=False))
-PY
+    print(json.dumps({
+        "node_name": sys.argv[1],
+        "cpu": {
+            "model_name": null_if_empty(sys.argv[2]),
+            "base_clock_ghz": to_float(sys.argv[3]),
+            "max_clock_ghz": to_float(sys.argv[4]),
+            "cache": {
+                "l1d": null_if_empty(sys.argv[5]),
+                "l1i": null_if_empty(sys.argv[6]),
+                "l2": null_if_empty(sys.argv[7]),
+                "l3": null_if_empty(sys.argv[8]),
+            },
+        },
+        "memory": {
+            "ddr_gen": null_if_empty(sys.argv[9]),
+            "frequency_mt_s": to_int(sys.argv[10]),
+            "cas_latency": null_if_empty(sys.argv[11]),
+        },
+    }, ensure_ascii=False))
+    ' "$NODE_NAME" "$model_name" "$base_clock" "$max_clock" "$l1d" "$l1i" "$l2" "$l3" "$ddr_gen" "$freq" ""
 
     sleep infinity
 ---

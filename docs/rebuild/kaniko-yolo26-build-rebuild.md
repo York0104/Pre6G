@@ -178,7 +178,7 @@ Pre6G/
 - `intent-lab` 已存在
 - `harbor-push-secret` 可使用 push robot account 建立
 - `harbor-ca` ConfigMap 可由 `/etc/rancher/k3s/certs/harbor-ca.crt` 生成
-- split pipeline 相關檔案已經 commit 並 push 到 GitHub `York0104/Pre6G` 的 `k3s-rebuild` branch
+- split pipeline 相關檔案已經 commit 並 push 到 GitHub `York0104/Pre6G` 的 `main` branch
 
 ## Common Bootstrap
 
@@ -201,7 +201,7 @@ git status --short
 Success criteria:
 
 - `pwd` 顯示 `/home/icclz2/Pre6G`
-- branch 顯示 `k3s-rebuild`
+- branch 顯示 `main`
 - 沒有尚未 push 的 split pipeline 必要檔案
 
 ### 2. 建立 build namespace
@@ -267,7 +267,7 @@ Success criteria:
 
 split build 原本採用：
 
-- `--context=git://github.com/York0104/Pre6G.git#refs/heads/k3s-rebuild`
+- `--context=git://github.com/York0104/Pre6G.git#refs/heads/main`
 - `--context-sub-path=autoscale-source-split/02-experiment-layer/yolo26_workload`
 - `--dockerfile=Dockerfile.base` 或 `--dockerfile=Dockerfile.app`
 
@@ -826,13 +826,13 @@ Success criteria:
 
 ### Root cause
 
-- GitHub 上的 `k3s-rebuild` branch 還沒有 `Dockerfile.base` / `Dockerfile.app` / 相關新檔
+- GitHub 上的 `main` branch 還沒有 `Dockerfile.base` / `Dockerfile.app` / 相關新檔
 - 本機檔案只存在於工作樹，尚未 commit / push
 
 ### Correct fix
 
 - 先將 split pipeline 相關檔案 commit 到本機 branch
-- 再 push 到 `origin/k3s-rebuild`
+- 再 push 到 `origin/main`
 - 確保遠端 branch 真的包含：
   - `autoscale-source-split/02-experiment-layer/yolo26_workload/Dockerfile.base`
   - `autoscale-source-split/02-experiment-layer/yolo26_workload/Dockerfile.app`

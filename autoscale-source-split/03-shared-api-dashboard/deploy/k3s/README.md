@@ -55,7 +55,7 @@ docker build \
 
 若目標 cluster 需要 Harbor push / pull，請先依照：
 
-- [k3s-migration-bundle-sanitized/registry/REBUILD_STEPS.md](../../../k3s-migration-bundle-sanitized/registry/REBUILD_STEPS.md)
+- [k3s-migration-bundle-sanitized/registry/REBUILD_STEPS.md](../../../../k3s-migration-bundle-sanitized/registry/REBUILD_STEPS.md)
 
 完成 registry 與 `k3s` node pull path。
 

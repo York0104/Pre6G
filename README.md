@@ -8,6 +8,7 @@
 
 - 先看 [MONITORING_REBUILD_SOP.md](MONITORING_REBUILD_SOP.md)
 - 再看 [monitoring-rebuild/REBUILD_PARAMETERS.md](monitoring-rebuild/REBUILD_PARAMETERS.md)
+- 文件、程式與部署檔的權威來源請看 [docs/DOCUMENTATION_AUDIT.md](docs/DOCUMENTATION_AUDIT.md)
 - `02-experiment-layer` 目前仍是後續工作，不列入本次 `k3s` 主線交付驗收
 
 ## 內容
@@ -16,8 +17,7 @@
 | --- | --- |
 | `k3s-migration-bundle-sanitized/` | GitHub-safe 的 k3s migration/reference bundle，包含 Kubernetes、Helm、monitoring、GPU、RFSoC、AP、thermal YOLO 與 registry rebuild 參考。 |
 | `autoscale-source-split/` | 從 `/home/icclz2/Pre6G` 整理出的 source-level 分層，包含監控層、實驗層、API/dashboard 共用層。 |
-| `current-lab-handoff-private/` | 私密 current-lab connection handoff，包含 kubeconfig、SSH keys、AutoScale API env 等。 |
-| `MANIFEST.txt` | 總檔案清單。 |
+| `MANIFEST.txt` | 歷史交付快照的檔案清單；目前追蹤內容請以 `git ls-files` 為準。 |
 
 ## Repo 上傳注意事項
 
@@ -37,7 +37,7 @@ MANIFEST.txt
 .gitignore
 ```
 
-`current-lab-handoff-private/` 含 kubeconfig、SSH keys、API env，不要 commit 或上傳 GitHub；請改用加密壓縮檔或其他可信任私密管道交付。
+`current-lab-handoff-private/` 是刻意不納入本 repo 的私密 handoff 目錄；目前 checkout 不包含該資料夾。它應包含 kubeconfig、SSH keys、API env 等敏感資料，請以加密壓縮檔或其他可信任私密管道交付，勿 commit 或上傳 GitHub。
 
 ## 尚未包含
 

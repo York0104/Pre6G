@@ -31,7 +31,6 @@
 - `GET /api/v1/full-metrics/{node_name}`
 - `GET /api/v1/workloads`
 - `GET /api/v1/workloads/{namespace}/{workload}/status`
-- `GET /api/v1/nodes/{node_name}/workloads`
 - `POST /api/v1/llm-lab/inference`
 - `POST /api/v1/llm-lab/benchmarks/smoke`
 - `POST /api/v1/llm-lab/benchmarks/runs`

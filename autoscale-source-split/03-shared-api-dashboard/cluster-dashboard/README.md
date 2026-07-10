@@ -2,6 +2,10 @@
 
 `cluster-dashboard` 是 `Pre6G` 的前端 dashboard。
 
+## Prerequisites
+
+- Node.js `20.19+` or `22.12+`. This project uses Vite 8; Node.js 12 cannot run the current build toolchain.
+
 本次 `k3s` 重建驗收目前涵蓋：
 
 - `Cluster Monitor`

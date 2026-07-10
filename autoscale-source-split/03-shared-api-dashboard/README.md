@@ -63,7 +63,6 @@
 
 - `GET /api/v1/workloads`
 - `GET /api/v1/workloads/{namespace}/{workload}/status`
-- `GET /api/v1/nodes/{node_name}/workloads`
 
 前端 `LLM Serving Lab` 目前會顯示：
 

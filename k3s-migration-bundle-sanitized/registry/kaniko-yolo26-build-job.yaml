@@ -21,7 +21,7 @@ spec:
           image: gcr.io/kaniko-project/executor:v1.23.2-debug
           args:
             # Replace the branch ref with a fixed commit SHA if you need fully reproducible builds.
-            - "--context=git://github.com/York0104/Pre6G.git#refs/heads/k3s-rebuild"
+            - "--context=git://github.com/York0104/Pre6G.git#refs/heads/main"
             - "--context-sub-path=autoscale-source-split/02-experiment-layer/yolo26_workload"
             - "--dockerfile=Dockerfile"
             - "--destination=harbor.iccl.local:8088/pre6g/yolo26n:REPLACE_IMAGE_TAG"

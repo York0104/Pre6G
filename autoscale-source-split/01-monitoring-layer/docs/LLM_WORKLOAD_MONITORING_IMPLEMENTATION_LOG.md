@@ -56,7 +56,6 @@ Feature: `Gemma 4 vLLM Serving Workload Monitoring`
 
 - `GET /api/v1/workloads`
 - `GET /api/v1/workloads/{namespace}/{workload}/status`
-- `GET /api/v1/nodes/{node_name}/workloads`
 
 目前 workload identity 組成：
 

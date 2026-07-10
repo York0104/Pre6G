@@ -1,7 +1,9 @@
 # YOLO26 3-Instance Thermal Experiment README
 
-本文件說明 `scripts/run_B_thermal_yolo26_3inst.sh` 與
-`scripts/run_C_thermal_yolo26_3inst_cycles.sh` 的用途、依賴、實驗設計、
+> Historical reference: 本文件與 scripts 需要原始 `~/AutoScale` workspace、worker SSH 與 live cluster；sanitized bundle 不含完整 private runtime，不能視為可直接執行的 standalone runbook。
+
+本文件說明 `run_B_thermal_yolo26_3inst.sh` 與
+`run_C_thermal_yolo26_3inst_cycles.sh` 的用途、依賴、實驗設計、
 輸出資料與操作指令。這組腳本用來在單一 GPU worker 上部署三個 YOLO26n
 推論服務，並在可控熱壓力循環中收集 latency、GPU telemetry、Kubernetes
 狀態與 VictoriaMetrics/Netdata 聚合指標。
@@ -62,7 +64,7 @@ Kubernetes / monitoring 需要：
 
 主要腳本：
 
-- `scripts/run_B_thermal_yolo26_3inst.sh`
+- `run_B_thermal_yolo26_3inst.sh`
   - 執行單次 thermal YOLO 3-instance experiment。
   - 建立 run directory。
   - 支援 `OUTPUT_ROOT` / `EXP_RUNS_DIR` 指定輸出根目錄。
@@ -77,7 +79,7 @@ Kubernetes / monitoring 需要：
   - 實驗結束後執行 outage labeling。
   - 若開啟 VM aggregator，自動 merge VM aggregator metrics 到 labeled dataset。
 
-- `scripts/run_C_thermal_yolo26_3inst_cycles.sh`
+- `run_C_thermal_yolo26_3inst_cycles.sh`
   - 重複執行多個 `run_B` cycle。
   - 每個 cycle 產生獨立 run directory。
   - 支援 `OUTPUT_ROOT` / `EXP_RUNS_DIR` 指定輸出根目錄。
@@ -193,7 +195,7 @@ server compute 問題與 client/network/queueing 問題。三個 instance 共用
 可用 `OUTPUT_ROOT` 或 `EXP_RUNS_DIR` 指定輸出根目錄：
 
 ```bash
-OUTPUT_ROOT="$HOME/exp_runs/my_thermal_90C_run" bash scripts/run_C_thermal_yolo26_3inst_cycles.sh
+OUTPUT_ROOT="$HOME/exp_runs/my_thermal_90C_run" bash run_C_thermal_yolo26_3inst_cycles.sh
 ```
 
 `run_C` 會在 `OUTPUT_ROOT` 下建立每個 cycle 的資料夾。可用 `RUN_ID_PREFIX`
@@ -319,7 +321,7 @@ VM_AGGREGATOR_ENABLED=1 \
 VM_AGGREGATOR_INTERVAL_SEC=5 \
 VM_AGGREGATOR_AUTO_MERGE=1 \
 VM_AGGREGATOR_PATH="$PWD/vm_aggregator.py" \
-bash scripts/run_B_thermal_yolo26_3inst.sh "$RUN_ID"
+bash run_B_thermal_yolo26_3inst.sh "$RUN_ID"
 ```
 
 ### 5. 半天長跑範例
@@ -348,7 +350,7 @@ VM_AGGREGATOR_INTERVAL_SEC=5 \
 VM_AGGREGATOR_AUTO_MERGE=1 \
 VM_AGGREGATOR_MERGE_TOLERANCE_SEC=5 \
 VM_AGGREGATOR_PATH="$PWD/vm_aggregator.py" \
-bash scripts/run_C_thermal_yolo26_3inst_cycles.sh
+bash run_C_thermal_yolo26_3inst_cycles.sh
 ```
 
 這大約是 `12 * 57 分鐘 = 11.4 小時`，實際時間會受 setup、rollout、plot 影響。
@@ -377,7 +379,7 @@ VM_AGGREGATOR_INTERVAL_SEC=5 \
 VM_AGGREGATOR_AUTO_MERGE=1 \
 VM_AGGREGATOR_MERGE_TOLERANCE_SEC=5 \
 VM_AGGREGATOR_PATH="$PWD/vm_aggregator.py" \
-bash scripts/run_C_thermal_yolo26_3inst_cycles.sh
+bash run_C_thermal_yolo26_3inst_cycles.sh
 ```
 
 建議用 tmux：
@@ -477,7 +479,7 @@ PY
 OUTPUT_ROOT="$HOME/exp_runs/my_thermal_90C_run" \
 RUN_ID_PREFIX="thermal90_yolo26_3inst" \
 CYCLES=12 \
-bash scripts/run_C_thermal_yolo26_3inst_cycles.sh
+bash run_C_thermal_yolo26_3inst_cycles.sh
 ```
 
 輸出範例：
@@ -518,7 +520,7 @@ VM_AGGREGATOR_VM_URL=http://127.0.0.1:18428 \
 VM_AGGREGATOR_NETDATA_URL=http://127.0.0.1:11999 \
 VM_AGGREGATOR_NETDATA_CHILD_URL=http://127.0.0.1:11999 \
 VM_AGGREGATOR_NETDATA_PARENT_BASE_URL=http://127.0.0.1:11999 \
-bash scripts/run_C_thermal_yolo26_3inst_cycles.sh
+bash run_C_thermal_yolo26_3inst_cycles.sh
 ```
 
 ### `CYCLES= 12` 失敗

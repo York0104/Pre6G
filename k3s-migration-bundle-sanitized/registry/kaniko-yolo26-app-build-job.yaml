@@ -19,7 +19,7 @@ spec:
             - -c
             - |
               set -eu
-              git clone --branch k3s-rebuild --single-branch \
+              git clone --branch main --single-branch \
                 https://github.com/York0104/Pre6G.git /workspace/src
               test -f /workspace/src/autoscale-source-split/02-experiment-layer/yolo26_workload/Dockerfile.app
               ls -la /workspace/src/autoscale-source-split/02-experiment-layer/yolo26_workload
