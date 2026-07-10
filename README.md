@@ -1,5 +1,9 @@
 # External Handoff Package
 
+> [!WARNING]
+> 此 branch 是舊版 Kubernetes external handoff 的歷史快照，已停止維護。
+> 現行 K3s 重建、開發與部署文件請參考 [`main`](https://github.com/York0104/Pre6G/tree/main) branch。
+
 這是目前唯一需要交付的總資料夾。
 
 ## 內容
