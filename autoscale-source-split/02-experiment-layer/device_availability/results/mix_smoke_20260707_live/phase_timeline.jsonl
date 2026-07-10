@@ -1,4 +1,0 @@
-{"timestamp":"2026-07-07T05:13:34Z","phase_name":"BASELINE","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":30}
-{"timestamp":"2026-07-07T05:14:04Z","phase_name":"MIX-H","cpu_load_percent":70,"memory_size_percent":65,"duration_seconds":60}
-{"timestamp":"2026-07-07T05:15:04Z","phase_name":"RECOVERY-1","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":30}
-{"timestamp":"2026-07-07T05:15:34Z","phase_name":"COMPLETE","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":0}

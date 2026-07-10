@@ -1,2 +1,0 @@
-NAME                  READY   STATUS    RESTARTS   AGE     IP              NODE     NOMINATED NODE   READINESS GATES
-node-sentinel-lkbw8   1/1     Running   0          3m15s   100.105.48.97   icclz1   <none>           <none>

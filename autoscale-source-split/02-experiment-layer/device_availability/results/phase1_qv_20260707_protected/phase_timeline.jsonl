@@ -1,8 +1,0 @@
-{"timestamp":"2026-07-07T15:12:49Z","phase_name":"BASELINE","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":1200}
-{"timestamp":"2026-07-07T15:32:49Z","phase_name":"CPU-M","cpu_load_percent":65,"memory_size_percent":0,"duration_seconds":1800}
-{"timestamp":"2026-07-07T16:02:49Z","phase_name":"RECOVERY-1","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":600}
-{"timestamp":"2026-07-07T16:12:49Z","phase_name":"MEM-M","cpu_load_percent":0,"memory_size_percent":60,"duration_seconds":1800}
-{"timestamp":"2026-07-07T16:42:50Z","phase_name":"RECOVERY-2","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":600}
-{"timestamp":"2026-07-07T16:52:50Z","phase_name":"MIX-M","cpu_load_percent":65,"memory_size_percent":60,"duration_seconds":1800}
-{"timestamp":"2026-07-07T17:22:50Z","phase_name":"FINAL-RECOVERY","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":1200}
-{"timestamp":"2026-07-07T17:42:50Z","phase_name":"COMPLETE","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":0}

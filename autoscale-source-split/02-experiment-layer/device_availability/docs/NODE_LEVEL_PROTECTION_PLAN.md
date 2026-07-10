@@ -33,14 +33,19 @@ Node-level protection 實驗中，不應同時改：
 
 - `docs/PHASE2_PROTECTED_BASELINE_SUMMARY_20260708.md`
 - `docs/POD_MEMORY_LIMIT_VALIDATION_RUNBOOK.md`
+- `docs/EVICTIONHARD_VALIDATION_RUNBOOK.md`
 - `manifests/overlays/pod-memory-limit/`
+- `manifests/node-protection/`
 - `results/NODE_LEVEL_PROTECTION_R0_R1_20260708.md`
+- `results/NODE_LEVEL_PROTECTION_R2_EVICTIONHARD_20260708.md`
+- `run_r2_evictionhard_short_validation.sh`
 
 ## Current State
 
 1. `R0` 已將 `phase2_formal_20260708_protected` 封存為 `P2 Pod-level protected baseline`。
 2. `R1` 已完成一次 live validation：`r1_pod_memory_limit_20260708_protected`。
-3. 目前最合理的下一步是 `R2 short evictionHard validation`，而不是直接跳 `systemReserved / kubeReserved`。
+3. `R2` 的 runbook、example config、report template 與 runner 已建立，但尚未套用到 live node。
+4. 目前最合理的下一步是完成 `R2` preflight、核可 `evictionHard` 套用與 short validation，而不是直接跳 `systemReserved / kubeReserved`。
 
 ## Important Note
 

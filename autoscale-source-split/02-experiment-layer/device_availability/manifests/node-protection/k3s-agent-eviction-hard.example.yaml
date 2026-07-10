@@ -1,0 +1,2 @@
+kubelet-arg:
+  - "eviction-hard=memory.available<2Gi,nodefs.available<10%,imagefs.available<15%"

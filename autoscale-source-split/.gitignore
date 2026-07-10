@@ -1,0 +1,10 @@
+# Experiment reports at the results root can stay versioned, but
+# per-run output directories are generated artifacts.
+02-experiment-layer/device_availability/results/*/
+
+# YOLO demo runtime state and raw measurements.
+02-experiment-layer/experiments_yolo/yolo_demo/runtime/
+
+# Shared dashboard runtime state, histories, and generated run outputs.
+03-shared-api-dashboard/autoscale_api/app/runtime/
+03-shared-api-dashboard/autoscale_api/runtime/

@@ -1,6 +1,0 @@
-{"timestamp":"2026-07-08T02:44:42Z","phase_name":"BASELINE","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":600}
-{"timestamp":"2026-07-08T02:54:42Z","phase_name":"MEM-contained","cpu_load_percent":0,"memory_size_percent":55,"duration_seconds":1200}
-{"timestamp":"2026-07-08T03:14:43Z","phase_name":"RECOVERY-1","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":600}
-{"timestamp":"2026-07-08T03:24:43Z","phase_name":"MEM-boundary","cpu_load_percent":0,"memory_size_percent":65,"duration_seconds":1200}
-{"timestamp":"2026-07-08T03:44:43Z","phase_name":"FINAL-RECOVERY","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":600}
-{"timestamp":"2026-07-08T03:54:43Z","phase_name":"COMPLETE","cpu_load_percent":0,"memory_size_percent":0,"duration_seconds":0}

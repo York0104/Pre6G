@@ -1,2 +1,0 @@
-NAME            DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR              AGE    CONTAINERS      IMAGES             SELECTOR
-node-sentinel   1         1         1       1            1           availability-test=target   4h4m   node-sentinel   python:3.12-slim   app=node-sentinel
