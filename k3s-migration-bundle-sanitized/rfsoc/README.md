@@ -15,4 +15,9 @@ Lab LAN:   192.168.100.217:9100
 Tailscale: 100.91.37.32:9100
 ```
 
-RFSoC SSH key 不在 sanitized copy；請透過 private handoff 恢復為 `~/.ssh/id_ed25519_rfsoc` 或設定 `PL_STATUS_SSH_KEY`。
+RFSoC SSH private key 不在 sanitized copy；live runtime 請透過 private handoff 提供
+`PL_STATUS_SSH_KEY`（通常指向 `~/.ssh/id_ed25519_rfsoc`）。不要將 key 複製回此目錄。
+
+目前 live 路徑的驗證基準為 node-exporter target `100.91.37.32:9100`、Netdata mirrored
+host `pynq` 與 `xilinx@100.91.37.32` 的 overlay status JSON。這些是 runtime 狀態，不是
+sanitized bundle 內的憑證保證。

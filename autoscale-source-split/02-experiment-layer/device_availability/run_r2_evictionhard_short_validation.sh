@@ -27,16 +27,29 @@ TARGET_REMAIN_MIB="${TARGET_REMAIN_MIB:-1536}"
 PER_POD_VM_MIB="${PER_POD_VM_MIB:-2600}"
 MEM_AGG_H_VM_EXTRA_MIB="${MEM_AGG_H_VM_EXTRA_MIB:-256}"
 MEM_AGG_H_PARALLELISM_EXTRA="${MEM_AGG_H_PARALLELISM_EXTRA:-1}"
+MEM_AGG_H_INITIAL_PARALLELISM="${MEM_AGG_H_INITIAL_PARALLELISM:-4}"
+MEM_AGG_H_RAMP_STEP="${MEM_AGG_H_RAMP_STEP:-4}"
+MEM_AGG_H_RAMP_INTERVAL_SECONDS="${MEM_AGG_H_RAMP_INTERVAL_SECONDS:-15}"
 PER_POD_REQUEST_MEMORY="${PER_POD_REQUEST_MEMORY:-256Mi}"
-PER_POD_LIMIT_MEMORY="${PER_POD_LIMIT_MEMORY:-3Gi}"
-PER_POD_REQUEST_CPU="${PER_POD_REQUEST_CPU:-100m}"
+PER_POD_LIMIT_MEMORY="${PER_POD_LIMIT_MEMORY:-4Gi}"
+PER_POD_REQUEST_CPU="${PER_POD_REQUEST_CPU:-10m}"
 PER_POD_LIMIT_CPU="${PER_POD_LIMIT_CPU:-500m}"
 PARALLELISM_MIN="${PARALLELISM_MIN:-2}"
 PARALLELISM_MAX="${PARALLELISM_MAX:-24}"
-STRESS_PRIORITY_CLASS="${STRESS_PRIORITY_CLASS:-device-availability-stress-low}"
+STRESS_PRIORITY_CLASS="${STRESS_PRIORITY_CLASS:-device-availability-stress-nonpreempting-low}"
 STRESS_IMAGE="${STRESS_IMAGE:-polinux/stress:latest}"
 CPU_STRESS_IMAGE="${CPU_STRESS_IMAGE:-polinux/stress:latest}"
+STRESS_IMAGE_PULL_POLICY="${STRESS_IMAGE_PULL_POLICY:-IfNotPresent}"
 MIX_CPU_WORKERS_PER_POD="${MIX_CPU_WORKERS_PER_POD:-1}"
+PREWARM_IMAGES="${PREWARM_IMAGES:-1}"
+PREWARM_TIMEOUT_SECONDS="${PREWARM_TIMEOUT_SECONDS:-240}"
+PREWARM_JOB_TTL_SECONDS="${PREWARM_JOB_TTL_SECONDS:-120}"
+REQUIRE_NON_PREEMPTING_STRESS_CLASS="${REQUIRE_NON_PREEMPTING_STRESS_CLASS:-1}"
+LAUNCH_GATE_ENABLED="${LAUNCH_GATE_ENABLED:-1}"
+LAUNCH_GATE_TIMEOUT_SECONDS="${LAUNCH_GATE_TIMEOUT_SECONDS:-180}"
+LAUNCH_GATE_MIN_RUNNING_RATIO="${LAUNCH_GATE_MIN_RUNNING_RATIO:-0.90}"
+PRE_PROFILE_CLEANUP_TIMEOUT_SECONDS="${PRE_PROFILE_CLEANUP_TIMEOUT_SECONDS:-180}"
+PRE_PROFILE_SETTLE_SECONDS="${PRE_PROFILE_SETTLE_SECONDS:-60}"
 
 BASELINE_SECONDS="${BASELINE_SECONDS:-600}"
 MEM_AGG_M_SECONDS="${MEM_AGG_M_SECONDS:-1200}"
@@ -45,6 +58,12 @@ MEM_AGG_H_SECONDS="${MEM_AGG_H_SECONDS:-1500}"
 RECOVERY_2_SECONDS="${RECOVERY_2_SECONDS:-600}"
 MIX_AGG_M_SECONDS="${MIX_AGG_M_SECONDS:-900}"
 FINAL_RECOVERY_SECONDS="${FINAL_RECOVERY_SECONDS:-600}"
+
+if [[ "${RUN_EXPERIMENT}" == "1" && ( -e "${OUT_DIR}/availability.csv" || -e "${OUT_DIR}/summary.json" ) ]]; then
+  echo "[ERROR] OUT_DIR already contains experiment output: ${OUT_DIR}"
+  echo "[ERROR] use a new RUN_ID/OUT_DIR to preserve result provenance"
+  exit 2
+fi
 
 mkdir -p "${OUT_DIR}" "${GENERATED_DIR}"
 
@@ -59,6 +78,11 @@ echo "[INFO] RUN_EXPERIMENT=${RUN_EXPERIMENT}"
 echo "[INFO] SKIP_REMOTE_PRECHECK=${SKIP_REMOTE_PRECHECK}"
 echo "[INFO] SKIP_CLUSTER_PRECHECK=${SKIP_CLUSTER_PRECHECK}"
 echo "[INFO] EVICTION_HARD_VALUE=${EVICTION_HARD_VALUE}"
+echo "[INFO] PREWARM_IMAGES=${PREWARM_IMAGES}"
+echo "[INFO] STRESS_IMAGE_PULL_POLICY=${STRESS_IMAGE_PULL_POLICY}"
+echo "[INFO] REQUIRE_NON_PREEMPTING_STRESS_CLASS=${REQUIRE_NON_PREEMPTING_STRESS_CLASS}"
+echo "[INFO] LAUNCH_GATE_ENABLED=${LAUNCH_GATE_ENABLED}"
+echo "[INFO] PRE_PROFILE_SETTLE_SECONDS=${PRE_PROFILE_SETTLE_SECONDS}"
 
 write_final_state() {
   local status="$1"
@@ -96,6 +120,30 @@ capture_k8s_snapshot() {
   kubectl -n "${NAMESPACE}" get pods -o wide > "${OUT_DIR}/${prefix}_pods.txt" || true
   kubectl -n "${NAMESPACE}" get ds -o wide > "${OUT_DIR}/${prefix}_daemonsets.txt" || true
   kubectl -n "${NAMESPACE}" get jobs -o wide > "${OUT_DIR}/${prefix}_jobs.txt" || true
+}
+
+capture_kubelet_summary() {
+  local prefix="$1"
+  if [[ "${SKIP_CLUSTER_PRECHECK}" == "1" ]]; then
+    echo "[INFO] skipping kubelet summary for ${prefix}" > "${OUT_DIR}/${prefix}_kubelet_summary_skipped.log"
+    return
+  fi
+  kubectl get --raw "/api/v1/nodes/${TARGET_NODE}/proxy/stats/summary" > "${OUT_DIR}/${prefix}_kubelet_summary.json" 2> "${OUT_DIR}/${prefix}_kubelet_summary.err" || true
+}
+
+validate_stress_priority_class() {
+  if [[ "${REQUIRE_NON_PREEMPTING_STRESS_CLASS}" != "1" || "${SKIP_CLUSTER_PRECHECK}" == "1" ]]; then
+    return
+  fi
+
+  local preemption_policy
+  preemption_policy="$(kubectl get priorityclass "${STRESS_PRIORITY_CLASS}" -o jsonpath='{.preemptionPolicy}')"
+  kubectl get priorityclass "${STRESS_PRIORITY_CLASS}" -o yaml > "${OUT_DIR}/stress_priorityclass.yaml"
+  if [[ "${preemption_policy}" != "Never" ]]; then
+    echo "[ERROR] ${STRESS_PRIORITY_CLASS} preemptionPolicy=${preemption_policy:-<unset>}; R2 stress workloads must use Never"
+    echo "[ERROR] apply manifests/overlays/pod-protection/priorityclasses.yaml before rerunning R2"
+    return 1
+  fi
 }
 
 capture_remote_snapshot() {
@@ -137,7 +185,44 @@ cleanup_phase_jobs() {
   if [[ "${SKIP_CLUSTER_PRECHECK}" == "1" ]]; then
     return
   fi
-  kubectl -n "${NAMESPACE}" delete job device-avail-r2-mem-agg device-avail-r2-mix-agg-cpu --ignore-not-found=true >/dev/null 2>&1 || true
+  kubectl -n "${NAMESPACE}" delete job device-avail-r2-mem-agg device-avail-r2-mix-agg-cpu device-avail-r2-prewarm device-avail-r2-launch-gate --ignore-not-found=true --wait=true >/dev/null 2>&1 || true
+  for app_label in device-avail-r2-mem-agg device-avail-r2-mix-agg-cpu device-avail-r2-prewarm device-avail-r2-launch-gate; do
+    kubectl -n "${NAMESPACE}" delete pod -l "app=${app_label}" --ignore-not-found=true --wait=true >/dev/null 2>&1 || true
+  done
+}
+
+wait_for_r2_pods_gone() {
+  if [[ "${SKIP_CLUSTER_PRECHECK}" == "1" ]]; then
+    return
+  fi
+
+  local deadline remaining
+  deadline=$((SECONDS + PRE_PROFILE_CLEANUP_TIMEOUT_SECONDS))
+  while [[ "${SECONDS}" -lt "${deadline}" ]]; do
+    remaining=0
+    for app_label in device-avail-r2-mem-agg device-avail-r2-mix-agg-cpu device-avail-r2-prewarm device-avail-r2-launch-gate; do
+      remaining=$((remaining + $(kubectl -n "${NAMESPACE}" get pods -l "app=${app_label}" --no-headers 2>/dev/null | wc -l | tr -d ' ')))
+    done
+    if [[ "${remaining}" -eq 0 ]]; then
+      return
+    fi
+    sleep 5
+  done
+  echo "[ERROR] timed out waiting for ${remaining:-unknown} prior R2 pods to terminate"
+  return 1
+}
+
+prepare_clean_baseline() {
+  if [[ "${SKIP_CLUSTER_PRECHECK}" == "1" ]]; then
+    return
+  fi
+  echo "[INFO] clearing prior R2 workloads before deriving the pressure profile"
+  cleanup_phase_jobs
+  wait_for_r2_pods_gone
+  if [[ "${PRE_PROFILE_SETTLE_SECONDS}" -gt 0 ]]; then
+    echo "[INFO] waiting ${PRE_PROFILE_SETTLE_SECONDS}s for memory to settle"
+    sleep "${PRE_PROFILE_SETTLE_SECONDS}"
+  fi
 }
 
 backup_k3s_config() {
@@ -215,6 +300,9 @@ derive_pressure_profile() {
   if [[ "${MEM_AGG_H_PARALLELISM}" -gt "${PARALLELISM_MAX}" ]]; then
     MEM_AGG_H_PARALLELISM="${PARALLELISM_MAX}"
   fi
+  if [[ "${MEM_AGG_H_INITIAL_PARALLELISM}" -gt "${MEM_AGG_H_PARALLELISM}" ]]; then
+    MEM_AGG_H_INITIAL_PARALLELISM="${MEM_AGG_H_PARALLELISM}"
+  fi
   MIX_AGG_M_PARALLELISM=$((PARALLELISM > 2 ? PARALLELISM - 1 : 2))
 
   MEM_AGG_M_VM_MIB=$((PER_POD_VM_MIB - 256))
@@ -279,9 +367,10 @@ EOF
 generate_mem_job_manifest() {
   local output_path="$1"
   local job_name="$2"
-  local parallelism="$3"
-  local vm_mib="$4"
-  local phase_name="$5"
+  local completions="$3"
+  local parallelism="$4"
+  local vm_mib="$5"
+  local phase_name="$6"
   cat > "${output_path}" <<EOF
 apiVersion: batch/v1
 kind: Job
@@ -293,7 +382,7 @@ metadata:
     device-availability-phase: ${phase_name}
 spec:
   backoffLimit: 0
-  completions: ${parallelism}
+  completions: ${completions}
   parallelism: ${parallelism}
   ttlSecondsAfterFinished: 60
   template:
@@ -309,6 +398,7 @@ spec:
       containers:
       - name: stress
         image: ${STRESS_IMAGE}
+        imagePullPolicy: ${STRESS_IMAGE_PULL_POLICY}
         command: ["stress"]
         args: ["--vm", "1", "--vm-bytes", "${vm_mib}M", "--vm-keep"]
         resources:
@@ -352,6 +442,7 @@ spec:
       containers:
       - name: stress
         image: ${STRESS_IMAGE}
+        imagePullPolicy: ${STRESS_IMAGE_PULL_POLICY}
         command: ["stress"]
         args: ["--vm", "1", "--vm-bytes", "${vm_mib}M", "--vm-keep"]
         resources:
@@ -388,6 +479,7 @@ spec:
       containers:
       - name: stress
         image: ${CPU_STRESS_IMAGE}
+        imagePullPolicy: ${STRESS_IMAGE_PULL_POLICY}
         command: ["stress"]
         args: ["--cpu", "${MIX_CPU_WORKERS_PER_POD}"]
         resources:
@@ -402,9 +494,86 @@ EOF
 
 generate_manifests() {
   generate_eviction_config
-  generate_mem_job_manifest "${GENERATED_DIR}/r2-mem-agg-m.yaml" "device-avail-r2-mem-agg" "${MEM_AGG_M_PARALLELISM}" "${MEM_AGG_M_VM_MIB}" "MEM-AGG-M"
-  generate_mem_job_manifest "${GENERATED_DIR}/r2-mem-agg-h.yaml" "device-avail-r2-mem-agg" "${MEM_AGG_H_PARALLELISM}" "${MEM_AGG_H_VM_MIB}" "MEM-AGG-H"
+  generate_mem_job_manifest "${GENERATED_DIR}/r2-mem-agg-m.yaml" "device-avail-r2-mem-agg" "${MEM_AGG_M_PARALLELISM}" "${MEM_AGG_M_PARALLELISM}" "${MEM_AGG_M_VM_MIB}" "MEM-AGG-M"
+  generate_mem_job_manifest "${GENERATED_DIR}/r2-mem-agg-h.yaml" "device-avail-r2-mem-agg" "${MEM_AGG_H_PARALLELISM}" "${MEM_AGG_H_INITIAL_PARALLELISM}" "${MEM_AGG_H_VM_MIB}" "MEM-AGG-H"
   generate_mix_job_manifest "${GENERATED_DIR}/r2-mix-agg-m.yaml" "${MIX_AGG_M_PARALLELISM}" "${MIX_AGG_M_VM_MIB}"
+  generate_prewarm_manifest
+  generate_launch_gate_manifest
+}
+
+generate_prewarm_manifest() {
+  cat > "${GENERATED_DIR}/r2-prewarm-images.yaml" <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: device-avail-r2-prewarm
+  namespace: ${NAMESPACE}
+  labels:
+    app: device-avail-r2-prewarm
+    device-availability-phase: PREWARM
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: ${PREWARM_JOB_TTL_SECONDS}
+  template:
+    metadata:
+      labels:
+        app: device-avail-r2-prewarm
+        device-availability-phase: PREWARM
+    spec:
+      restartPolicy: Never
+      priorityClassName: ${STRESS_PRIORITY_CLASS}
+      nodeSelector:
+        kubernetes.io/hostname: ${TARGET_NODE}
+      initContainers:
+      - name: warm-stress-image
+        image: ${STRESS_IMAGE}
+        imagePullPolicy: ${STRESS_IMAGE_PULL_POLICY}
+        command: ["sh", "-c", "echo prewarmed stress image"]
+      containers:
+      - name: warm-cpu-image
+        image: ${CPU_STRESS_IMAGE}
+        imagePullPolicy: ${STRESS_IMAGE_PULL_POLICY}
+        command: ["sh", "-c", "echo prewarmed cpu image"]
+EOF
+}
+
+generate_launch_gate_manifest() {
+  cat > "${GENERATED_DIR}/r2-launch-gate.yaml" <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: device-avail-r2-launch-gate
+  namespace: ${NAMESPACE}
+  labels:
+    app: device-avail-r2-launch-gate
+    device-availability-phase: LAUNCH-GATE
+spec:
+  backoffLimit: 0
+  completions: ${MEM_AGG_H_PARALLELISM}
+  parallelism: ${MEM_AGG_H_PARALLELISM}
+  template:
+    metadata:
+      labels:
+        app: device-avail-r2-launch-gate
+        device-availability-phase: LAUNCH-GATE
+    spec:
+      restartPolicy: Never
+      priorityClassName: ${STRESS_PRIORITY_CLASS}
+      nodeSelector:
+        kubernetes.io/hostname: ${TARGET_NODE}
+      containers:
+      - name: launch-gate
+        image: ${STRESS_IMAGE}
+        imagePullPolicy: ${STRESS_IMAGE_PULL_POLICY}
+        command: ["sh", "-c", "sleep 600"]
+        resources:
+          requests:
+            cpu: "${PER_POD_REQUEST_CPU}"
+            memory: "${PER_POD_REQUEST_MEMORY}"
+          limits:
+            cpu: "${PER_POD_LIMIT_CPU}"
+            memory: "${PER_POD_LIMIT_MEMORY}"
+EOF
 }
 
 write_profile_summary() {
@@ -425,10 +594,22 @@ PARALLELISM=${PARALLELISM}
 PRESSURE_PROFILE_STATUS=${PRESSURE_PROFILE_STATUS}
 MEM_AGG_M_PARALLELISM=${MEM_AGG_M_PARALLELISM}
 MEM_AGG_H_PARALLELISM=${MEM_AGG_H_PARALLELISM}
+MEM_AGG_H_INITIAL_PARALLELISM=${MEM_AGG_H_INITIAL_PARALLELISM}
+MEM_AGG_H_RAMP_STEP=${MEM_AGG_H_RAMP_STEP}
+MEM_AGG_H_RAMP_INTERVAL_SECONDS=${MEM_AGG_H_RAMP_INTERVAL_SECONDS}
 MIX_AGG_M_PARALLELISM=${MIX_AGG_M_PARALLELISM}
 MEM_AGG_M_VM_MIB=${MEM_AGG_M_VM_MIB}
 MEM_AGG_H_VM_MIB=${MEM_AGG_H_VM_MIB}
 MIX_AGG_M_VM_MIB=${MIX_AGG_M_VM_MIB}
+STRESS_IMAGE=${STRESS_IMAGE}
+CPU_STRESS_IMAGE=${CPU_STRESS_IMAGE}
+STRESS_IMAGE_PULL_POLICY=${STRESS_IMAGE_PULL_POLICY}
+REQUIRE_NON_PREEMPTING_STRESS_CLASS=${REQUIRE_NON_PREEMPTING_STRESS_CLASS}
+LAUNCH_GATE_ENABLED=${LAUNCH_GATE_ENABLED}
+LAUNCH_GATE_TIMEOUT_SECONDS=${LAUNCH_GATE_TIMEOUT_SECONDS}
+LAUNCH_GATE_MIN_RUNNING_RATIO=${LAUNCH_GATE_MIN_RUNNING_RATIO}
+PRE_PROFILE_CLEANUP_TIMEOUT_SECONDS=${PRE_PROFILE_CLEANUP_TIMEOUT_SECONDS}
+PRE_PROFILE_SETTLE_SECONDS=${PRE_PROFILE_SETTLE_SECONDS}
 EOF
 }
 
@@ -446,6 +627,12 @@ write_report_stub() {
 - per_pod_vm_mib: \`${PER_POD_VM_MIB}\`
 - parallelism: \`${PARALLELISM}\`
 - pressure_profile_status: \`${PRESSURE_PROFILE_STATUS}\`
+- stress_image: \`${STRESS_IMAGE}\`
+- image_pull_policy: \`${STRESS_IMAGE_PULL_POLICY}\`
+- launch_gate_enabled: \`${LAUNCH_GATE_ENABLED}\`
+- mem_agg_h_initial_parallelism: \`${MEM_AGG_H_INITIAL_PARALLELISM}\`
+- mem_agg_h_ramp_step: \`${MEM_AGG_H_RAMP_STEP}\`
+- mem_agg_h_ramp_interval_seconds: \`${MEM_AGG_H_RAMP_INTERVAL_SECONDS}\`
 
 Generated manifests:
 
@@ -453,6 +640,8 @@ Generated manifests:
 - \`generated/r2-mem-agg-m.yaml\`
 - \`generated/r2-mem-agg-h.yaml\`
 - \`generated/r2-mix-agg-m.yaml\`
+- \`generated/r2-prewarm-images.yaml\`
+- \`generated/r2-launch-gate.yaml\`
 
 Interpretation:
 
@@ -464,6 +653,83 @@ apply_eviction_config() {
   backup_k3s_config
   echo "[WARN] automatic config merge is intentionally not performed"
   echo "[WARN] use ${GENERATED_DIR}/apply_eviction_hard.sh and ${GENERATED_DIR}/rollback_eviction_hard.sh as operator helpers"
+}
+
+run_prewarm() {
+  if [[ "${SKIP_CLUSTER_PRECHECK}" == "1" ]]; then
+    echo "[WARN] skipping image prewarm because cluster access is disabled"
+    return
+  fi
+
+  echo "[INFO] prewarming stress images on ${TARGET_NODE}"
+  kubectl -n "${NAMESPACE}" delete job device-avail-r2-prewarm --ignore-not-found=true >/dev/null 2>&1 || true
+  kubectl apply -f "${GENERATED_DIR}/r2-prewarm-images.yaml"
+
+  if ! kubectl -n "${NAMESPACE}" wait --for=condition=complete job/device-avail-r2-prewarm --timeout="${PREWARM_TIMEOUT_SECONDS}s"; then
+    echo "[ERROR] image prewarm job did not complete within ${PREWARM_TIMEOUT_SECONDS}s"
+    kubectl -n "${NAMESPACE}" describe job device-avail-r2-prewarm > "${OUT_DIR}/prewarm_job_describe.log" 2>&1 || true
+    kubectl -n "${NAMESPACE}" get pods -l job-name=device-avail-r2-prewarm -o wide > "${OUT_DIR}/prewarm_pods.log" 2>&1 || true
+    kubectl -n "${NAMESPACE}" get events --sort-by=.lastTimestamp > "${OUT_DIR}/prewarm_events.log" 2>&1 || true
+    return 1
+  fi
+
+  kubectl -n "${NAMESPACE}" get pods -l job-name=device-avail-r2-prewarm -o wide > "${OUT_DIR}/prewarm_pods.log" 2>&1 || true
+}
+
+launch_gate_required_running() {
+  python3 - <<'PY' "${MEM_AGG_H_PARALLELISM}" "${LAUNCH_GATE_MIN_RUNNING_RATIO}"
+import math
+import sys
+
+parallelism = int(sys.argv[1])
+ratio = float(sys.argv[2])
+if not 0 < ratio <= 1:
+    raise SystemExit("LAUNCH_GATE_MIN_RUNNING_RATIO must be in (0, 1]")
+print(math.ceil(parallelism * ratio))
+PY
+}
+
+run_launch_gate() {
+  if [[ "${LAUNCH_GATE_ENABLED}" != "1" ]]; then
+    echo "[INFO] launch gate disabled"
+    return
+  fi
+  if [[ "${SKIP_CLUSTER_PRECHECK}" == "1" ]]; then
+    echo "[WARN] skipping launch gate because cluster access is disabled"
+    return
+  fi
+
+  local required_running deadline running_count pull_errors
+  required_running="$(launch_gate_required_running)"
+  deadline=$((SECONDS + LAUNCH_GATE_TIMEOUT_SECONDS))
+
+  echo "[INFO] launch gate requires ${required_running}/${MEM_AGG_H_PARALLELISM} pods Running"
+  cleanup_phase_jobs
+  kubectl apply -f "${GENERATED_DIR}/r2-launch-gate.yaml"
+
+  while [[ "${SECONDS}" -lt "${deadline}" ]]; do
+    running_count="$(kubectl -n "${NAMESPACE}" get pods -l app=device-avail-r2-launch-gate --no-headers 2>/dev/null | awk '$3 == "Running" { count++ } END { print count + 0 }')"
+    pull_errors="$(kubectl -n "${NAMESPACE}" get pods -l app=device-avail-r2-launch-gate --no-headers 2>/dev/null | awk '$3 == "ErrImagePull" || $3 == "ImagePullBackOff" { count++ } END { print count + 0 }')"
+    if [[ "${pull_errors}" -gt 0 ]]; then
+      break
+    fi
+    if [[ "${running_count}" -ge "${required_running}" ]]; then
+      printf 'required_running=%s\nobserved_running=%s\nimage_pull_errors=%s\nresult=passed\n' "${required_running}" "${running_count}" "${pull_errors}" > "${OUT_DIR}/launch_gate_summary.env"
+      kubectl -n "${NAMESPACE}" get pods -l app=device-avail-r2-launch-gate -o wide > "${OUT_DIR}/launch_gate_pods.log" 2>&1 || true
+      kubectl -n "${NAMESPACE}" delete job device-avail-r2-launch-gate --ignore-not-found=true --wait=true >/dev/null 2>&1 || true
+      echo "[INFO] launch gate passed"
+      return
+    fi
+    sleep 5
+  done
+
+  printf 'required_running=%s\nobserved_running=%s\nimage_pull_errors=%s\nresult=failed\n' "${required_running}" "${running_count:-0}" "${pull_errors:-0}" > "${OUT_DIR}/launch_gate_summary.env"
+  kubectl -n "${NAMESPACE}" get pods -l app=device-avail-r2-launch-gate -o wide > "${OUT_DIR}/launch_gate_pods.log" 2>&1 || true
+  kubectl -n "${NAMESPACE}" describe job device-avail-r2-launch-gate > "${OUT_DIR}/launch_gate_job_describe.log" 2>&1 || true
+  kubectl -n "${NAMESPACE}" get events --sort-by=.lastTimestamp > "${OUT_DIR}/launch_gate_events.log" 2>&1 || true
+  cleanup_phase_jobs
+  echo "[ERROR] launch gate failed; pressure workload did not start reliably"
+  return 1
 }
 
 run_experiment_phase() {
@@ -479,6 +745,40 @@ run_experiment_phase() {
   sleep "${duration_seconds}"
 }
 
+run_ramped_mem_phase() {
+  local phase_name="$1"
+  local duration_seconds="$2"
+  local manifest_path="$3"
+  local job_name="device-avail-r2-mem-agg"
+  local current_parallelism="${MEM_AGG_H_INITIAL_PARALLELISM}"
+  local elapsed_seconds=0
+
+  write_final_state "${phase_name}"
+  cleanup_phase_jobs
+  echo "[INFO] phase=${phase_name} duration=${duration_seconds}s initial_parallelism=${current_parallelism} target_parallelism=${MEM_AGG_H_PARALLELISM}"
+  kubectl apply -f "${manifest_path}"
+  printf '{"phase":"%s","elapsed_seconds":0,"parallelism":%s}\n' "${phase_name}" "${current_parallelism}" > "${OUT_DIR}/mem_agg_h_ramp_timeline.jsonl"
+
+  while [[ "${current_parallelism}" -lt "${MEM_AGG_H_PARALLELISM}" && "${elapsed_seconds}" -lt "${duration_seconds}" ]]; do
+    local sleep_seconds="${MEM_AGG_H_RAMP_INTERVAL_SECONDS}"
+    if (( elapsed_seconds + sleep_seconds > duration_seconds )); then
+      sleep_seconds=$((duration_seconds - elapsed_seconds))
+    fi
+    sleep "${sleep_seconds}"
+    elapsed_seconds=$((elapsed_seconds + sleep_seconds))
+    current_parallelism=$((current_parallelism + MEM_AGG_H_RAMP_STEP))
+    if [[ "${current_parallelism}" -gt "${MEM_AGG_H_PARALLELISM}" ]]; then
+      current_parallelism="${MEM_AGG_H_PARALLELISM}"
+    fi
+    kubectl -n "${NAMESPACE}" patch job "${job_name}" --type merge -p "{\"spec\":{\"parallelism\":${current_parallelism}}}"
+    printf '{"phase":"%s","elapsed_seconds":%s,"parallelism":%s}\n' "${phase_name}" "${elapsed_seconds}" "${current_parallelism}" >> "${OUT_DIR}/mem_agg_h_ramp_timeline.jsonl"
+  done
+
+  if (( elapsed_seconds < duration_seconds )); then
+    sleep $((duration_seconds - elapsed_seconds))
+  fi
+}
+
 stop_probe_if_needed() {
   if [[ -n "${PROBE_PID:-}" ]]; then
     kill "${PROBE_PID}" 2>/dev/null || true
@@ -488,11 +788,14 @@ stop_probe_if_needed() {
 
 cleanup() {
   local signal_name="${1:-EXIT}"
-  cleanup_phase_jobs
+  if [[ "${RUN_EXPERIMENT}" == "1" ]]; then
+    cleanup_phase_jobs
+  fi
   stop_watchers
   stop_probe_if_needed
   capture_k8s_snapshot "after"
   capture_node_snapshot "node_after"
+  capture_kubelet_summary "after"
   capture_remote_snapshot "after"
   capture_final_logs
   if [[ -n "${FINAL_STATE_STATUS}" ]]; then
@@ -506,8 +809,12 @@ trap 'cleanup EXIT' EXIT
 trap 'cleanup INT; exit 130' INT
 trap 'cleanup TERM; exit 143' TERM
 
+if [[ "${RUN_EXPERIMENT}" == "1" ]]; then
+  prepare_clean_baseline
+fi
 capture_node_snapshot "node_before"
 capture_k8s_snapshot "before"
+capture_kubelet_summary "before"
 capture_remote_snapshot "before"
 
 if [[ "${SKIP_CLUSTER_PRECHECK}" != "1" ]]; then
@@ -520,6 +827,14 @@ if [[ "${SKIP_CLUSTER_PRECHECK}" != "1" ]]; then
 fi
 
 derive_pressure_profile
+if [[ "${MEM_AGG_H_INITIAL_PARALLELISM}" -lt 1 || "${MEM_AGG_H_INITIAL_PARALLELISM}" -gt "${MEM_AGG_H_PARALLELISM}" ]]; then
+  echo "[ERROR] MEM_AGG_H_INITIAL_PARALLELISM must be between 1 and ${MEM_AGG_H_PARALLELISM}"
+  exit 2
+fi
+if [[ "${MEM_AGG_H_RAMP_STEP}" -lt 1 || "${MEM_AGG_H_RAMP_INTERVAL_SECONDS}" -lt 1 ]]; then
+  echo "[ERROR] MEM_AGG_H_RAMP_STEP and MEM_AGG_H_RAMP_INTERVAL_SECONDS must be positive"
+  exit 2
+fi
 generate_manifests
 write_profile_summary
 write_report_stub
@@ -534,6 +849,14 @@ if [[ "${RUN_EXPERIMENT}" != "1" ]]; then
   exit 0
 fi
 
+validate_stress_priority_class
+
+if [[ "${PREWARM_IMAGES}" == "1" ]]; then
+  run_prewarm
+fi
+
+run_launch_gate
+
 python3 "${SCRIPT_DIR}/availability_probe.py" \
   --target-node "${TARGET_NODE}" \
   --target-host "${TARGET_HOST}" \
@@ -547,7 +870,7 @@ PROBE_PID=$!
 run_experiment_phase "BASELINE" "${BASELINE_SECONDS}"
 run_experiment_phase "MEM-AGG-M" "${MEM_AGG_M_SECONDS}" "${GENERATED_DIR}/r2-mem-agg-m.yaml"
 run_experiment_phase "RECOVERY-1" "${RECOVERY_1_SECONDS}"
-run_experiment_phase "MEM-AGG-H" "${MEM_AGG_H_SECONDS}" "${GENERATED_DIR}/r2-mem-agg-h.yaml"
+run_ramped_mem_phase "MEM-AGG-H" "${MEM_AGG_H_SECONDS}" "${GENERATED_DIR}/r2-mem-agg-h.yaml"
 run_experiment_phase "RECOVERY-2" "${RECOVERY_2_SECONDS}"
 run_experiment_phase "MIX-AGG-M" "${MIX_AGG_M_SECONDS}" "${GENERATED_DIR}/r2-mix-agg-m.yaml"
 run_experiment_phase "FINAL-RECOVERY" "${FINAL_RECOVERY_SECONDS}"

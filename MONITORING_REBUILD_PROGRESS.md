@@ -138,10 +138,10 @@ Control plane IP: `140.113.179.9`
   - 方法學結論：若 `single_pod_bgload_fan_cycle` 出現大量 `connection refused`、liveness/readiness failure 與 pod restart，該 run 應定位為 availability failure / resilience threshold，而不是乾淨的 thermal-induced latency degradation
   - latency 與 availability 需分開報告；failed requests 不應被當作 latency degradation samples
 
-目前仍未完成的是 external node 的真實 telemetry 恢復：
+external node 的真實 telemetry 已於 2026-07-12 恢復並完成基本驗證：
 
-- `rfsoc4x2-pynq`：inventory 與 aggregator 已接回，但資料源仍失聯
-- `openwrt_ap`：inventory 與 aggregator 已接回，但 AP collectors / credentials 尚未恢復
+- `rfsoc4x2-pynq`：node-exporter、Netdata mirrored host 與 PYNQ/XRT SSH status 均可讀取
+- `openwrt_ap`：AP Wi-Fi/SNMP collectors、root disk 與 I/O metrics 均已恢復
 
 因此目前可視為：
 
@@ -424,51 +424,35 @@ Control plane IP: `140.113.179.9`
 
 ### `rfsoc4x2-pynq`
 
-目前已知狀態：
+截至 2026-07-12 已驗證：
 
-- `vmagent` 已配置 `rfsoc4x2-node-exporter` scrape job，target 為 `100.91.37.32:9100`
-- `vm_agg_rfsoc.py` 已可輸出 `collector_status = ok`
-- 但現場資料源仍未恢復：
-  - `100.91.37.32:9100` timeout
-  - `100.91.37.32:19999` timeout
-  - `ssh xilinx@100.91.37.32` timeout
-  - Netdata parent 尚未看到 `pynq` mirrored host
-  - `~/.ssh/id_ed25519_rfsoc` 不在目前主機上
+- `vmagent` 的 `rfsoc4x2-node-exporter` target `100.91.37.32:9100` 可 scrape，`up=1`
+- Netdata parent 可讀取 mirrored host `pynq` 的 CPU、RAM、I/O 與 network charts
+- `xilinx@100.91.37.32` 可讀取 `/run/rfsoc_overlay_status.json`；root-owned timer 每 30 秒更新 producer
+- `vm_agg_rfsoc.py` 輸出 `collector_status = ok`，並整合 root disk、I/O、9 路 INA220 rails 的 board power 與 PL status
+- Dashboard 已以 RFSoC Hardware Status card 取代不適用的 GPU VRAM 圖；Basic Info 依 node type 顯示 `Accelerator: RFSoC PL + RFDC`，卡片顯示 XRT、overlay、RFDC、DMA channel state、temperature、VCCINT/VCCAUX 與 monitored rail power
 
-目前 dashboard 上的狀態解讀：
-
-- inventory 有這台節點
-- status 可回傳，但 telemetry 不完整
-- 因外部節點 telemetry 缺失，前端目前顯示 `OFFLINE`
+已驗證的 `base.bit` 資訊包含 XRT device/overlay ready、26 個 IP、RFDC/DMA/SysMon 存在；DMA MM2S/S2MM 皆為 `ready`，其 control register 為 `0x00011003`、status register 為 `0x00000000`，表示兩條 channel 已 armed、非 halted 且無 error。PL LUT/FF/BRAM/DSP、DMA throughput、per-IP busy ratio 仍需額外 producer 或 Vivado implementation report，尚未宣稱為 runtime metrics。
 
 ### `openwrt_ap`
 
-目前已知狀態：
+截至 2026-07-12，OpenWrt AP telemetry 已恢復並完成端到端驗證：
 
-- inventory 有這台節點
-- `vm_agg_ap_gateway.py` 可被 API 納入路徑
-- 但現場資料源仍未恢復：
-  - 目前主機沒有 `~/.ssh/openwrt_ap_ed25519`
-  - 未安裝 / 未驗證 `ap-gateway.service`
-  - 未安裝 / 未驗證 `ap-snmp-gateway.service`
-  - VictoriaMetrics 內目前沒有 `ap_*` metrics
+- Tailscale target：`100.101.18.10`
+- AP firewall 已只對 Tailscale zone 開放 SSH、SNMP 與 LuCI 管理連線
+- `~/.ssh/openwrt_ap_ed25519` 專用 collector key 已授權於 AP；私鑰不納入 repo
+- `ap-gateway.user.service`（SSH/Wi-Fi）與 `ap-snmp-gateway.user.service`（SNMP/resource）均為 `enabled`、`active`
+- VictoriaMetrics 持續收到 `ap_wifi_*`、`ap_node_*`、root disk 與 `mmcblk0` I/O metrics
+- `vm_agg_ap_gateway.py` 回傳 `collector_status = ok`
+- dashboard 以 AP 專屬 Wireless AP 卡顯示 SSID、band/channel/width、client 數、Wi-Fi RX/TX、TX failed frames/s 與 link 狀態
 
-目前 dashboard 上的狀態解讀：
-
-- inventory 有這台節點
-- status 可回傳，但 telemetry 缺失
-- 因外部節點 telemetry 缺失，前端目前顯示 `OFFLINE`
+已知限制：目前 Raspberry Pi 內建 Wi-Fi driver 的 `iw survey dump` 無輸出，且 station dump 未提供 RSSI 或 TX retry；因此不顯示 Channel Utilization、RSSI 或 TX Retry Rate。
 
 ## Known Issues
 
 ### 1. External node credentials and reachability are missing
 
-這是目前重建最主要未完成項：
-
-- RFSoC SSH key 未恢復
-- AP SSH key 未恢復
-- RFSoC Netdata / node-exporter 端點不可達
-- AP collectors 尚未在此主機重建與驗證
+RFSoC 與 AP 的目前資料源均已恢復。後續重點是例行確認 Tailscale reachability、user-level collector service 與憑證權限，不應再以本節舊有的「端點不可達／key 缺失」描述目前狀態。
 
 ### 2. Long-run experiment results are shortened validations, not full-duration production runs
 
@@ -488,13 +472,13 @@ Control plane IP: `140.113.179.9`
 - `01-monitoring-layer`：約 `95%`
 - `03-shared-api-dashboard` 的 `Cluster Monitor`：約 `95%`
 - `02-experiment-layer` 主線與常用 formal workflow：約 `90% ~ 95%`
-- external nodes 真實 telemetry 恢復：低於 `50%`
+- external nodes 真實 telemetry 恢復：已完成基本驗證；後續為穩定性觀察與進階 PL telemetry
 - 若先不計 external node 資料源，整體重建完成度約 `90% ~ 95%`
 
 剩餘工作主要是：
 
-- 恢復 RFSoC 可達性與 SSH key
-- 恢復 OpenWrt AP credentials / collectors / metrics producer
+- 持續觀察 RFSoC Tailscale、Netdata、node-exporter 與 SSH status 的穩定性
+- 視需求新增 RFDC PLL/tile、DMA throughput、per-IP activity 等進階 PL telemetry producer
 - 視需求重跑 full-duration / multi-repeat 正式實驗批次
 ## 2026-07-02 LLM Serving Lab availability fix
 

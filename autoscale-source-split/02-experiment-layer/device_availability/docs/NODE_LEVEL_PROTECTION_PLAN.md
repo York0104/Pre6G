@@ -1,6 +1,6 @@
 # Node-Level Protection Plan
 
-Status: `R0 completed, R1 completed, R2-R4 planned`
+Status: `R0 completed, R1 completed, R2 attempted; R2h progressive-ramp retry pending, R3-R4 planned`
 
 ## Objective
 
@@ -14,7 +14,7 @@ Status: `R0 completed, R1 completed, R2-R4 planned`
 
 1. `R0`: seal `Phase 2 protected baseline` - completed
 2. `R1`: pod memory limit - completed
-3. `R2`: short `evictionHard` validation - next
+3. `R2`: short `evictionHard` validation - R2f/R2g completed cleanly but did not trigger eviction; R2h progressive-ramp retry next
 4. `R3`: `evictionHard` `6h` validation
 5. `R4`: `systemReserved / kubeReserved` evaluation
 
@@ -44,8 +44,10 @@ Node-level protection 實驗中，不應同時改：
 
 1. `R0` 已將 `phase2_formal_20260708_protected` 封存為 `P2 Pod-level protected baseline`。
 2. `R1` 已完成一次 live validation：`r1_pod_memory_limit_20260708_protected`。
-3. `R2` 的 runbook、example config、report template 與 runner 已建立，但尚未套用到 live node。
-4. 目前最合理的下一步是完成 `R2` preflight、核可 `evictionHard` 套用與 short validation，而不是直接跳 `systemReserved / kubeReserved`。
+3. `R2` 的 `evictionHard` 已套用到 `icclz1`。R2f 已通過 clean-baseline、image prewarm、non-preempting launch gate 與完整 100-minute profile；結果維持 Node/Sentinel availability，但部分 stress Pod 先被 cgroup OOMKilled。
+4. `R2` 尚未達成 evictionHard effectiveness gate：未觀察到 `MemoryPressure=True` 或 `Evicted` stress Pod。
+5. R2g 將 stress Pod memory limit 提到 `4Gi` 後，仍在 23 Pod 同時配置時出現 OOMKilled；這排除 manifest 未更新，但指出 workload 瞬間配置快過 kubelet 介入。
+6. 目前最合理的下一步是 R2h：保留 `4Gi` limit 與全部既有設定，只把 `MEM-AGG-H` 的 parallelism 由 `4 -> 8 -> ... -> 23` 每 15 秒漸進增加；不進入 `R3` 或 `systemReserved / kubeReserved`。
 
 ## Important Note
 

@@ -1,10 +1,14 @@
 # R2 evictionHard Short Validation
 
-Status: `template`
+Status: `template; R2f safety profile completed, R2g effectiveness retry pending`
 
 Run id:
 
 - `r2_evictionhard_short_20260708_protected`
+
+Prior attempts maintained reachability but did not observe `MemoryPressure` or `Evicted` stress Pods. The `r2c` attempt also hit `pull QPS exceeded`; it must not be presented as evidence that `evictionHard` worked.
+
+`r2f_evictionhard_short_20260711_protected` completed with clean baseline and full profile: zero confirmed outage, one transient degraded sample, no `MemoryPressure` or `Evicted` Pod, and three distinct stress Pod `OOMKilled` events. It is availability/containment evidence, not evictionHard-effectiveness evidence. `r2g` changes only the stress memory limit from `3Gi` to `4Gi`.
 
 ## Configuration
 

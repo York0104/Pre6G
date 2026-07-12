@@ -1,0 +1,16 @@
+[Unit]
+Description=Pre6G AP SNMP Collector (user)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/ap_gateway
+Environment=HOME=/home/icclz2
+EnvironmentFile=/home/icclz2/Pre6G/autoscale-source-split/01-monitoring-layer/systemd/ap-snmp-gateway.env
+ExecStart=/home/icclz2/Pre6G/iccl/bin/python ap_snmp_gateway.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

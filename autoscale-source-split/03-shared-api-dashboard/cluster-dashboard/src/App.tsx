@@ -88,6 +88,35 @@ type NodeStatus = {
     count?: number | null;
     fb_used_mib?: number | null;
   };
+  ap?: {
+    station_count?: number | null;
+    rx_bits_per_s?: number | null;
+    tx_bits_per_s?: number | null;
+    tx_failed_per_s?: number | null;
+    interface_oper_status?: number | null;
+    disk_read_bytes_per_s?: number | null;
+    disk_write_bytes_per_s?: number | null;
+    ssid?: string | null;
+    channel?: string | null;
+    band?: string | null;
+    width_mhz?: string | null;
+  } | null;
+  rfsoc?: {
+    xrt_device_ready?: boolean | null;
+    overlay_loaded?: boolean | null;
+    active_bitfile?: string | null;
+    ip_count?: number | null;
+    has_rfdc?: boolean | null;
+    has_dma?: boolean | null;
+    dma_mm2s_state?: string | null;
+    dma_s2mm_state?: string | null;
+    dma_channels_status?: string | null;
+    has_sysmon?: boolean | null;
+    temperature_c?: number | null;
+    vccint_v?: number | null;
+    vccaux_v?: number | null;
+    board_power_watts?: number | null;
+  } | null;
 };
 
 type NodeListResponse = {
@@ -624,7 +653,7 @@ type FanControlSelection = {
   mode: FanMode;
 };
 
-type TimeWindow = "last-60s" | "last-5m" | "whole-run";
+type TimeWindow = "last-60s" | "whole-run";
 
 type FanCycleRunInfo = {
   run_id: string;
@@ -1147,11 +1176,24 @@ function MultiLineChart({
   height?: number;
   yDomain?: [number | "auto", number | "auto"];
 }) {
+  const latest = data[data.length - 1];
+
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-sky-300">{title}</h3>
         <span className="text-xs text-slate-500">Last {data.length} samples</span>
+      </div>
+      <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {lines.map((line) => {
+          const value = latest?.[line.key];
+          return (
+            <span key={line.key} className="flex items-center gap-1.5 text-slate-300">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: line.stroke }} />
+              {line.name} {typeof value === "number" ? `${value.toFixed(1)}${unit || ""}` : "N/A"}
+            </span>
+          );
+        })}
       </div>
 
       <div style={{ height }}>
@@ -1225,6 +1267,29 @@ function NodeDetail({
   const cpuName =
     inv.cpu?.model_name ||
     `${inv.cpu?.vendor || "CPU"} / ${inv.cpu?.cores_total || "-"} cores`;
+  const ap = st?.ap;
+  const rfsoc = st?.rfsoc;
+  const formatBits = (value?: number | null) =>
+    value === undefined || value === null ? "N/A" : `${(value / 1_000_000).toFixed(2)} Mbps`;
+  const plStatus = (value?: boolean | null) => value ? "READY" : "N/A";
+  const hardwareRole = rfsoc
+    ? { label: "Accelerator", value: rfsoc.has_rfdc ? "RFSoC PL + RFDC" : "RFSoC PL" }
+    : ap
+      ? { label: "Wireless", value: "OpenWrt AP" }
+      : { label: "GPU", value: inv.gpu?.models?.join(", ") || "N/A" };
+  const dmaChannelText = () => {
+    const mm2s = rfsoc?.dma_mm2s_state?.toUpperCase();
+    const s2mm = rfsoc?.dma_s2mm_state?.toUpperCase();
+    if (mm2s === "READY" && s2mm === "READY") return "MM2S READY · S2MM READY";
+    if (mm2s && s2mm && mm2s !== "UNAVAILABLE" && s2mm !== "UNAVAILABLE") return `MM2S ${mm2s} · S2MM ${s2mm}`;
+    return rfsoc?.has_dma ? "DETECTED" : "STATUS UNAVAILABLE";
+  };
+  const dmaChannelColor = () => {
+    if (rfsoc?.dma_channels_status === "ready") return "text-emerald-300";
+    if (rfsoc?.dma_channels_status === "error") return "text-rose-300";
+    if (rfsoc?.dma_channels_status === "degraded") return "text-amber-300";
+    return rfsoc?.has_dma ? "text-emerald-300" : "text-slate-400";
+  };
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6 shadow-lg">
@@ -1252,7 +1317,7 @@ function NodeDetail({
             <div>Runtime: {inv.os?.container_runtime || "N/A"}</div>
             <div>CPU: {cpuName}</div>
             <div>Memory: {inv.memory?.total_memory || "N/A"}</div>
-            <div>GPU: {inv.gpu?.models?.join(", ") || "N/A"}</div>
+            <div>{hardwareRole.label}: {hardwareRole.value}</div>
           </div>
         </div>
 
@@ -1269,6 +1334,7 @@ function NodeDetail({
             title="CPU / Memory / Disk Usage"
             data={history}
             unit="%"
+            yDomain={[0, 100]}
             lines={[
               { key: "cpu", name: "CPU", stroke: "#38bdf8" },
               { key: "memory", name: "Memory", stroke: "#22c55e" },
@@ -1276,14 +1342,57 @@ function NodeDetail({
             ]}
           />
 
-          <MultiLineChart
-            title="GPU VRAM Used"
-            data={history}
-            unit=" MiB"
-            lines={[
-              { key: "gpuFbUsed", name: "GPU VRAM Used", stroke: "#a78bfa" },
-            ]}
-          />
+          {ap ? (
+            <div className="rounded-xl border border-cyan-900/70 bg-cyan-950/20 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-cyan-300">Wireless AP</h3>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {ap.ssid || "SSID N/A"} · {ap.band || "Band N/A"} · Ch {ap.channel || "N/A"} · {ap.width_mhz || "N/A"} MHz
+                  </p>
+                </div>
+                <span className={`text-xs font-medium ${ap.interface_oper_status === 1 ? "text-emerald-300" : "text-amber-300"}`}>
+                  {ap.interface_oper_status === 1 ? "phy0-ap0 · UP" : "phy0-ap0 · UNKNOWN"}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
+                <div><div className="text-xs text-slate-400">Connected Clients</div><div className="font-mono text-slate-100">{ap.station_count ?? "N/A"}</div></div>
+                <div><div className="text-xs text-slate-400">TX Failed Frames</div><div className="font-mono text-slate-100">{ap.tx_failed_per_s?.toFixed(2) ?? "N/A"} frames/s</div></div>
+                <div><div className="text-xs text-slate-400">Wi-Fi RX</div><div className="font-mono text-slate-100">{formatBits(ap.rx_bits_per_s)}</div></div>
+                <div><div className="text-xs text-slate-400">Wi-Fi TX</div><div className="font-mono text-slate-100">{formatBits(ap.tx_bits_per_s)}</div></div>
+              </div>
+            </div>
+          ) : rfsoc ? (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-sky-300">RFSoC Hardware Status</h3>
+                <span className={`text-xs font-medium ${rfsoc.xrt_device_ready && rfsoc.overlay_loaded ? "text-emerald-300" : "text-amber-300"}`}>
+                  {rfsoc.xrt_device_ready && rfsoc.overlay_loaded ? "PL RUNTIME READY" : "PL STATUS UNKNOWN"}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
+                <div><div className="text-xs text-slate-400">XRT Device</div><div className="font-mono text-emerald-300">{plStatus(rfsoc.xrt_device_ready)}</div></div>
+                <div><div className="text-xs text-slate-400">PL Overlay</div><div className="font-mono text-emerald-300">{rfsoc.active_bitfile?.split("/").pop() || "N/A"}</div></div>
+                <div><div className="text-xs text-slate-400">RFDC</div><div className="font-mono text-emerald-300">{rfsoc.has_rfdc ? "DETECTED" : "N/A"}</div></div>
+                <div><div className="text-xs text-slate-400">{rfsoc.dma_mm2s_state && rfsoc.dma_s2mm_state && rfsoc.dma_mm2s_state !== "unavailable" && rfsoc.dma_s2mm_state !== "unavailable" ? "DMA Channels" : "DMA Engine"}</div><div className={`font-mono ${dmaChannelColor()}`}>{dmaChannelText()}</div></div>
+                <div><div className="text-xs text-slate-400">Die Temperature</div><div className="font-mono text-slate-100">{rfsoc.temperature_c?.toFixed(1) ?? "N/A"} °C</div></div>
+                <div title="Sum of monitored INA220 power rails, not AC adapter input power"><div className="text-xs text-slate-400">Monitored Rail Power</div><div className="font-mono text-slate-100">{rfsoc.board_power_watts?.toFixed(1) ?? "N/A"} W</div></div>
+              </div>
+              <div className="mt-3 space-y-1 border-t border-slate-800 pt-2 text-xs text-slate-400">
+                <div>PL IPs {rfsoc.ip_count ?? "N/A"} · SysMon <span className="font-mono text-emerald-300">{plStatus(rfsoc.has_sysmon)}</span></div>
+                <div>VCCINT {rfsoc.vccint_v?.toFixed(3) ?? "N/A"} V · VCCAUX {rfsoc.vccaux_v?.toFixed(3) ?? "N/A"} V</div>
+              </div>
+            </div>
+          ) : (
+            <MultiLineChart
+              title="GPU VRAM Used"
+              data={history}
+              unit=" MiB"
+              lines={[
+                { key: "gpuFbUsed", name: "GPU VRAM Used", stroke: "#a78bfa" },
+              ]}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -2889,15 +2998,12 @@ function FanExperimentPage({
     : "No completed fan-cycle experiment run found yet.";
   const wholeRunSeries = data?.timeseries || [];
   const last60Series = (displaySeries as FanLivePoint[]).slice(-60);
-  const last5mSeries = (displaySeries as FanLivePoint[]).slice(-300);
   const activeSeries =
     timeWindow === "whole-run"
       ? wholeRunSeries.length > 0
         ? wholeRunSeries
         : displaySeries
-      : timeWindow === "last-5m"
-        ? last5mSeries
-        : last60Series;
+      : last60Series;
   const latencySeries = yoloDemoRunning
     ? (
         timeWindow === "whole-run"
@@ -3145,7 +3251,6 @@ function FanExperimentPage({
               {(
                 [
                   ["last-60s", "Last 60s"],
-                  ["last-5m", "5 min"],
                   ["whole-run", "Whole Run"],
                 ] as [TimeWindow, string][]
               ).map(([windowKey, label]) => (

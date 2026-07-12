@@ -2,6 +2,15 @@
 
 本資料夾用於在另一個 k3s cluster 重建監控、AP/RFSoC observability 與 thermal YOLO 實驗。此版本已排除 private secrets。
 
+> [!IMPORTANT]
+> 此目錄是 migration/reference snapshot，不是 `autoscale-source-split/` 或 `monitoring-rebuild/` 的雙向同步副本。相同檔案可作為可攜交付內容保留；分歧檔案應先與 canonical source 比對後再使用。此 snapshot 的原始生成時間與 source revision 為 `UNVERIFIED`，不可僅以檔案時間判定新舊。
+
+Canonical boundary:
+
+- monitoring rebuild manifests: `../monitoring-rebuild/`
+- source-level code, API/dashboard, and experiment definitions: `../autoscale-source-split/`
+- public/private configuration entry points: `../config/`
+
 ## 建議重建順序
 
 1. 建立新 k3s cluster，確認 node name、CNI、Tailscale/LAN routing、NVIDIA driver 與 container runtime。
@@ -30,7 +39,7 @@
 | `separation-audit/` | 監控/實驗分離、AutoScale 檔案分組、舊版/無用候選與 home YAML audit。 |
 | `external-worker/` | worker-side 檔案缺口說明，例如 `gpu-tempctl-lab`。 |
 | `secrets-reference.README.md` | private secrets 與本機依賴恢復 checklist；sanitized copy 不含 secrets。 |
-| `MANIFEST.txt` | 本 bundle 檔案清單。 |
+| `MANIFEST.txt` | bundle 歷史交付快照清單；目前 Git 追蹤內容請以 `git ls-files` 為準。 |
 
 ## 重要資訊
 

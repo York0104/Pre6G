@@ -1,6 +1,6 @@
 # Monitoring Sources Summary
 
-Date: 2026-07-08
+Date: 2026-07-08 (RFSoC live status refreshed 2026-07-12)
 Workspace: `/home/icclz2/Pre6G`
 Scope: `autoscale-source-split/01-monitoring-layer`
 
@@ -15,11 +15,11 @@ Scope: `autoscale-source-split/01-monitoring-layer`
 | `vmagent-self` | Scrape pipeline self metrics | `vmagent -> VictoriaMetrics` | `up{job="vmagent-self"}` and vmagent self metrics | global `10s` in [monitoring-rebuild/20-vmagent.yaml](../../../monitoring-rebuild/20-vmagent.yaml) | Live and queryable |
 | `vLLM pod metrics` | Workload exporter | `vmagent -> VictoriaMetrics` | `vllm:generation_tokens_total`, `vllm:prompt_tokens_total` | `1s` in [monitoring-rebuild/20-vmagent.yaml](../../../monitoring-rebuild/20-vmagent.yaml) | Live and queryable |
 | `Netdata parent` | Node + host-scoped metrics API | `Netdata API -> vm_aggregator.py` or `vm_agg_rfsoc.py` | `netdata_info`, `system.cpu`, `system.ram`, `system.io` | `update_every: 1` for kubelet / kubeproxy / k8s-state collectors in [netdata-default-values.yaml](../netdata-default-values.yaml) | Live and queryable |
-| `RFSoC node-exporter` | External node exporter | `vmagent -> VictoriaMetrics -> vm_agg_rfsoc.py` | `node_cpu_seconds_total`, `node_filesystem_*`, `node_network_*` | global `10s` in [monitoring-rebuild/20-vmagent.yaml](../../../monitoring-rebuild/20-vmagent.yaml) | Config exists, no live samples seen during this measurement |
+| `RFSoC node-exporter` | External node exporter | `vmagent -> VictoriaMetrics -> vm_agg_rfsoc.py` | `node_cpu_seconds_total`, `node_filesystem_*`, `node_network_*`, `node_hwmon_*` | global `10s` in [monitoring-rebuild/20-vmagent.yaml](../../../monitoring-rebuild/20-vmagent.yaml) | Live and queryable; `up{job="rfsoc4x2-node-exporter",access="tailscale"}=1` verified 2026-07-12 |
 | `RFSoC Netdata` | External node Netdata stream | `Netdata parent mirrored host -> vm_agg_rfsoc.py` | `netdata_info`, `system.cpu`, `system.ram`, `system.io` for host `pynq` | effectively `~1s` update cadence observed via parent mirror | Live and queryable |
-| `RFSoC PYNQ / XRT SSH status` | Out-of-band device status | `SSH -> vm_agg_rfsoc.py` | `/run/rfsoc_overlay_status.json`, XRT / overlay state | on-demand per aggregator run; SSH timeout default `3s` in [vm_agg_rfsoc.py](../vm_agg_rfsoc.py) | Not part of vmagent scrape |
-| `AP Wi-Fi collector` | Custom collector | `SSH -> ap_gateway.py -> VictoriaMetrics -> vm_agg_ap_gateway.py` | `ap_wifi_station_count`, `ap_wifi_station_tx_bytes`, `ap_wifi_station_signal_dbm` | producer interval default `10s` in [ap_gateway.py](../ap_gateway/ap_gateway.py) | Config/code exists, no live samples seen during this measurement |
-| `AP SNMP collector` | Custom collector | `SNMP -> ap_snmp_gateway.py -> VictoriaMetrics -> vm_agg_ap_gateway.py` | `ap_node_cpu_usage_percent`, `ap_node_memory_*`, `ap_node_iface_*` | producer interval default `10s` in [ap_snmp_gateway.py](../ap_gateway/ap_snmp_gateway.py) | Config/code exists, no live samples seen during this measurement |
+| `RFSoC PYNQ / XRT SSH status` | Out-of-band device status | `SSH -> vm_agg_rfsoc.py` | `/run/rfsoc_overlay_status.json`, XRT/overlay, DMA MM2S/S2MM health, AMS temperature, rails | RFSoC producer every `30s`; aggregator reads on demand with SSH timeout default `3s` in [vm_agg_rfsoc.py](../vm_agg_rfsoc.py) | Live and queryable; DMA channel status verified 2026-07-12 |
+| `AP Wi-Fi collector` | Custom collector | `Tailscale SSH -> ap_gateway.py -> VictoriaMetrics -> vm_agg_ap_gateway.py` | `ap_wifi_station_*`, `ap_wifi_radio_info`, `ap_node_disk_{read,write}_bytes_total` | `10s` | Live and queryable; target `100.101.18.10` |
+| `AP SNMP collector` | Custom collector | `Tailscale SNMP -> ap_snmp_gateway.py -> VictoriaMetrics -> vm_agg_ap_gateway.py` | `ap_node_cpu_*`, `ap_node_memory_*`, `ap_node_disk_root_*`, `ap_node_iface_*` | `10s` | Live and queryable; target `100.101.18.10` |
 | `VictoriaMetrics query service` | Time-series store / query backbone | queried directly by all aggregators | `/api/v1/query`, `/api/v1/import/prometheus` | not a scrape source itself | Live and queryable |
 | `VictoriaMetrics self metrics` | Self metrics | not configured in this repo's active `scrape.yml` | N/A | no active scrape job found in this layer | Not currently part of this measured pipeline |
 
@@ -45,9 +45,9 @@ Method:
 | `Netdata parent` | `netdata_info` timestamp | `~1s` | `~0.000s` | `-0.001s` | `0.000s` | `1.076s` | Essentially real-time; tiny negative lag is clock skew / timestamp rounding |
 | `Netdata mirrored host icclz2` | `netdata_info` timestamp | `~1s` | `-0.005s` | `-0.005s` | `-0.002s` | `1.076s` | Same as above |
 | `Netdata mirrored host pynq` | `netdata_info` timestamp | `~1s` | `-0.052s` | `-0.049s` | `-0.039s` | `1.077s` | RFSoC Netdata mirror is live; small negative lag suggests clock skew |
-| `RFSoC node-exporter` | `node_cpu_seconds_total{job="rfsoc4x2-node-exporter",mode!="idle"}` | `10s` | N/A | N/A | N/A | N/A | No live samples returned during this measurement window |
-| `AP SNMP collector` | `ap_node_cpu_usage_percent` | `10s` | N/A | N/A | N/A | N/A | No live samples returned during this measurement window |
-| `AP Wi-Fi collector` | `ap_wifi_station_count` | `10s` | N/A | N/A | N/A | N/A | No live samples returned during this measurement window |
+| `RFSoC node-exporter` | `up{job="rfsoc4x2-node-exporter",access="tailscale"}` | `10s` | Not remeasured | Not remeasured | Not remeasured | Not remeasured | Live target and node-exporter metrics verified 2026-07-12; do not reuse the earlier N/A result as current status |
+| `AP SNMP collector` | `ap_node_cpu_usage_percent{ap="openwrt_ap"}` | `10s` | N/A | N/A | N/A | N/A | Live after 2026-07-12 recovery; this table remains a historical 2026-07-08 measurement |
+| `AP Wi-Fi collector` | `ap_wifi_station_count{ap="openwrt_ap"}` | `10s` | N/A | N/A | N/A | N/A | Live after 2026-07-12 recovery; this table remains a historical 2026-07-08 measurement |
 | `VictoriaMetrics self metrics` | N/A | N/A | N/A | N/A | N/A | N/A | No active scrape job found in current `scrape.yml` |
 
 ## Takeaways
@@ -55,4 +55,4 @@ Method:
 - 目前 live 上最即時的鏈路是 `dcgm-exporter`、`vLLM metrics`、`Netdata`。
 - `kube-state-metrics` 與 `vmagent-self` 明顯屬於 `10s` 級資料，較適合 cluster state / health 觀察。
 - `node-exporter` 與 `kubelet/cAdvisor` 的全域最新樣本 lag 目前約 `4~6s`，但這不代表 scrape 已改成 `2s`；它只是多節點 target 交錯更新後，`max(timestamp(...))` 看起來更密。
-- `RFSoC node-exporter` 與 `AP gateway` 類 metrics 在這次量測時沒有 live sample，表示不是目前沒在送，就是 label / target 和現在的 live 環境不一致，若要納入正式面板，建議下一步先做 target health 檢查。
+- 此 latency table 是早期量測快照。RFSoC node-exporter 已於 2026-07-12 恢復並驗證；若需要新的 p50/p95 lag，應另以當前 VictoriaMetrics 樣本重測，而非沿用舊的 N/A。

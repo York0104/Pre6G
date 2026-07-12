@@ -180,6 +180,13 @@ config/
 
 也就是說，`config/` 本身主要是**入口層**，不是每份設定檔的唯一實體存放位置。
 
+## Canonical Boundary
+
+- `config/manifests/monitoring/` 指向 `monitoring-rebuild/`，後者才是 monitoring rebuild 的 canonical manifest 來源。
+- `config/manifests/experiment/` 指向 `autoscale-source-split/02-experiment-layer/` 的 canonical experiment manifests。
+- `config/manifests/bundle/` 指向 `k3s-migration-bundle-sanitized/` 的 migration/reference snapshot；它不是 source tree 的雙向同步目標。
+- 修改設定時應先沿 symlink 找到實體檔案並在其 canonical 位置修改。不要把 `config/` 入口複製成新的維護來源。
+
 ## 使用方式
 
 最簡單的理解方式：

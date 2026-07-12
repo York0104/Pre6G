@@ -220,7 +220,7 @@ bash build_and_import_image_to_k3s.sh
 - 想驗證 workflow 是否能跑通時，不必先補 `pandas`
 - 若要完整使用 `analyze_*.py` / 某些進階圖表，再另外於對應 Python 環境安裝 `pandas`
 
-截至 `2026-06-03`，目前主機的 repo-local `iccl` venv 已補齊常用分析套件：
+截至 `2026-07-10`，目前主機的 repo-local `iccl` venv（Python `3.10.12`）可 import 下列常用分析套件：
 
 - `pandas`
 - `matplotlib`
@@ -229,4 +229,10 @@ bash build_and_import_image_to_k3s.sh
 - `joblib`
 - `xgboost`
 
-因此 `02-experiment-layer` 內常見 analyzer / plotting / training script 的 Python 依賴已基本補齊。
+這些是 analysis / plotting / training 的選用依賴，不是 smoke runner 的必要前置。若要在新環境重現完整分析，請使用可版控的 [requirements-analysis.txt](requirements-analysis.txt)：
+
+```bash
+./iccl/bin/python -m pip install -r autoscale-source-split/02-experiment-layer/requirements-analysis.txt
+```
+
+YOLO inference container 仍以 `yolo26_workload/requirements.txt` 為唯一 runtime dependency 定義。

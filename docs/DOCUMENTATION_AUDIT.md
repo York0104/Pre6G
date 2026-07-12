@@ -17,6 +17,45 @@
 | 實驗資料欄位與輸出 | 各 experiment runner／analysis script；文件中的日期化 result 報告只描述當時量測 |
 | 目前開發狀態 | 程式碼、測試與 `PROJECT_STATUS.md`；日期化進度／結果文件不是現行部署狀態 |
 
+## Repository Roles
+
+| 路徑 | 角色 | 維護規則 |
+| --- | --- | --- |
+| `monitoring-rebuild/` | Canonical monitoring rebuild manifests | 依 `MONITORING_REBUILD_SOP.md` 使用與修改。 |
+| `autoscale-source-split/` | Canonical source-level code、API/dashboard 與 experiment 定義 | 功能與部署文件以程式、manifest 與 component README 交叉驗證。 |
+| `config/` | Public/private configuration entry layer | 多數項目是 symlink；須修改其 canonical destination，而非建立第二份副本。 |
+| `k3s-migration-bundle-sanitized/` | Migration/reference snapshot | 保留作為可攜交付與 recovery reference；不可雙向同步，分歧需先比對 canonical source。 |
+| `shareable-bundles/` | 可單獨交付工具 | 僅涵蓋其子工具的依賴與操作，不取代完整 source tree。 |
+| 日期化 `results/`、`PROGRESS`、`STATUS`、`MANIFEST` | Historical evidence / transitional snapshot | 保留研究與交付證據；不得當作目前 runtime 或 canonical parameter 定義。 |
+
+## Dependency Sources
+
+| 範圍 | Canonical dependency source | 備註 |
+| --- | --- | --- |
+| AutoScale API | `03-shared-api-dashboard/requirements.txt` | Dockerfile 使用同一份 pinned requirements。 |
+| YOLO inference container | `02-experiment-layer/yolo26_workload/requirements.txt` + Dockerfile CUDA/PyTorch install | 不與分析工具依賴混用。 |
+| Offline analysis / plotting / training | `02-experiment-layer/requirements-analysis.txt` | 選用；版本記錄為本機 `iccl` 已觀察環境，非對 runtime 的保證。 |
+| Dashboard | `cluster-dashboard/package.json` + `package-lock.json` | Node.js engine 由 `package.json` root metadata 宣告。 |
+
+## Transitional And Duplicate Content
+
+| Path / group | Current role | Canonical replacement | Recommended action | Risk / evidence |
+| --- | --- | --- | --- | --- |
+| `config/manifests/monitoring/` | symlink entry layer | `monitoring-rebuild/` | KEEP_AND_CLARIFY | 11 common YAML targets are byte-identical; do not create a second copy. |
+| `config/manifests/experiment/` | symlink entry layer | `autoscale-source-split/02-experiment-layer/` | KEEP_AND_CLARIFY | Entry paths are intentional operator shortcuts. |
+| `k3s-migration-bundle-sanitized/thermal-yolo/` | portable migration snapshot | `autoscale-source-split/02-experiment-layer/` | KEEP_AND_CLARIFY | Some files match exactly, while workload, runner and experiment files differ; it is not safe to delete or auto-sync. |
+| `k3s-migration-bundle-sanitized/netdata-ap/` | portable AP/Netdata reference | `autoscale-source-split/01-monitoring-layer/` | KEEP_AND_CLARIFY | AP scripts and README differ from source; compare before applying. |
+| `*.current.yaml`, `*.backup.yaml`, `*.before.yaml`, `*.new.yaml` in migration bundle | captured transition/reference states | current canonical manifests or verified live export | MARK_DEPRECATED | These names are not a proof of recency. Select only after manifest and cluster validation. |
+| Root and bundle `MANIFEST.txt` | historical handoff snapshot | `git ls-files` | KEEP_AND_CLARIFY | They are not complete inventories of the current tracked tree. |
+| Date-stamped `results/`, `PROGRESS`, `STATUS` documents | experiment / delivery evidence | none | KEEP | Do not delete or rewrite methodology/KPI claims without a separate evidence review. |
+
+## Environment Boundaries
+
+- The repo-local `iccl` interpreter observed during this audit is Python `3.10.12`; the AutoScale API container uses Python `3.12-slim`. There is no single host-Python guarantee for every experiment script.
+- The dashboard lockfile and `package.json` require Node.js `^20.19.0 || >=22.12.0`; the Docker build uses Node `22`.
+- `config/private-runtime/` is a local symlink entry layer to `~/pre6g-private/`. Its live targets are intentionally not Git-tracked. Their presence and permissions are `UNVERIFIED` after a fresh clone.
+- Machine-specific `/home/icclz2/...` and `/home/icclz1/...` paths in dated operations and experiment documents are reference deployment paths, not portable defaults unless the document explicitly says otherwise.
+
 ## Documentation Status
 
 | 文件／目錄 | 用途 | 狀態 | 是否權威 | 備註 |

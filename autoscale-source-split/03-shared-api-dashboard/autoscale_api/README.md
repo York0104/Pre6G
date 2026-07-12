@@ -627,14 +627,13 @@ export AUTOSCALE_API_CORS_ORIGINS="http://<dashboard-host>:<port>,http://<anothe
 - API 路徑已接入
 - `vm_agg_rfsoc.py` 已支援 partial fallback
 
-但本機目前仍缺：
+截至 2026-07-12，inventory、API 與三條 live telemetry 路徑皆已驗證：
 
-- `~/.ssh/id_ed25519_rfsoc`
-- 可達的 `100.91.37.32:9100`
-- 可達的 `100.91.37.32:19999`
-- 可達的 `ssh xilinx@100.91.37.32`
+- VictoriaMetrics：`100.91.37.32:9100` 的 node-exporter target 為 `up=1`
+- Netdata parent：mirrored host `pynq` 的 host-scoped charts 可讀取
+- SSH：`xilinx@100.91.37.32` 可讀取 `/run/rfsoc_overlay_status.json`
 
-因此目前 dashboard 上會看到節點，但 telemetry 可能缺失並顯示 `OFFLINE`。
+API 將 `pl_status` 映射為 RFSoC-specific status，包含 XRT/overlay、bitfile、IP count、RFDC/DMA/SysMon presence、DMA MM2S/S2MM runtime health、temperature、rails 與 board power。Dashboard 對 RFSoC 以 Hardware Status card 取代 GPU VRAM；兩條 DMA channel 都為 `ready` 時才顯示 `MM2S READY · S2MM READY`，缺失時仍依 partial fallback 回傳 `null`，而不偽造 `0`。
 
 ### `openwrt_ap`
 

@@ -7,10 +7,11 @@ import subprocess
 import urllib.request
 import urllib.error
 
-OPENWRT = os.getenv("OPENWRT", "192.168.100.112")
+OPENWRT = os.getenv("OPENWRT", "100.101.18.10")
 AP_IFACE = os.getenv("AP_IFACE", "phy0-ap0")
 AP_NAME = os.getenv("AP_NAME", "openwrt_ap")
 SSH_KEY = os.getenv("SSH_KEY", os.path.expanduser("~/.ssh/openwrt_ap_ed25519"))
+DISK_DEVICE = os.getenv("DISK_DEVICE", "mmcblk0")
 INTERVAL = int(os.getenv("INTERVAL", "10"))
 
 # VictoriaMetrics import endpoint.
@@ -124,11 +125,15 @@ def parse_station_dump(text: str):
     return stations
 
 
+def escape_label_value(value):
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
 def metric_line(name: str, value, labels: dict):
     if value is None:
         return None
 
-    label_str = ",".join([f'{k}="{v}"' for k, v in labels.items()])
+    label_str = ",".join([f'{k}="{escape_label_value(v)}"' for k, v in labels.items()])
     return f"{name}{{{label_str}}} {value}"
 
 
@@ -175,6 +180,61 @@ def build_metrics(stations):
     return "\n".join(lines) + "\n"
 
 
+def read_diskstats():
+    raw = run_ssh(
+        f"awk '$3==\"{DISK_DEVICE}\" {{print $6, $10}}' /proc/diskstats"
+    ).strip()
+    fields = raw.split()
+    if len(fields) != 2:
+        raise RuntimeError(f"disk device {DISK_DEVICE!r} not found in /proc/diskstats")
+    return int(fields[0]) * 512, int(fields[1]) * 512
+
+
+def build_disk_metrics(read_bytes, write_bytes):
+    labels = {"ap": AP_NAME, "target": OPENWRT, "device": DISK_DEVICE}
+    return "\n".join([
+        metric_line("ap_node_disk_read_bytes_total", read_bytes, labels),
+        metric_line("ap_node_disk_write_bytes_total", write_bytes, labels),
+    ]) + "\n"
+
+
+def read_radio_info():
+    raw = run_ssh(f"iw dev {AP_IFACE} info")
+    ssid = None
+    channel = None
+    frequency_mhz = None
+    width_mhz = None
+    txpower_dbm = None
+    for line in raw.splitlines():
+        value = line.strip()
+        if value.startswith("ssid "):
+            ssid = value[5:]
+        elif value.startswith("channel "):
+            match = re.search(r"channel (\d+) \((\d+) MHz\), width: (\d+) MHz", value)
+            if match:
+                channel, frequency_mhz, width_mhz = match.groups()
+        elif value.startswith("txpower "):
+            match = re.search(r"([0-9.]+) dBm", value)
+            if match:
+                txpower_dbm = match.group(1)
+
+    if not ssid or not channel or not frequency_mhz or not width_mhz:
+        raise RuntimeError(f"unable to parse radio info for {AP_IFACE}")
+    return {
+        "ssid": ssid,
+        "channel": channel,
+        "frequency_mhz": frequency_mhz,
+        "band": "5 GHz" if int(frequency_mhz) >= 5000 else "2.4 GHz",
+        "width_mhz": width_mhz,
+        "txpower_dbm": txpower_dbm or "unknown",
+    }
+
+
+def build_radio_metrics(radio):
+    labels = {"ap": AP_NAME, "target": OPENWRT, "iface": AP_IFACE, **radio}
+    return metric_line("ap_wifi_radio_info", 1, labels) + "\n"
+
+
 def push_to_vm(payload: str):
     data = payload.encode()
     req = urllib.request.Request(
@@ -194,7 +254,13 @@ def main():
         try:
             raw = run_ssh(f"iw dev {AP_IFACE} station dump")
             stations = parse_station_dump(raw)
-            payload = build_metrics(stations)
+            disk_read_bytes, disk_write_bytes = read_diskstats()
+            radio = read_radio_info()
+            payload = (
+                build_metrics(stations)
+                + build_disk_metrics(disk_read_bytes, disk_write_bytes)
+                + build_radio_metrics(radio)
+            )
 
             print(payload.strip(), flush=True)
 

@@ -6,7 +6,7 @@ metadata:
 spec:
   template:
     spec:
-      priorityClassName: device-availability-stress-low
+      priorityClassName: device-availability-stress-nonpreempting-low
       containers:
         - name: stress
           resources:
@@ -25,7 +25,7 @@ metadata:
 spec:
   template:
     spec:
-      priorityClassName: device-availability-stress-low
+      priorityClassName: device-availability-stress-nonpreempting-low
       containers:
         - name: stress
           resources:

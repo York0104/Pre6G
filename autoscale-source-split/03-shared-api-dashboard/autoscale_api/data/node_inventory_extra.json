@@ -1,4 +1,17 @@
 {
+  "icclz1": {
+    "gpu": {
+      "has_gpu": true,
+      "count": 1,
+      "models": [
+        "NVIDIA GeForce GTX 1080 Ti"
+      ],
+      "family": "Pascal",
+      "memory": "11264 MiB",
+      "compute_capability": "6.1",
+      "cuda_cores": 3584
+    }
+  },
   "icclz3": {
     "cpu": {
       "model_name": "Intel i7-8809G",

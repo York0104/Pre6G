@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+from datetime import datetime
+import io
 import json
 import re
 from collections import Counter, defaultdict
@@ -8,14 +10,38 @@ from pathlib import Path
 
 
 def load_csv(path: Path):
-    with path.open() as fh:
-        return list(csv.DictReader(fh))
+    # Interrupted probe writes have occasionally left NUL bytes in the CSV.
+    # Keep the valid rows analyzable while preserving the original artifact.
+    text = path.read_text(errors="replace").replace("\0", "")
+    return list(csv.DictReader(io.StringIO(text)))
 
 
 def parse_summary(path: Path):
     if not path.exists():
         return {}
     return json.loads(path.read_text())
+
+
+def filter_observation_window(rows, summary):
+    start = summary.get("observation_start")
+    end = summary.get("observation_end")
+    if not start or not end:
+        return rows
+    try:
+        start_at = datetime.fromisoformat(start)
+        end_at = datetime.fromisoformat(end)
+    except ValueError:
+        return rows
+
+    filtered = []
+    for row in rows:
+        try:
+            timestamp = datetime.fromisoformat(row["timestamp"])
+        except (KeyError, ValueError):
+            continue
+        if start_at <= timestamp <= end_at:
+            filtered.append(row)
+    return filtered
 
 
 def scan_lines(path: Path, patterns):
@@ -51,8 +77,9 @@ def main():
     args = ap.parse_args()
 
     base = Path(args.result_dir)
-    rows = load_csv(base / "availability.csv")
     summary = parse_summary(base / "summary.json")
+    raw_rows = load_csv(base / "availability.csv")
+    rows = filter_observation_window(raw_rows, summary)
     pod_states, pod_by_name = extract_pod_states(base / "pod_watch.log")
     event_hits = scan_lines(
         base / "k8s_events_watch.log",
@@ -82,6 +109,7 @@ def main():
         }
 
     payload = {
+        "raw_csv_samples_total": len(raw_rows),
         "samples_total": len(rows),
         "summary": summary,
         "phase_counts": phase_counts,

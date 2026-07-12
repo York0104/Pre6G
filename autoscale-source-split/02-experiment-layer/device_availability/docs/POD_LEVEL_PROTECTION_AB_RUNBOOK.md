@@ -41,7 +41,7 @@ Case B phase run:
 
 ```bash
 cd /home/icclz2/Pre6G/autoscale-source-split
-STRESS_PRIORITY_CLASS=device-availability-stress-low \
+STRESS_PRIORITY_CLASS=device-availability-stress-nonpreempting-low \
 CPU_STRESS_REQUEST_CPU=500m \
 CPU_STRESS_LIMIT_CPU=4 \
 CPU_STRESS_REQUEST_MEMORY=64Mi \

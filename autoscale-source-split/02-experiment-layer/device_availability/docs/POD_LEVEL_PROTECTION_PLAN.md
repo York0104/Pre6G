@@ -47,7 +47,7 @@ Sentinel patch:
 
 Stress patch:
 
-- adds `device-availability-stress-low`
+- adds `device-availability-stress-nonpreempting-low`
 - sets explicit requests / limits for CPU and MEM jobs
 - `MIX` phase will inherit the same lower-priority behavior because it reuses CPU and MEM jobs together
 - 長版 phase 的 stress job 由 `stress_runner.sh` 動態建立，因此 Case B 也要帶入對應的 `STRESS_*` 環境變數

@@ -248,7 +248,7 @@ cd /home/icclz2/Pre6G
 注意：
 
 - `vm_agg_rfsoc.py` 目前已支援 partial fallback；即使 `Netdata` host-scoped 路徑失敗，仍可能回 `collector_status = ok`
-- `vm_agg_ap_gateway.py` 若 VM 中尚無 `ap_*` metrics，仍會失敗；這代表 AP collectors 尚未恢復，不是 API 本身故障
+- `vm_agg_ap_gateway.py` 依賴 VictoriaMetrics 內的 `ap_wifi_*` 與 `ap_node_*` metrics；目前 OpenWrt target `100.101.18.10` 已由兩個 user-level collector 持續提供。若未來再次為空，先檢查這兩個 collector service 與 AP 的 Tailscale SSH/SNMP 可達性。
 
 ## Step 11: Start API And Dashboard
 

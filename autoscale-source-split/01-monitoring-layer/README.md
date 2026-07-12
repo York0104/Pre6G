@@ -89,7 +89,7 @@
 4. 將 RFSoC Netdata child 的 `stream.conf` 指到目前 Netdata parent：
    - `destination = 140.113.179.9:32163`
    - `api key` 請從目前 live parent `/etc/netdata/stream.conf` 或私下交付資料取得，不寫入 repo
-5. 在 host 端執行 `vm_agg_rfsoc.py`，目前建議直接使用本 repo 內已更新的預設值，或沿用 `collector_nodes.json` 內 `rfsoc4x2-pynq` 條目。
+5. 在 host 端由 API 的 `collector_nodes.json` 環境執行 `vm_agg_rfsoc.py`。不要以未帶環境變數的直接呼叫當成 live 驗證，該模式會使用 fallback/default target。
 
 目前已驗證成功的關鍵端點：
 
@@ -98,6 +98,17 @@
 - `RFSoC node_exporter`: `100.91.37.32:9100`
 - `RFSoC Netdata host`: `pynq`
 - `RFSoC SSH`: `xilinx@100.91.37.32`
+
+截至 2026-07-12，三條資料路徑均已驗證可用：VictoriaMetrics 的
+`up{job="rfsoc4x2-node-exporter",access="tailscale"}` 為 `1`、Netdata parent 可讀取
+`pynq` host charts，且 SSH 可讀取 `/run/rfsoc_overlay_status.json`。該狀態檔目前可提供
+XRT/overlay ready、active bitfile、IP count、RFDC/DMA/SysMon presence、DMA MM2S/S2MM
+health、AMS temperature
+與 VCCINT/VCCAUX；aggregator 另會由 `node_hwmon_power_watt` 匯總 board power。
+
+尚未納入的 runtime 指標是 PL LUT/FF/BRAM/DSP 使用率、DMA throughput 與 per-IP busy
+ratio：前者屬 Vivado implementation report 的靜態資料，後兩者需要 bitstream 或應用程式
+額外輸出 counter，不能由目前的 `base.bit` 假定取得。
 
 
 ## 目前建議常駐方式

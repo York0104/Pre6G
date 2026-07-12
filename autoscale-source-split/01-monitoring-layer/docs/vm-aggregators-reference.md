@@ -228,10 +228,13 @@ NODE=REPLACE_NODE K8S_NODE=REPLACE_NODE NAMESPACE=intent-lab python3 vm_aggregat
   - `ip_count`
   - `has_rfdc`
   - `has_dma`
+  - `dma_mm2s_state` / `dma_s2mm_state`（`ready`、`degraded`、`error` 或 `unavailable`）
+  - `dma_channels_status`（兩條 channel 的綜合狀態）
   - `has_sysmon`
   - `temperature_c`
   - `vccint_v`
   - `vccaux_v`
+  - `board_power_watts`（由 node-exporter 的 `node_hwmon_power_watt` 匯總；不是 PL-only power）
 
 - `target_node_semantic.scheduling_capability`
   - `can_run_fpga_overlay`
@@ -244,6 +247,11 @@ NODE=REPLACE_NODE K8S_NODE=REPLACE_NODE NAMESPACE=intent-lab python3 vm_aggregat
 - 最終輸出也會清掉 `None`
 - 因為 RFSoC 不是 K8s node，所以不會有 `cluster_semantic` 與 `namespace_total_instant_local`
 - 若做 dashboard 命名，磁碟欄位也建議顯示為 `Disk Use% (/)`
+- 2026-07-12 已 live 驗證：node-exporter、Netdata mirrored host `pynq` 與 SSH status
+  file 都可讀取，並可輸出 `collector_status = ok`。RFSoC 的 root-owned timer 每 30 秒執行
+  `rfsoc_overlay_status.py`，以 AXI DMA DMACR/DMASR 判斷 MM2S/S2MM health；`ready` 代表
+  RS enabled、非 halted 且無 DMA error bits，Idle 本身不視為錯誤。已驗證 `base.bit` 的兩條
+  channel 均為 `ready`。DMA throughput、per-IP busy ratio 仍需 producer counter。
 
 ### Typical Commands
 

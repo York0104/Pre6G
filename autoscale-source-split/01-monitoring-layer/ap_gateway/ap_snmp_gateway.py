@@ -7,11 +7,12 @@ import shutil
 import urllib.request
 import importlib
 
-OPENWRT = os.getenv("OPENWRT", "192.168.100.112")
+OPENWRT = os.getenv("OPENWRT", "100.101.18.10")
 AP_NAME = os.getenv("AP_NAME", "openwrt_ap")
 AP_IFACE = os.getenv("AP_IFACE", "phy0-ap0")
 SNMP_COMMUNITY = os.getenv("SNMP_COMMUNITY", "public")
 SNMP_IFINDEX = os.getenv("SNMP_IFINDEX", "3")
+ROOT_STORAGE_INDEX = os.getenv("ROOT_STORAGE_INDEX", "35")
 SNMP_TIMEOUT = float(os.getenv("SNMP_TIMEOUT", "3"))
 SNMP_RETRIES = int(os.getenv("SNMP_RETRIES", "0"))
 INTERVAL = int(os.getenv("INTERVAL", "10"))
@@ -34,6 +35,11 @@ OIDS = {
     "cpu_system_percent": ".1.3.6.1.4.1.2021.11.10.0",
     "cpu_idle_percent": ".1.3.6.1.4.1.2021.11.11.0",
     "cpu_num_cores": ".1.3.6.1.4.1.2021.11.67.0",
+
+    # HOST-RESOURCES-MIB hrStorageTable entry for the root overlay filesystem.
+    "root_disk_allocation_unit_bytes": f".1.3.6.1.2.1.25.2.3.1.4.{ROOT_STORAGE_INDEX}",
+    "root_disk_size_units": f".1.3.6.1.2.1.25.2.3.1.5.{ROOT_STORAGE_INDEX}",
+    "root_disk_used_units": f".1.3.6.1.2.1.25.2.3.1.6.{ROOT_STORAGE_INDEX}",
 
     "iface_rx_bytes_total": f".1.3.6.1.2.1.2.2.1.10.{SNMP_IFINDEX}",
     "iface_tx_bytes_total": f".1.3.6.1.2.1.2.2.1.16.{SNMP_IFINDEX}",
@@ -138,6 +144,12 @@ def collect():
     mem_used = max(mem_total - mem_available, 0)
     mem_usage = (mem_used / mem_total * 100) if mem_total > 0 else 0
 
+    root_disk_unit = values.get("root_disk_allocation_unit_bytes", 0)
+    root_disk_size = values.get("root_disk_size_units", 0) * root_disk_unit
+    root_disk_used = values.get("root_disk_used_units", 0) * root_disk_unit
+    root_disk_available = max(root_disk_size - root_disk_used, 0)
+    root_disk_usage = (root_disk_used / root_disk_size * 100) if root_disk_size > 0 else 0
+
     cpu_idle = values.get("cpu_idle_percent", 0)
     cpu_usage = max(100 - cpu_idle, 0)
 
@@ -162,6 +174,11 @@ def collect():
 
     lines.append(metric("ap_node_swap_total_bytes", values.get("swap_total_kb", 0) * 1024, node_labels))
     lines.append(metric("ap_node_swap_available_bytes", values.get("swap_available_kb", 0) * 1024, node_labels))
+
+    lines.append(metric("ap_node_disk_root_size_bytes", root_disk_size, node_labels))
+    lines.append(metric("ap_node_disk_root_used_bytes", root_disk_used, node_labels))
+    lines.append(metric("ap_node_disk_root_available_bytes", root_disk_available, node_labels))
+    lines.append(metric("ap_node_disk_root_usage_percent", root_disk_usage, node_labels))
 
     lines.append(metric("ap_node_iface_rx_bytes_total", values.get("iface_rx_bytes_total", 0), iface_labels))
     lines.append(metric("ap_node_iface_tx_bytes_total", values.get("iface_tx_bytes_total", 0), iface_labels))

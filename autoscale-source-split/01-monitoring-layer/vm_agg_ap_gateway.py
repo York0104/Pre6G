@@ -12,7 +12,7 @@ VM_URL = os.getenv("VM_URL", "http://140.113.179.9:31888").rstrip("/")
 
 AP_NAME = os.getenv("AP_NAME", "openwrt_ap")
 AP_IFACE = os.getenv("AP_IFACE", "phy0-ap0")
-AP_TARGET = os.getenv("OPENWRT", "192.168.100.112")
+AP_TARGET = os.getenv("OPENWRT", "100.101.18.10")
 
 RATE_WINDOW = os.getenv("RATE_WINDOW", "5m")
 
@@ -170,6 +170,11 @@ def collect_wireless_access(selector):
     }
 
 
+def collect_radio_info(selector):
+    vec = vm_query(f'ap_wifi_radio_info{{{selector}}}')
+    return vec[0].get("metric", {}) if vec else {}
+
+
 def collect_stations(selector):
     connected = vector_map_by_label(
         f'ap_wifi_station_connected_seconds{{{selector}}}',
@@ -251,6 +256,23 @@ def collect_device_resource():
 
     memory_usage = first_value(
         f'ap_node_memory_usage_percent{{{selector}}}',
+        default=None,
+    )
+
+    disk_root_size = first_value(
+        f'ap_node_disk_root_size_bytes{{{selector}}}',
+        default=None,
+    )
+    disk_root_used = first_value(
+        f'ap_node_disk_root_used_bytes{{{selector}}}',
+        default=None,
+    )
+    disk_root_available = first_value(
+        f'ap_node_disk_root_available_bytes{{{selector}}}',
+        default=None,
+    )
+    disk_root_usage = first_value(
+        f'ap_node_disk_root_usage_percent{{{selector}}}',
         default=None,
     )
 
@@ -336,6 +358,10 @@ def collect_device_resource():
         "memory_cached_bytes": mem_cached,
         "memory_usage_percent": memory_usage,
         "memory_usage_ratio": percent_to_ratio(memory_usage),
+        "disk_root_size_bytes": disk_root_size,
+        "disk_root_used_bytes": disk_root_used,
+        "disk_root_available_bytes": disk_root_available,
+        "disk_root_usage_percent": disk_root_usage,
         "swap_total_bytes": swap_total,
         "swap_used_bytes": swap_used,
         "swap_available_bytes": swap_available,
@@ -390,6 +416,20 @@ def collect_interface_traffic():
     }
 
 
+def collect_disk_io():
+    selector = f'ap="{AP_NAME}",target="{AP_TARGET}"'
+    return {
+        "read_bytes_per_s": first_value(
+            f'sum(rate(ap_node_disk_read_bytes_total{{{selector}}}[{RATE_WINDOW}]))',
+            default=0.0,
+        ),
+        "write_bytes_per_s": first_value(
+            f'sum(rate(ap_node_disk_write_bytes_total{{{selector}}}[{RATE_WINDOW}]))',
+            default=0.0,
+        ),
+    }
+
+
 def main():
     selector = build_selector()
 
@@ -411,13 +451,16 @@ def main():
 
     try:
         wireless = collect_wireless_access(selector)
+        radio = collect_radio_info(selector)
         stations = collect_stations(selector)
         device_resource = collect_device_resource()
         interface_traffic = collect_interface_traffic()
+        disk_io = collect_disk_io()
 
         node_pressure = {
             "cpu_usage_percent": device_resource.get("cpu_usage_percent"),
             "memory_usage_percent": device_resource.get("memory_usage_percent"),
+            "disk_root_usage_percent": device_resource.get("disk_root_usage_percent"),
         }
         node_pressure_instant = {
             "source": "snmp_gateway+victoriametrics",
@@ -426,6 +469,7 @@ def main():
             "cpu_system_percent": device_resource.get("cpu_system_percent"),
             "cpu_idle_percent": device_resource.get("cpu_idle_percent"),
             "memory_usage_percent": device_resource.get("memory_usage_percent"),
+            "disk_root_usage_percent": device_resource.get("disk_root_usage_percent"),
             "mem_total_bytes": device_resource.get("memory_total_bytes"),
             "mem_used_bytes": device_resource.get("memory_used_bytes"),
             "mem_free_bytes": device_resource.get("memory_free_bytes"),
@@ -446,6 +490,14 @@ def main():
                 "tx_bits_per_s": interface_traffic.get("tx_bits_per_s"),
                 "rx_bytes_per_s": bits_to_bytes_per_s(interface_traffic.get("rx_bits_per_s")),
                 "tx_bytes_per_s": bits_to_bytes_per_s(interface_traffic.get("tx_bits_per_s")),
+            },
+            "disk": {
+                "root_size_bytes": device_resource.get("disk_root_size_bytes"),
+                "root_used_bytes": device_resource.get("disk_root_used_bytes"),
+                "root_available_bytes": device_resource.get("disk_root_available_bytes"),
+                "root_usage_percent": device_resource.get("disk_root_usage_percent"),
+                "read_bytes_per_s": disk_io.get("read_bytes_per_s"),
+                "write_bytes_per_s": disk_io.get("write_bytes_per_s"),
             },
         }
         node_compute_features = {
@@ -478,15 +530,19 @@ def main():
                 "network_transmit_bytes_per_s": bits_to_bytes_per_s(interface_traffic.get("tx_bits_per_s")),
                 "network_receive_bits_per_s": interface_traffic.get("rx_bits_per_s"),
                 "network_transmit_bits_per_s": interface_traffic.get("tx_bits_per_s"),
+                "disk_read_bytes_per_s": disk_io.get("read_bytes_per_s"),
+                "disk_write_bytes_per_s": disk_io.get("write_bytes_per_s"),
             },
         }
 
         output["access_node_semantic"] = {
             "source": "ap_gateway+snmp_gateway+victoriametrics",
             "wireless_access": wireless,
+            "radio": radio,
             "stations": stations,
             "device_resource": device_resource,
             "interface_traffic": interface_traffic,
+            "disk_io": disk_io,
             "node_pressure": node_pressure,
             "node_pressure_instant": node_pressure_instant,
             "node_compute_features": node_compute_features,

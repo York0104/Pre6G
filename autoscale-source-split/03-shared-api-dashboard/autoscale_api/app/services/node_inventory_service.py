@@ -112,6 +112,7 @@ class NodeInventoryService:
         extra_data = self.extra.get_node_extra(node_name)
         extra_cpu = extra_data.get("cpu", {})
         extra_mem = extra_data.get("memory", {})
+        extra_gpu = extra_data.get("gpu", {})
 
         physical_gpu_count = int(capacity.get("nvidia.com/gpu", "0"))
         shared_gpu_count = int(capacity.get("nvidia.com/gpu.shared", "0"))
@@ -121,6 +122,8 @@ class NodeInventoryService:
         gpu_models = [gpu_model] if gpu_model else []
         if not gpu_models and gpu_count > 0:
             gpu_models = self._infer_gpu_models_from_aggregator(node_name)
+        if not gpu_models and gpu_count > 0:
+            gpu_models = extra_gpu.get("models") or []
         if not gpu_models and gpu_count > 0 and labels.get("feature.node.kubernetes.io/pci-10de.present") == "true":
             gpu_models = ["NVIDIA GPU"]
             gpu_model = "NVIDIA GPU"
@@ -128,7 +131,7 @@ class NodeInventoryService:
             gpu_model = gpu_models[0]
 
         gpu_memory_mb = labels.get("nvidia.com/gpu.memory")
-        gpu_memory_str = f"{gpu_memory_mb} MiB" if gpu_memory_mb else None
+        gpu_memory_str = f"{gpu_memory_mb} MiB" if gpu_memory_mb else extra_gpu.get("memory")
 
         return NodeInventory(
             node_name=node_name,
@@ -164,11 +167,15 @@ class NodeInventoryService:
                 has_gpu=gpu_count > 0,
                 count=gpu_count,
                 models=gpu_models,
-                family=labels.get("nvidia.com/gpu.family") or ("NVIDIA" if gpu_models else None),
+                family=labels.get("nvidia.com/gpu.family") or extra_gpu.get("family") or ("NVIDIA" if gpu_models else None),
                 memory=gpu_memory_str,
-                compute_capability=build_compute_capability(labels),
-                cuda_driver_version=labels.get("nvidia.com/cuda.driver-version.full"),
-                cuda_cores=self.gpu_map.get_cuda_cores(gpu_model) if gpu_model and gpu_model != "NVIDIA GPU" else None,
+                compute_capability=build_compute_capability(labels) or extra_gpu.get("compute_capability"),
+                cuda_driver_version=labels.get("nvidia.com/cuda.driver-version.full") or extra_gpu.get("cuda_driver_version"),
+                cuda_cores=(
+                    self.gpu_map.get_cuda_cores(gpu_model) or extra_gpu.get("cuda_cores")
+                    if gpu_model and gpu_model != "NVIDIA GPU"
+                    else None
+                ),
             ),
             query_enabled=True,
         )

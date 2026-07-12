@@ -4,11 +4,13 @@ from pathlib import Path
 
 from app.schemas.node import (
     NodeStatus,
+    NodeStatusAP,
     NodeStatusCPU,
     NodeStatusDisk,
     NodeStatusGPU,
     NodeStatusListResponse,
     NodeStatusMemory,
+    NodeStatusRFSoC,
     NodeStatusResponse,
     NodeStatusSources,
 )
@@ -64,6 +66,7 @@ class NodeStatusService:
         node_pressure = target.get("node_pressure", {})
         node_pressure_instant = target.get("node_pressure_instant", {})
         gpu_pressure = target.get("gpu_pressure", {})
+        pl_status = target.get("pl_status", {})
 
         cpu_usage_percent = node_pressure_instant.get("cpu_usage_percent")
         if cpu_usage_percent is None:
@@ -145,6 +148,26 @@ class NodeStatusService:
                     gpu_pressure.get("fb_used_total_mib")
                 ) if gpu_pressure.get("fb_used_total_mib") is not None else bytes_to_mib(fb_used_bytes),
             ),
+            rfsoc=(
+                NodeStatusRFSoC(
+                    xrt_device_ready=bool(pl_status.get("xrt_device_ready")),
+                    overlay_loaded=bool(pl_status.get("overlay_loaded")),
+                    active_bitfile=pl_status.get("active_bitfile"),
+                    ip_count=pl_status.get("ip_count"),
+                    has_rfdc=bool(pl_status.get("has_rfdc")),
+                    has_dma=bool(pl_status.get("has_dma")),
+                    dma_mm2s_state=pl_status.get("dma_mm2s_state"),
+                    dma_s2mm_state=pl_status.get("dma_s2mm_state"),
+                    dma_channels_status=pl_status.get("dma_channels_status"),
+                    has_sysmon=bool(pl_status.get("has_sysmon")),
+                    temperature_c=pl_status.get("temperature_c"),
+                    vccint_v=pl_status.get("vccint_v"),
+                    vccaux_v=pl_status.get("vccaux_v"),
+                    board_power_watts=pl_status.get("board_power_watts"),
+                )
+                if pl_status.get("source") == "pynq+xrt"
+                else None
+            ),
         )
 
     def _map_access_node_to_status(self, raw: dict) -> NodeStatus:
@@ -157,6 +180,10 @@ class NodeStatusService:
         node_pressure = target.get("node_pressure", {})
         node_pressure_instant = target.get("node_pressure_instant", {})
         device_resource = target.get("device_resource", {})
+        wireless_access = target.get("wireless_access", {})
+        radio = target.get("radio", {})
+        interface_traffic = target.get("interface_traffic", {})
+        disk_io = target.get("disk_io", {})
 
         cpu_usage_percent = node_pressure_instant.get("cpu_usage_percent")
         if cpu_usage_percent is None:
@@ -195,13 +222,38 @@ class NodeStatusService:
                 working_set_mib=bytes_to_mib(working_set_bytes),
             ),
             disk=NodeStatusDisk(
-                root_usage_percent=None,
+                root_usage_percent=(
+                    float(node_pressure.get("disk_root_usage_percent"))
+                    if node_pressure.get("disk_root_usage_percent") is not None
+                    else (
+                        float(node_pressure_instant.get("disk_root_usage_percent"))
+                        if node_pressure_instant.get("disk_root_usage_percent") is not None
+                        else None
+                    )
+                ),
             ),
             gpu=NodeStatusGPU(
                 status="not_applicable",
                 count=None,
                 fb_used_bytes=None,
                 fb_used_mib=None,
+            ),
+            ap=NodeStatusAP(
+                station_count=(
+                    int(wireless_access["station_count"])
+                    if wireless_access.get("station_count") is not None
+                    else None
+                ),
+                rx_bits_per_s=wireless_access.get("rx_bits_per_s"),
+                tx_bits_per_s=wireless_access.get("tx_bits_per_s"),
+                tx_failed_per_s=wireless_access.get("tx_failed_per_s"),
+                interface_oper_status=interface_traffic.get("oper_status"),
+                disk_read_bytes_per_s=disk_io.get("read_bytes_per_s"),
+                disk_write_bytes_per_s=disk_io.get("write_bytes_per_s"),
+                ssid=radio.get("ssid"),
+                channel=radio.get("channel"),
+                band=radio.get("band"),
+                width_mhz=radio.get("width_mhz"),
             ),
         )
 

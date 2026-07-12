@@ -24,7 +24,7 @@ Control plane IP: `140.113.179.9`
 
 - **主線已完成，可用**
 - **整體完成度約 `90% ~ 95%`**
-- **剩餘未完成項主要集中在 external node 真實資料源恢復，以及少數非主線補件**
+- **剩餘未完成項主要集中在 RFSoC 長期穩定性與進階 PL telemetry，以及少數非主線補件**
 
 ## Completed
 
@@ -110,7 +110,7 @@ Control plane IP: `140.113.179.9`
 - API / dashboard status 路徑接通
 - RFSoC aggregator 邏輯補強
 
-但真實 telemetry 恢復尚未全部完成。
+真實 telemetry 已完成基本恢復與驗證；目前工作重點轉為長期穩定性與進階 PL telemetry。
 
 ### 2. Private/public config structure
 
@@ -157,11 +157,14 @@ Control plane IP: `140.113.179.9`
 目前主要未完成項：
 
 - `rfsoc4x2-pynq`
-  - inventory / API 路徑已恢復
-  - 真實資料源仍需持續確認與維護
+  - node-exporter、Netdata mirrored host、PYNQ/XRT SSH status 已恢復並可由 aggregator 取得
+  - Dashboard 已顯示 RFSoC Hardware Status card，並以 `Accelerator: RFSoC PL + RFDC` 取代 GPU N/A
+  - DMA producer 每 30 秒輸出 MM2S/S2MM health；目前兩 channel 均為 `ready`、非 halted 且無 error
+  - PL LUT/FF/BRAM/DSP、DMA throughput、per-IP activity 與 RFDC PLL/tile state 尚待額外 producer 或 Vivado report
 - `openwrt_ap`
-  - inventory / API 路徑已恢復
-  - AP collectors / credentials / 真實 telemetry 仍未完整收斂
+  - 已經由 Tailscale target `100.101.18.10` 恢復真實 telemetry
+  - SSH Wi-Fi collector 與 SNMP collector 均以 user-level systemd 常駐
+  - dashboard 已顯示 AP 專屬無線資訊、資源、root disk 與 I/O 指標
 
 ### 2. Long-duration formal reruns
 
@@ -175,10 +178,9 @@ Control plane IP: `140.113.179.9`
 
 依優先順序建議：
 
-1. 恢復 `openwrt_ap` 真實 telemetry
-2. 持續確認 `rfsoc4x2-pynq` 真實 telemetry 穩定性
-3. 視需要補做 full-duration experiment reruns
-4. 持續維護 `Pre6G/config/` 與 `pre6g-private/` 的 source-of-truth 分工
+1. 持續確認 `rfsoc4x2-pynq` 真實 telemetry 穩定性
+2. 視需要補做 full-duration experiment reruns
+3. 持續維護 `Pre6G/config/` 與 `pre6g-private/` 的 source-of-truth 分工
 
 ## Source of Truth
 

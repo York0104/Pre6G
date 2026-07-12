@@ -26,7 +26,7 @@
       "aggregator": "vm_agg_ap_gateway.py",
       "env": {
         "VM_URL": "http://140.113.179.9:31888",
-        "OPENWRT": "192.168.100.112",
+        "OPENWRT": "100.101.18.10",
         "AP_NAME": "openwrt_ap",
         "AP_IFACE": "phy0-ap0",
         "RATE_WINDOW": "5m"

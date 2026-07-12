@@ -1,6 +1,6 @@
 # evictionHard Validation Runbook
 
-Status: `prepared, not yet applied`
+Status: `evictionHard applied on icclz1; R2f/R2g safety evidence completed, R2h progressive-ramp retry pending`
 
 ## Objective
 
@@ -71,6 +71,52 @@ R2 不能只用單一高記憶體 stress pod。
 - 多個 low-priority memory stress pod 並行
 - 單 pod `vm-bytes < memory limit`
 - aggregate memory demand 逼近 `memory.available` threshold
+
+## R2 Launch Reliability Gate
+
+正式 phase 前必須先通過下列 gate，否則該次執行不計為 R2：
+
+1. 以相同 image 在目標 node 完成 prewarm Job。
+2. 所有 R2 stress container 明確指定 `imagePullPolicy: IfNotPresent`，避免 `:latest` 隱含的 `Always` policy 在大量並行 Pod 啟動時再次查詢 registry。
+3. 用同 image、priority、resources 與 parallelism 的非壓力 `sleep` Job 啟動 launch gate；在 180 秒內至少 90% Pod 必須進入 `Running`，且不得出現 `ErrImagePull` 或 `ImagePullBackOff`。Gate 本身不執行 memory stress。
+4. `device-availability-stress-nonpreempting-low` 必須為 `value: -1000`、`preemptionPolicy: Never`。R2 的 stress workload 必須能在 node pressure 下被 kubelet 優先 eviction，但不得為了排程而主動 preempt 既有非實驗 workload。
+
+Runner 會把 gate 結果寫入：
+
+- `launch_gate_summary.env`
+- `launch_gate_pods.log`
+- gate 失敗時的 `launch_gate_job_describe.log` 與 `launch_gate_events.log`
+
+目前已知失敗原因是 registry `pull QPS exceeded`，不是 image reference 不存在。未通過 gate 時應先處理 image pull，不應把 availability 結果解讀成 evictionHard 成功。
+
+`r2d_evictionhard_short_20260711_protected` 已確認 prewarm 與 23 個 gate Pod 均成功啟動；runner 的 JSONPath 計數誤判為 0，且事件顯示舊 `device-availability-stress-low`（value `1000`）曾 preempt `yolo26n-bg`。因此此輪不計為 R2；後續必須先套用新的 negative-priority non-preempting stress class。R2 runner 的 CPU request 也固定為每 Pod `10m`，避免啟動 gate 因 scheduler CPU request 而排不滿。
+
+`r2e_evictionhard_short_20260711_protected` 已通過 prewarm 與新 launch gate，但 profile 計算前仍殘留 43 個舊 R2 stress Pod，導致 baseline `MemAvailable` 僅約 3.3Gi、正式 profile 退化為 2–3 Pod。此輪僅能作為 cleanup 缺口的診斷證據，不計為有效 R2。Runner 現在會先刪除並等待所有既有 R2 Job/Pod 消失、等待記憶體回穩後才推導 profile。
+
+每次正式執行必須使用新的 `RUN_ID` / `OUT_DIR`。Runner 會拒絕寫入已含 `availability.csv` 或 `summary.json` 的結果目錄；分析器也會以 `summary.json` 的 observation window 排除意外混入的舊 CSV 列。
+
+## R2f Result And R2g Adjustment
+
+`r2f_evictionhard_short_20260711_protected` 是第一輪通過 clean-baseline、prewarm 與 21/23 launch gate 的完整 100-minute profile。它記錄了：
+
+- `confirmed_outage_events=0`、`samples_down=0`
+- `Node Ready=True`，且未見 `MemoryPressure`、`Evicted` 或 image pull failure
+- 3 個 distinct stress Pod `OOMKilled`
+
+這支持設備服務在本輪壓力下仍可達，但因 `3Gi` cgroup limit 先觸發，不能作為 evictionHard 已介入的證據。
+
+R2g 是唯一調整：
+
+- `PER_POD_LIMIT_MEMORY=4Gi`
+- 保持 `PER_POD_VM_MIB=2600`、`MEM_AGG_H_VM_MIB=2856`、parallelism、phase durations、probe rule、priority class 與 kubelet evictionHard 不變
+
+`4Gi` limit 為每個 `2856M` high-profile workload 留出 cgroup headroom，目標是讓 aggregate demand 先觸發 node-level pressure，而非個別 container 的 memory limit。R2g 仍必須滿足既有 host safety criteria；若發生 Host OOM、Node NotReady、Sentinel/K3s agent/containerd 異常，立即視為失敗，不再提高壓力。
+
+R2g 已確認 `4Gi` manifest 確實套用，但仍有 4 個 distinct stress Pod `OOMKilled`，且 Job 在約十秒內因 `backoffLimit=0` 停止其餘 Pod；未見 `MemoryPressure` 或 `Evicted`。這表示 23 Pod 同時分配形成過快的壓力尖峰。R2h 不增加單 Pod memory、總目標 parallelism 或測試時間，而是將 `MEM-AGG-H` 由 4 Pod 起始、每 15 秒增加 4 Pod，直到 23 Pod，讓 kubelet 有觀察及 node-pressure eviction 的時間。
+
+## Measurement Caveat
+
+node-exporter 的 `MemAvailable` 僅用於推導 aggregate 壓力 profile；它不是 kubelet 的 eviction signal。Kubelet 使用 cgroupfs working set 計算 `memory.available`，因此 runner 會額外保存 kubelet `/stats/summary` 的 before/after snapshot，並仍以 `MemoryPressure`、`Evicted` event 與 node condition 作為 R2 成立證據。
 
 ## Suggested 100-minute Profile
 

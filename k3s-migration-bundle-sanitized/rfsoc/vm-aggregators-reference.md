@@ -204,10 +204,13 @@ NODE=icclz1 K8S_NODE=icclz1 NAMESPACE=intent-lab python3 vm_aggregator.py
   - `ip_count`
   - `has_rfdc`
   - `has_dma`
+  - `dma_mm2s_state` / `dma_s2mm_state`（`ready`、`degraded`、`error` 或 `unavailable`）
+  - `dma_channels_status`（兩條 channel 的綜合狀態）
   - `has_sysmon`
   - `temperature_c`
   - `vccint_v`
   - `vccaux_v`
+  - `board_power_watts`（由 `node_hwmon_power_watt` 匯總；不是 PL-only power）
 
 - `target_node_semantic.scheduling_capability`
   - `can_run_fpga_overlay`

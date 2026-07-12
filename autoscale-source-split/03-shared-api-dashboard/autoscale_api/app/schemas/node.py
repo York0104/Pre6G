@@ -90,6 +90,37 @@ class NodeStatusGPU(BaseModel):
     fb_used_mib: Optional[float] = None
 
 
+class NodeStatusAP(BaseModel):
+    station_count: Optional[int] = None
+    rx_bits_per_s: Optional[float] = None
+    tx_bits_per_s: Optional[float] = None
+    tx_failed_per_s: Optional[float] = None
+    interface_oper_status: Optional[float] = None
+    disk_read_bytes_per_s: Optional[float] = None
+    disk_write_bytes_per_s: Optional[float] = None
+    ssid: Optional[str] = None
+    channel: Optional[str] = None
+    band: Optional[str] = None
+    width_mhz: Optional[str] = None
+
+
+class NodeStatusRFSoC(BaseModel):
+    xrt_device_ready: Optional[bool] = None
+    overlay_loaded: Optional[bool] = None
+    active_bitfile: Optional[str] = None
+    ip_count: Optional[int] = None
+    has_rfdc: Optional[bool] = None
+    has_dma: Optional[bool] = None
+    dma_mm2s_state: Optional[str] = None
+    dma_s2mm_state: Optional[str] = None
+    dma_channels_status: Optional[str] = None
+    has_sysmon: Optional[bool] = None
+    temperature_c: Optional[float] = None
+    vccint_v: Optional[float] = None
+    vccaux_v: Optional[float] = None
+    board_power_watts: Optional[float] = None
+
+
 class NodeStatus(BaseModel):
     node_name: str
     k8s_ip: str
@@ -98,6 +129,8 @@ class NodeStatus(BaseModel):
     memory: NodeStatusMemory
     disk: NodeStatusDisk
     gpu: NodeStatusGPU
+    ap: Optional[NodeStatusAP] = None
+    rfsoc: Optional[NodeStatusRFSoC] = None
 
 
 class NodeStatusResponse(BaseModel):

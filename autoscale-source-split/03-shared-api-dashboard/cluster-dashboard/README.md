@@ -99,6 +99,22 @@
 
 這次 external nodes 進 dashboard 的方式是擴充 API 層，不是重寫 React 卡片元件；因此 API 更新完成後，前端重新整理頁面即可看到新節點。
 
+### RFSoC selected-node card
+
+`rfsoc4x2-pynq` 的 selected-node detail 會以 `RFSoC Hardware Status` 卡取代不適用的
+`GPU VRAM Used` 圖。卡片右上 `PL RUNTIME READY` 僅代表 XRT device 與 overlay 已就緒，
+不是整張硬體健康的綜合判定。第一版呈現 XRT Device、PL Overlay、RFDC/DMA Engine
+detected、Die Temperature 與 Monitored Rail Power；後者是已監控 INA220 rail 的加總，並非
+AC adapter input power。IP count、SysMon 與 VCCINT/VCCAUX 分為兩行置於卡片底部輔助列。DMA
+producer 已設計為每 30 秒讀取 MM2S/S2MM control/status registers；兩個 channel 都是
+`ready` 才顯示 `MM2S READY · S2MM READY`，任一 error 顯示個別 channel state。若 producer 未
+提供這些欄位，卡片會安全回退為 DMA Engine detected，不宣稱即時 run state 或 throughput；
+ADC/DAC PLL lock、tile count、PL resource utilization 與 per-IP activity 必須等相應 producer
+可提供後才可顯示。
+
+Basic Info 的最後一列會依 node type 顯示硬體角色：一般 node 顯示 `GPU`、RFSoC 顯示
+`Accelerator: RFSoC PL + RFDC`（若 RFDC 已 detected），AP 顯示 `Wireless: OpenWrt AP`。
+
 ## Environment
 
 本地開發時，前端仍可透過 `.env` 讀取：

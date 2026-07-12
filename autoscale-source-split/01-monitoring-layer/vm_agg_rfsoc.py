@@ -206,6 +206,9 @@ def parse_pl_status_output(raw: str) -> Dict[str, Any]:
         "ip_count": to_int_or_none(extract_first(parsed, ["ip_count", "ipcount", "ip_num"])),
         "has_rfdc": to_int_flag(extract_first(parsed, ["has_rfdc", "rfdc"])),
         "has_dma": to_int_flag(extract_first(parsed, ["has_dma", "dma"])),
+        "dma_mm2s_state": extract_first(parsed, ["dma_mm2s_state"]),
+        "dma_s2mm_state": extract_first(parsed, ["dma_s2mm_state"]),
+        "dma_channels_status": extract_first(parsed, ["dma_channels_status"]),
         "has_sysmon": to_int_flag(extract_first(parsed, ["has_sysmon", "sysmon"])),
         "temperature_c": extract_first(parsed, ["temperature_c", "sysmon_temperature_c"]),
         "vccint_v": extract_first(parsed, ["vccint_v", "sysmon_vccint_v"]),
@@ -272,6 +275,9 @@ def collect_pl_status() -> Dict[str, Any]:
         "ip_count": None,
         "has_rfdc": 0,
         "has_dma": 0,
+        "dma_mm2s_state": "unavailable",
+        "dma_s2mm_state": "unavailable",
+        "dma_channels_status": "unavailable",
         "has_sysmon": 0,
         "temperature_c": None,
         "vccint_v": None,
@@ -415,6 +421,10 @@ def collect_vm_metrics(selector: str) -> dict:
             f'sum(rate(node_network_transmit_bytes_total{{{selector},device!="lo"}}[1m]))',
             default=None,
         ),
+        "board_power_watts": vm_first_value(
+            f'sum(node_hwmon_power_watt{{{selector}}})',
+            default=None,
+        ),
     }
 
 
@@ -461,6 +471,7 @@ def collect_state() -> dict:
         debug_errors["victoriametrics_error"] = str(e)
 
     pl_status = collect_pl_status()
+    pl_status["board_power_watts"] = vm.get("board_power_watts")
 
     mem_total_bytes = vm.get("mem_total_bytes")
     mem_available_bytes = netdata.get("mem_available_bytes")
@@ -530,7 +541,7 @@ def collect_state() -> dict:
                 "lab_ip": LAB_IP,
                 "tailscale_ip": TAILSCALE_IP,
             },
-            "pl_status": pl_status,
+        "pl_status": pl_status,
             "scheduling_capability": {
                 "can_run_linux_task": True,
                 "can_run_container_task": False,
